@@ -18,17 +18,20 @@ MyZkool is designed specifically for small and mid-size K-12 schools across Indi
 ## 🚀 Key Features
 
 ### 1. WhatsApp-First School Management (ERP)
+
 - **Attendance Alerts:** Teachers mark attendance on any smartphone or tablet in under 60 seconds; absent alerts are dispatched automatically to parents' registered WhatsApp numbers.
 - **Fee Collection with 1-Click UPI:** Automated fee reminders with embedded UPI payment links (Google Pay, PhonePe, Paytm, BHIM, RuPay). Digital receipts are generated and sent via WhatsApp immediately upon settlement.
 - **Report Cards & Exam Analysis:** CBSE, ICSE, and State Board compliant report cards distributed securely to parent chats with PDF download links.
 - **Timetable & Staff Management:** Automated substitutions, period scheduling, teacher attendance tracking, and salary disbursement registers.
 
 ### 2. Modern School Website Builder
+
 - **Zero-Code School Website:** Ready-to-publish website templates customized for Indian school admissions, achievements, fee structures, and principal messages.
 - **Custom Domain & SSL:** Deployable on `yourschool.edu.in` or custom institution domains with automated HTTPS and mobile-optimized layouts.
 - **Admissions Enquiry Pipeline:** Real-time lead capture that routes parent admissions queries directly to the school administrative desk.
 
 ### 3. Interactive Tools on the Landing Page
+
 - **Interactive School ERP Dashboard:** Sample preview demonstrating the administrative portal (`stmarys-academy.myzkool.in/admin`) with real-time fee tracking, attendance metrics, and quick action bars.
 - **Interactive ROI & Savings Calculator:** Allows school trustees to calculate annual hours saved on paperwork, fee realization improvements, and direct monetary savings by replacing fragmented software licenses.
 - **AI School Advisor (Beta):** Powered by **Google Gemini 2.5 Flash** (`@google/genai`), school administrators can ask questions in natural language, listen via text-to-speech, or upload photos of existing paper registers to preview automated data mapping.
@@ -51,22 +54,51 @@ MyZkool features a production-ready, resume-capable 8-stage onboarding process f
 8. **Onboarding Complete (`/onboarding/complete`)**: Comprehensive aggregated setup audit with real-time launch checklist, copyable domain URLs, and atomic status transition to `onboarding_completed: true` launching the School Admin ERP dashboard.
 
 ### Verification & Automated Testing Suite
+
 - **374 Automated Tests Passing** (0 failures) covering subdomain normalization, tenant isolation, RLS policies, billing math, and end-to-end pipeline progression.
 - Test suites: `test-school-onboarding.ts`, `test-academic-setup.ts`, `test-classes-subjects.ts`, `test-subscription.ts`, `test-website-setup.ts`, `test-staff.ts`, `test-onboarding-complete.ts`.
 
 ---
 
+## 💻 School Admin Dashboard
+
+The unified ERP administration portal (`/admin`) provides the foundation for role-based institutional management.
+
+### Dashboard Architecture
+
+- **Admin Shell Integration:** A shared, responsive `AdminShell` layout providing unified navigation (`Sidebar`), contextual orientation (`AdminHeader`), and authenticated layout contexts for nested modules.
+- **Tenant Isolation:** Tenant context is resolved securely via PostgreSQL Row-Level Security (RLS) bound to the authenticated user's `school_id`, never relying on URL parameters or client-side trust.
+- **Foundational Routes Setup:**
+  - `/admin`: Dashboard Home featuring daily overview metrics, active session identification, quick actions, and activity feeds.
+  - Initial scaffolding for upcoming core modules (`/admin/students`, `/admin/attendance`, `/admin/fees`, `/admin/staff`, `/admin/timetable`, `/admin/exams`, `/admin/communication`, `/admin/reports`, `/admin/settings`) using a clean placeholder architecture.
+
+### Responsive Design
+
+- **Desktop:** Persistent multi-module sidebar with quick access to support and user profile actions.
+- **Mobile/Tablet:** The UI transforms into an accessible off-canvas drawer system utilizing a hamburger menu and touch-optimized navigation targets.
+
+---
+
+## 🔐 Google Sign-In & Auth Constraints
+
+MyZkool utilizes **Supabase Authentication** mapping to K-12 institutional roles (`school_admin`, `teacher`, `accountant`, etc.).
+
+> **Preview Environment Note:** When developing inside iframe-based preview environments (such as AI Studio), **Google Sign-In is blocked** due to Google's strict `X-Frame-Options: DENY` security policy.
+> To test Google Sign-In, you must click the **"Open in new tab"** button in your preview header so the application runs as a top-level window. The application detects iframe rendering and will gracefully prompt you if attempted.
+
+---
+
 ## 🛠️ Technology Stack
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Frontend** | [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) |
-| **Styling** | [Tailwind CSS v4](https://tailwindcss.com/), [Motion](https://motion.dev/) |
-| **Icons & Typography** | [Lucide React](https://lucide.dev/), Plus Jakarta Sans (Headings), Inter (Body) |
-| **Server / Backend** | [Express.js](https://expressjs.com/), [Node.js](https://nodejs.org/), Vite SPA middleware |
-| **Bundler & Compiler** | [esbuild](https://esbuild.github.io/) (CJS server bundle), Vite (Frontend) |
-| **AI Integration** | [@google/genai](https://www.npmjs.com/package/@google/genai) (Google Gemini 2.5 Flash) |
-| **Lead Routing** | [Web3Forms](https://web3forms.com/) API |
+| Layer                  | Technologies                                                                                               |
+| :--------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Frontend**           | [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) |
+| **Styling**            | [Tailwind CSS v4](https://tailwindcss.com/), [Motion](https://motion.dev/)                                 |
+| **Icons & Typography** | [Lucide React](https://lucide.dev/), Plus Jakarta Sans (Headings), Inter (Body)                            |
+| **Server / Backend**   | [Express.js](https://expressjs.com/), [Node.js](https://nodejs.org/), Vite SPA middleware                  |
+| **Bundler & Compiler** | [esbuild](https://esbuild.github.io/) (CJS server bundle), Vite (Frontend)                                 |
+| **AI Integration**     | [@google/genai](https://www.npmjs.com/package/@google/genai) (Google Gemini 2.5 Flash)                     |
+| **Lead Routing**       | [Web3Forms](https://web3forms.com/) API                                                                    |
 
 ---
 
@@ -86,23 +118,17 @@ MyZkool features a production-ready, resume-capable 8-stage onboarding process f
     ├── main.tsx                # React DOM entry point
     ├── index.css               # Tailwind CSS entry point
     ├── types.ts                # Shared TypeScript types and interfaces
-    └── components/
-        ├── AiSchoolAdvisor.tsx # Floating Gemini AI Advisor (Chat, TTS & Register Scanner)
-        ├── ComparisonTable.tsx # Feature-by-feature matrix (MyZkool vs Disconnected Tools)
-        ├── DemoModal.tsx       # Web3Forms-integrated "Book a Free Demo" modal with DPDP consent
-        ├── FAQ.tsx             # School board and migration questions with WhatsApp support
-        ├── Features.tsx        # 9 modular ERP pillars (Website, Fees, Attendance, etc.)
-        ├── Footer.tsx          # Contact channels, Lucknow office, legal links & copyright
-        ├── Hero.tsx            # Hero section with value proposition & sample dashboard
-        ├── HowItWorks.tsx      # 3-step school onboarding process
-        ├── LegalModal.tsx      # Comprehensive Privacy Policy, Terms, Refund & Grievance tab
-        ├── LoginModal.tsx      # Multi-role single login with school-subdomain tenant routing
-        ├── MyZkoolLogo.tsx     # Reusable official brand mark & typography component
-        ├── Navbar.tsx          # Responsive navigation bar with quick CTAs
-        ├── Philosophy.tsx      # "One Platform" vs. "Tool Chaos" comparison
-        ├── Pricing.tsx         # Transparent tiered pricing & interactive ROI calculator
-        ├── TrustStrip.tsx      # Board affiliations (CBSE, ICSE, State Boards) & claims
-        └── WhatsAppSpotlight.tsx # WhatsApp-first workflow showcase and phone mockup
+    ├── components/
+    │   ├── admin/              # Admin dashboard layout components (Sidebar, Header, AdminShell)
+    │   ├── auth/               # Authentication components (ProtectedRoute, GoogleAuthButton)
+    │   └── ...                 # Landing page & shared components
+    ├── pages/
+    │   ├── admin/              # Dashboard modules (DashboardHome, ModulePlaceholder)
+    │   ├── auth/               # Login, Register, Reset Password
+    │   ├── onboarding/         # The 8-stage school onboarding pipeline
+    │   └── LandingPage.tsx     # Public marketing website
+    ├── services/               # Backend API services (school, subscription, staff, etc.)
+    └── hooks/                  # Custom React hooks (useAuth)
 ```
 
 ---
@@ -117,12 +143,14 @@ MyZkool features a production-ready, resume-capable 8-stage onboarding process f
 ### Installation
 
 1. Clone the repository or open the project workspace:
+
    ```bash
    git clone <repository-url>
    cd myzkool
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
