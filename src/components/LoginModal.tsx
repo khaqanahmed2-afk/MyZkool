@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { X, ShieldCheck, Lock, ArrowRight, MessageSquare, CheckCircle } from "lucide-react";
 import { MyZkoolLogo } from "./MyZkoolLogo";
 
@@ -203,17 +204,36 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onOpenD
             </form>
           )}
 
-          <div className="mt-4 pt-3 border-t border-[#F1F5F9] text-center">
-            <span className="text-xs text-[#5B6478]">New school looking to onboard? </span>
-            <button
-              onClick={() => {
-                onClose();
-                onOpenDemo();
-              }}
-              className="text-xs font-bold text-[#2158E0] hover:underline"
-            >
-              Book a Free Demo
-            </button>
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] text-center space-y-2">
+            <div>
+              <Link
+                to="/login"
+                onClick={onClose}
+                className="text-xs font-semibold text-[#2158E0] hover:underline"
+              >
+                Go to Full Staff &amp; Admin Login Page →
+              </Link>
+            </div>
+            <div className="flex items-center justify-center gap-2 text-xs text-[#5B6478]">
+              <span>New school?</span>
+              <Link
+                to="/register"
+                onClick={onClose}
+                className="font-bold text-[#2158E0] hover:underline"
+              >
+                Register School Account
+              </Link>
+              <span>•</span>
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenDemo();
+                }}
+                className="font-medium text-[#5B6478] hover:text-[#141A2E] hover:underline cursor-pointer"
+              >
+                Book Demo
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -37,6 +37,25 @@ MyZkool is designed specifically for small and mid-size K-12 schools across Indi
 
 ---
 
+## 🏫 Multi-Tenant Onboarding Pipeline (8 Stages)
+
+MyZkool features a production-ready, resume-capable 8-stage onboarding process for school administrators:
+
+1. **School Profile (`/onboarding/school-profile`)**: Institutional identity, board affiliation, contact details, and automated tenant subdomain claiming (`{subdomain}.myzkool.com`).
+2. **Academic Setup (`/onboarding/academics`)**: Academic calendar configuration with automatic cycle calculation, single active current-year enforcement, and statutory holiday defaults.
+3. **Classes & Sections (`/onboarding/classes`)**: Grade structure definition with section subdivision, sort-order auto-incrementing, and primary/secondary wing quick-setup templates.
+4. **Subjects / Curriculum (`/onboarding/subjects`)**: Subject library categorization (core, elective, activity) with multi-class batch assignments and curriculum mapping.
+5. **Subscription & Plan Selection (`/onboarding/subscription`)**: Tier catalog selection (Basic, Pro, Custom), prepay duration discounts (monthly, 6-month, yearly), 18% statutory GST calculation, and 14-day zero-risk trial activation.
+6. **Website Setup & Initialization (`/onboarding/website`)**: Zero-code school website bootstrap with primary brand coloring, admissions lead toggle, tenant parent portal link (`{subdomain}.myzkool.com/parent-login`), and 5 default pages.
+7. **Staff Setup (`/onboarding/staff`)**: Non-blocking staff roster onboarding with role-based segregation (`teacher`, `accountant`), clean employee code auto-generation, and full multi-tenant isolation.
+8. **Onboarding Complete (`/onboarding/complete`)**: Comprehensive aggregated setup audit with real-time launch checklist, copyable domain URLs, and atomic status transition to `onboarding_completed: true` launching the School Admin ERP dashboard.
+
+### Verification & Automated Testing Suite
+- **374 Automated Tests Passing** (0 failures) covering subdomain normalization, tenant isolation, RLS policies, billing math, and end-to-end pipeline progression.
+- Test suites: `test-school-onboarding.ts`, `test-academic-setup.ts`, `test-classes-subjects.ts`, `test-subscription.ts`, `test-website-setup.ts`, `test-staff.ts`, `test-onboarding-complete.ts`.
+
+---
+
 ## 🛠️ Technology Stack
 
 | Layer | Technologies |

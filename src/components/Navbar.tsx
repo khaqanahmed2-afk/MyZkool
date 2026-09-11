@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Menu, X, ArrowRight, ShieldCheck, PhoneCall } from "lucide-react";
 import { MyZkoolLogo } from "./MyZkoolLogo";
 
@@ -55,13 +56,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
 
           {/* Right Action buttons */}
           <div className="hidden md:flex items-center gap-3">
-            <button
-              onClick={onOpenLogin}
+            <Link
+              to="/login"
               id="navbar-login-btn"
               className="px-4 py-2 text-sm font-medium text-[#141A2E] hover:text-[#2158E0] transition-colors rounded-full"
             >
               Login
-            </button>
+            </Link>
             <button
               onClick={onOpenDemo}
               id="navbar-demo-btn"
@@ -130,15 +131,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
             Contact
           </a>
           <div className="pt-3 border-t border-[#E6EAF3] flex flex-col gap-2.5">
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                onOpenLogin();
-              }}
+            <Link
+              to="/login"
+              onClick={() => setMobileMenuOpen(false)}
               className="w-full py-2.5 text-center font-medium text-[#141A2E] border border-[#E6EAF3] rounded-full"
             >
               Login
-            </button>
+            </Link>
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
