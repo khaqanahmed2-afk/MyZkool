@@ -1,0 +1,6 @@
+{
+  "name": "MyZkool - School Website & ERP Platform",
+  "description": "Integrated School Website Builder and Management ERP with WhatsApp-first communication for schools across India.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
