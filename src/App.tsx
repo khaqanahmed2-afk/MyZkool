@@ -31,6 +31,8 @@ import Complete from "./pages/onboarding/Complete";
 import { AdminShell } from "./components/admin/AdminShell";
 import DashboardHome from "./pages/admin/Dashboard";
 import ModulePlaceholder from "./pages/admin/ModulePlaceholder";
+import StudentList from "./pages/admin/students/StudentList";
+import StudentProfileView from "./pages/admin/students/StudentProfile";
 
 export default function App() {
   return (
@@ -149,7 +151,8 @@ export default function App() {
             }
           >
             <Route index element={<DashboardHome />} />
-            <Route path="students" element={<ModulePlaceholder />} />
+            <Route path="students" element={<StudentList />} />
+            <Route path="students/:id" element={<StudentProfileView />} />
             <Route path="attendance" element={<ModulePlaceholder />} />
             <Route path="fees" element={<ModulePlaceholder />} />
             <Route path="staff" element={<ModulePlaceholder />} />

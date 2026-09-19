@@ -615,6 +615,9 @@ export interface StudentListParams {
   cursor?: string;
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
+  userRole?: string;
+  teacherSectionIds?: string[];
+  parentStudentIds?: string[];
 }
 
 /**

@@ -401,6 +401,9 @@ export async function listStudents(
     cursor,
     sort_by = "created_at",
     sort_order = "desc",
+    userRole,
+    teacherSectionIds,
+    parentStudentIds,
   } = params;
 
   if (isSupabaseConfigured) {
@@ -425,9 +428,16 @@ export async function listStudents(
         .order(sort_by, { ascending: sort_order === "asc" })
         .limit(limit + 1); // +1 to check if there are more
 
+      // Role scoping (Spec A6 Rule 11)
+      if (userRole === "teacher" && teacherSectionIds) {
+        query = query.in("student_enrollments.section_id", teacherSectionIds);
+      } else if (userRole === "parent" && parentStudentIds) {
+        query = query.in("id", parentStudentIds);
+      }
+
       // Apply filters
       if (search) {
-        query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,admission_no.ilike.%${search}%`);
+        query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,admission_no.ilike.%${search}%,sr_no.ilike.%${search}%`);
       }
       if (status) {
         query = query.eq("status", status);
@@ -479,9 +489,9 @@ export async function listStudents(
           section_name: item.student_enrollments?.[0]?.section?.name,
           primary_parent_name: item.student_parents?.find((sp: any) => sp.is_primary_contact)?.parent?.full_name,
           primary_parent_phone: item.student_parents?.find((sp: any) => sp.is_primary_contact)?.parent?.phone,
-          fee_status: null, // Will be populated by FeeService
-          transport_route: null, // Will be populated by TransportService
-          documents_pending_count: 0, // Will be computed
+          fee_status: null, // Populated by FeeService
+          transport_route: null, // Populated by TransportService
+          documents_pending_count: 0,
           status: item.status,
         }));
 
@@ -489,7 +499,7 @@ export async function listStudents(
           response: {
             data: mappedItems,
             next_cursor: hasMore ? items[items.length - 1].created_at : null,
-            total_estimate: items.length, // In real implementation, use count query
+            total_estimate: items.length,
           },
         };
       }
@@ -505,14 +515,44 @@ export async function listStudents(
     const cached = localStorage.getItem(cacheKey);
     let students: Student[] = cached ? JSON.parse(cached) : [];
     
+    // Role scoping (Spec A6 Rule 11)
+    if (userRole === "teacher") {
+      const enrollmentsKey = getStudentEnrollmentsCacheKey(schoolId);
+      const enrCached = localStorage.getItem(enrollmentsKey);
+      const enrollments: StudentEnrollment[] = enrCached ? JSON.parse(enrCached) : [];
+      const allowedStudentIds = enrollments
+        .filter(e => teacherSectionIds ? teacherSectionIds.includes(e.section_id || "") : false)
+        .map(e => e.student_id);
+      students = students.filter(s => allowedStudentIds.includes(s.id));
+    } else if (userRole === "parent") {
+      students = students.filter(s => parentStudentIds ? parentStudentIds.includes(s.id) : false);
+    }
+
     // Apply filters
     students = students.filter(s => !s.deleted_at);
     if (search) {
       const searchLower = search.toLowerCase();
+      // Also check parent phone numbers
+      const spKey = getStudentParentsCacheKey(schoolId);
+      const pKey = getParentsCacheKey(schoolId);
+      const spCached = localStorage.getItem(spKey);
+      const pCached = localStorage.getItem(pKey);
+      const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+      const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
+      
+      const phoneMatchingStudentIds = new Set<string>();
+      for (const p of parents) {
+        if (p.phone && p.phone.includes(searchLower)) {
+          studentParents.filter(sp => sp.parent_id === p.id).forEach(sp => phoneMatchingStudentIds.add(sp.student_id));
+        }
+      }
+
       students = students.filter(s => 
         s.first_name.toLowerCase().includes(searchLower) ||
         s.last_name.toLowerCase().includes(searchLower) ||
-        s.admission_no.toLowerCase().includes(searchLower)
+        s.admission_no.toLowerCase().includes(searchLower) ||
+        (s.sr_no && s.sr_no.toLowerCase().includes(searchLower)) ||
+        phoneMatchingStudentIds.has(s.id)
       );
     }
     if (status) {
@@ -549,26 +589,44 @@ export async function listStudents(
     const hasMore = students.length > limit;
     const items = hasMore ? students.slice(0, limit) : students;
 
-    const mappedItems: StudentListItem[] = items.map(item => ({
-      id: item.id,
-      admission_no: item.admission_no,
-      first_name: item.first_name,
-      last_name: item.last_name,
-      middle_name: item.middle_name,
-      dob: item.dob,
-      gender: item.gender,
-      photo_path: item.photo_path,
-      class_id: null,
-      class_name: null,
-      section_id: null,
-      section_name: null,
-      primary_parent_name: null,
-      primary_parent_phone: null,
-      fee_status: null,
-      transport_route: null,
-      documents_pending_count: 0,
-      status: item.status,
-    }));
+    // Hydrate enrollment and parent info
+    const enrKey = getStudentEnrollmentsCacheKey(schoolId);
+    const enrCached = localStorage.getItem(enrKey);
+    const enrollments: StudentEnrollment[] = enrCached ? JSON.parse(enrCached) : [];
+
+    const spKey = getStudentParentsCacheKey(schoolId);
+    const pKey = getParentsCacheKey(schoolId);
+    const spCached = localStorage.getItem(spKey);
+    const pCached = localStorage.getItem(pKey);
+    const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+    const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
+
+    const mappedItems: StudentListItem[] = items.map(item => {
+      const enr = enrollments.find(e => e.student_id === item.id && e.status === "active");
+      const sp = studentParents.find(p => p.student_id === item.id && p.is_primary_contact);
+      const parent = sp ? parents.find(p => p.id === sp.parent_id) : null;
+
+      return {
+        id: item.id,
+        admission_no: item.admission_no,
+        first_name: item.first_name,
+        last_name: item.last_name,
+        middle_name: item.middle_name,
+        dob: item.dob,
+        gender: item.gender,
+        photo_path: item.photo_path,
+        class_id: enr?.class_id || null,
+        class_name: null,
+        section_id: enr?.section_id || null,
+        section_name: null,
+        primary_parent_name: parent?.full_name || null,
+        primary_parent_phone: parent?.phone || null,
+        fee_status: null,
+        transport_route: null,
+        documents_pending_count: 0,
+        status: item.status,
+      };
+    });
 
     return {
       response: {
@@ -657,6 +715,17 @@ export async function updateStudent(
     if (index !== -1) {
       students[index] = updatedStudent;
       localStorage.setItem(cacheKey, JSON.stringify(students));
+      await logAudit({
+        school_id: schoolId,
+        actor_id: actorId,
+        actor_role: actorRole,
+        entity_type: "student",
+        entity_id: studentId,
+        action: "update",
+        before: currentStudent as unknown as Record<string, unknown>,
+        after: updatedStudent as unknown as Record<string, unknown>,
+        reason: "Student profile updated",
+      });
       return { student: updatedStudent };
     }
     return { error: "Student not found" };
@@ -1212,7 +1281,7 @@ async function getStudentEnrollments(schoolId: string, studentId: string): Promi
   }
 }
 
-async function getStudentSiblings(schoolId: string, studentId: string): Promise<{ siblings?: StudentSibling[]; error?: string }> {
+export async function getStudentSiblings(schoolId: string, studentId: string): Promise<{ siblings?: StudentSibling[]; error?: string }> {
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
@@ -1224,7 +1293,34 @@ async function getStudentSiblings(schoolId: string, studentId: string): Promise<
       return { error: String(err) };
     }
   }
-  return { siblings: [] };
+  try {
+    const spKey = getStudentParentsCacheKey(schoolId);
+    const spCached = localStorage.getItem(spKey);
+    const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+    const myParentIds = studentParents.filter(sp => sp.student_id === studentId).map(sp => sp.parent_id);
+    if (myParentIds.length === 0) return { siblings: [] };
+    
+    const siblingStudentIds = studentParents
+      .filter(sp => sp.student_id !== studentId && myParentIds.includes(sp.parent_id))
+      .map(sp => sp.student_id);
+      
+    const studentsKey = getStudentsCacheKey(schoolId);
+    const studentsCached = localStorage.getItem(studentsKey);
+    const students: Student[] = studentsCached ? JSON.parse(studentsCached) : [];
+    
+    const siblings: StudentSibling[] = students
+      .filter(s => siblingStudentIds.includes(s.id) && !s.deleted_at)
+      .map(s => ({
+        student_id: studentId,
+        sibling_id: s.id,
+        sibling_first_name: s.first_name,
+        sibling_last_name: s.last_name,
+        sibling_admission_no: s.admission_no,
+      }));
+    return { siblings };
+  } catch {
+    return { siblings: [] };
+  }
 }
 
 /**
