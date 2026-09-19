@@ -669,20 +669,40 @@ export interface StudentProfile extends Student {
 }
 
 /**
+ * Student sensitive data (AES-256-GCM Aadhaar at rest)
+ */
+export interface StudentSensitive {
+  student_id: string;
+  school_id: string;
+  aadhaar_enc?: Uint8Array | string | null;
+  aadhaar_last4?: string | null;
+  aadhaar_hash?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Duplicate check match
+ */
+export interface DuplicateCheckMatch {
+  id: string;
+  admission_no: string;
+  first_name: string;
+  last_name: string;
+  dob: string;
+  class_name?: string;
+  section_name?: string;
+  status: StudentStatus;
+  match_reason: string;
+}
+
+/**
  * Duplicate check result
  */
 export interface DuplicateCheckResult {
   is_duplicate: boolean;
-  matches: {
-    id: string;
-    admission_no: string;
-    first_name: string;
-    last_name: string;
-    dob: string;
-    class_name?: string;
-    section_name?: string;
-    status: StudentStatus;
-  }[];
+  match_score: number; // 0 - 100
+  matches: DuplicateCheckMatch[];
 }
 
 /**
@@ -695,9 +715,10 @@ export interface ParentLookupResult {
 }
 
 /**
- * Admission wizard payload (all steps)
+ * Admission wizard payload (All 8 steps + skippables)
  */
 export interface AdmissionWizardPayload {
+  // Step 1: Basic info
   step1_basic: {
     photo_path?: string;
     first_name: string;
@@ -709,11 +730,45 @@ export interface AdmissionWizardPayload {
     nationality?: string;
     religion?: string;
     category?: StudentCategory;
-    aadhaar_number?: string;
+    mother_tongue?: string;
     sr_no?: string;
     apaar_id?: string;
   };
-  step2_academic: {
+  // Step 2: Guardian & Family
+  step2_guardian: {
+    father?: ParentInput & {
+      relation: 'father';
+      is_primary_contact?: boolean;
+      is_fee_payer?: boolean;
+      is_emergency_contact?: boolean;
+      can_pickup?: boolean;
+      lives_with?: boolean;
+      whatsapp_consent?: boolean;
+    };
+    mother?: ParentInput & {
+      relation: 'mother';
+      is_primary_contact?: boolean;
+      is_fee_payer?: boolean;
+      is_emergency_contact?: boolean;
+      can_pickup?: boolean;
+      lives_with?: boolean;
+      whatsapp_consent?: boolean;
+    };
+    guardian?: ParentInput & {
+      relation: 'guardian';
+      is_primary_contact?: boolean;
+      is_fee_payer?: boolean;
+      is_emergency_contact?: boolean;
+      can_pickup?: boolean;
+      lives_with?: boolean;
+      whatsapp_consent?: boolean;
+    };
+    current_address: StudentAddressInput;
+    permanent_address?: StudentAddressInput;
+    same_as_current?: boolean;
+  };
+  // Step 3: Academic & Class
+  step3_academic: {
     academic_year_id: string;
     admission_date: string;
     class_id: string;
@@ -723,21 +778,29 @@ export interface AdmissionWizardPayload {
     is_rte: boolean;
     house?: string;
     medium?: string;
+    previous_school?: StudentPreviousSchoolInput;
   };
-  step3_parents: {
-    father?: ParentInput & { relation: 'father'; is_primary_contact?: boolean; is_fee_payer?: boolean; is_emergency_contact?: boolean; can_pickup?: boolean; lives_with?: boolean };
-    mother?: ParentInput & { relation: 'mother'; is_primary_contact?: boolean; is_fee_payer?: boolean; is_emergency_contact?: boolean; can_pickup?: boolean; lives_with?: boolean };
-    guardian?: ParentInput & { relation: 'guardian'; is_primary_contact?: boolean; is_fee_payer?: boolean; is_emergency_contact?: boolean; can_pickup?: boolean; lives_with?: boolean };
+  // Step 4: Documents Vault
+  step4_documents: StudentDocumentInput[];
+  // Step 5: Sensitive / Aadhaar
+  step5_sensitive?: {
+    aadhaar_number?: string;
   };
-  step4_previous_school?: StudentPreviousSchoolInput;
-  step5_address: {
-    current: StudentAddressInput;
-    permanent?: StudentAddressInput;
-    same_as_current?: boolean;
+  // Step 6: Medical (permission gated)
+  step6_medical?: StudentMedicalInput;
+  // Step 7: Transport (optional / Pro plan)
+  step7_transport?: {
+    opt_in: boolean;
+    route_id?: string;
+    stop_id?: string;
+    pickup?: boolean;
+    dropoff?: boolean;
   };
-  step6_achievements: StudentAchievementInput[];
-  step7_documents: StudentDocumentInput[];
-  step8_medical?: StudentMedicalInput;
+  // Step 8: Fee Structure Assignment
+  step8_fee?: {
+    fee_structure_id?: string;
+    discount_concession?: string;
+  };
 }
 
 /**

@@ -94,3 +94,4 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
     </div>
   );
 }
+

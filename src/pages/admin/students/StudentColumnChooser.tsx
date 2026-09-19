@@ -83,3 +83,4 @@ export function StudentColumnChooser({ columns, onChange }: StudentColumnChooser
     </div>
   );
 }
+
