@@ -7,3 +7,4 @@ export * from "./curriculum";
 export * from "./subscription";
 export * from "./website";
 export * from "./staff";
+export * from "./students";

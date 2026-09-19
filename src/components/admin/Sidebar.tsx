@@ -4,7 +4,7 @@ import {
   LayoutDashboard,
   Users,
   CalendarCheck,
-  IndianRupee,
+  WalletCards,
   Briefcase,
   CalendarDays,
   GraduationCap,
@@ -13,6 +13,7 @@ import {
   Settings,
   X,
   HelpCircle,
+  IndianRupee,
 } from "lucide-react";
 import { MyZkoolLogo } from "../MyZkoolLogo";
 import type { School } from "../../types/school";
