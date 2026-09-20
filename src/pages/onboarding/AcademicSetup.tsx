@@ -18,9 +18,7 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertCircle,
-  Clock,
   Sparkles,
-  Info,
   Building2,
   RefreshCw,
 } from "lucide-react";
@@ -249,7 +247,7 @@ export default function AcademicSetup() {
       const result = await saveAcademicSetup({
         schoolId: school.id,
         userId: user.id,
-        input: formData,
+        input: { ...formData, is_current: true },
         existingAcademicYearId: existingYearId,
       });
 
@@ -327,9 +325,6 @@ export default function AcademicSetup() {
     );
   }
 
-  const isEditingExisting = Boolean(existingYearId);
-  const isAlreadyPastStep2 = Boolean(school && school.onboarding_step > 2);
-
   return (
     <OnboardingLayout
       currentStepNumber={2}
@@ -338,55 +333,6 @@ export default function AcademicSetup() {
       subtitle="Establish your school's active academic calendar, start and end dates, and cycle label."
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-6">
-        {/* Step 1 Completion Banner & Active School Confirmation */}
-        <div className="p-3.5 rounded-xl bg-emerald-50/90 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-900">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>
-              Configuring calendar for{" "}
-              <strong className="font-semibold text-emerald-950">
-                {school.name}
-              </strong>{" "}
-              <code className="text-[11px] bg-emerald-100/70 text-emerald-800 px-1.5 py-0.5 rounded ml-1">
-                {school.subdomain}.myzkool.com
-              </code>
-            </span>
-          </div>
-          <Link
-            to="/onboarding/school"
-            className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 hover:underline hidden sm:inline"
-            title="Edit school profile"
-          >
-            Edit School Profile
-          </Link>
-        </div>
-
-        {/* Informational Guidance */}
-        <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-100 flex items-start gap-2.5 text-xs text-[#2158E0]">
-          <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#2158E0]" />
-          <p className="text-[#3b4766] leading-relaxed">
-            This academic calendar anchors all core ERP operations: student attendance records, fee collections, grading terms, and class promotions. You can customize dates at any time.
-          </p>
-        </div>
-
-        {/* Resume Notice if Editing */}
-        {isEditingExisting && (
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs text-[#5B6478]">
-            <span className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-[#2158E0]" />
-              Previously saved academic calendar loaded. Updating will save changes in-place.
-            </span>
-            {isAlreadyPastStep2 && (
-              <Link
-                to="/onboarding/classes"
-                className="text-[11px] font-semibold text-[#2158E0] hover:underline"
-              >
-                Skip to Step 3 →
-              </Link>
-            )}
-          </div>
-        )}
-
         {/* Global Error Alert */}
         {submitError && (
           <div
@@ -396,7 +342,7 @@ export default function AcademicSetup() {
           >
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <span className="font-semibold">Validation Error</span>
+              <span className="font-semibold">Validation error</span>
               <p>{submitError}</p>
             </div>
           </div>
@@ -405,9 +351,9 @@ export default function AcademicSetup() {
         {/* Presets Bar */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-[#5B6478] flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-[#5B6478] flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-[#2158E0]" />
-              Quick Calendar Presets
+              Quick calendar presets
             </label>
             <span className="text-[11px] text-[#94A3B8]">
               Click to prefill dates (fully customizable)
@@ -445,136 +391,11 @@ export default function AcademicSetup() {
           </div>
         </div>
 
-        {/* SECTION 1: Academic Year Range & Label */}
+        {/* Calendar Dates */}
         <div className="bg-[#F8FAFC]/80 rounded-xl p-4 sm:p-5 border border-[#E6EAF3] space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-[#141A2E] flex items-center gap-2">
+          <h2 className="text-xs font-bold text-[#141A2E] flex items-center gap-2">
             <Calendar className="w-4 h-4 text-[#2158E0]" />
-            1. Academic Year
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Start Year */}
-            <div>
-              <label
-                htmlFor="start_year"
-                className="block text-xs font-semibold text-[#141A2E] mb-1.5"
-              >
-                Start Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                id="start_year"
-                name="start_year"
-                min={1990}
-                max={2100}
-                value={formData.start_year || ""}
-                onChange={(e) => handleStartYearChange(parseInt(e.target.value, 10))}
-                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-none focus:ring-2 ${
-                  errors.start_year
-                    ? "border-red-300 focus:ring-red-200"
-                    : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
-                }`}
-                placeholder="2026"
-                required
-              />
-              {errors.start_year ? (
-                <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3 shrink-0" /> {errors.start_year}
-                </p>
-              ) : (
-                <p className="text-[11px] text-[#5B6478] mt-1">
-                  Calendar year in which this academic cycle commences.
-                </p>
-              )}
-            </div>
-
-            {/* End Year */}
-            <div>
-              <label
-                htmlFor="end_year"
-                className="block text-xs font-semibold text-[#141A2E] mb-1.5"
-              >
-                End Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                id="end_year"
-                name="end_year"
-                min={1990}
-                max={2100}
-                value={formData.end_year || ""}
-                onChange={(e) => handleEndYearChange(parseInt(e.target.value, 10))}
-                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-none focus:ring-2 ${
-                  errors.end_year
-                    ? "border-red-300 focus:ring-red-200"
-                    : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
-                }`}
-                placeholder="2027"
-                required
-              />
-              {errors.end_year ? (
-                <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3 shrink-0" /> {errors.end_year}
-                </p>
-              ) : (
-                <p className="text-[11px] text-[#5B6478] mt-1">
-                  Calendar year in which this academic cycle concludes.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Academic Year Label */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="academic_year_label"
-                className="block text-xs font-semibold text-[#141A2E]"
-              >
-                Academic Year Display Label <span className="text-red-500">*</span>
-              </label>
-              {isCustomLabel && (
-                <button
-                  type="button"
-                  onClick={handleResetLabel}
-                  className="inline-flex items-center gap-1 text-[11px] text-[#2158E0] hover:underline"
-                  title="Reset to default format"
-                >
-                  <RefreshCw className="w-3 h-3" /> Auto-sync with years
-                </button>
-              )}
-            </div>
-            <input
-              type="text"
-              id="academic_year_label"
-              name="label"
-              value={formData.label}
-              onChange={(e) => handleLabelChange(e.target.value)}
-              className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] font-medium transition-colors focus:outline-none focus:ring-2 ${
-                errors.label
-                  ? "border-red-300 focus:ring-red-200"
-                  : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
-              }`}
-              placeholder="e.g. 2026–2027 or AY 2026-27"
-              required
-            />
-            {errors.label ? (
-              <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3 shrink-0" /> {errors.label}
-              </p>
-            ) : (
-              <p className="text-[11px] text-[#5B6478] mt-1">
-                How this academic year will appear on report cards, fee receipts, and official transcripts.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION 2: Calendar Dates */}
-        <div className="bg-[#F8FAFC]/80 rounded-xl p-4 sm:p-5 border border-[#E6EAF3] space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-[#141A2E] flex items-center gap-2">
-            <Clock className="w-4 h-4 text-[#2158E0]" />
-            2. Calendar Dates
+            Calendar dates
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -584,7 +405,7 @@ export default function AcademicSetup() {
                 htmlFor="start_date"
                 className="block text-xs font-semibold text-[#141A2E] mb-1.5"
               >
-                Academic Year Start Date <span className="text-red-500">*</span>
+                Academic year start date <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
@@ -602,7 +423,7 @@ export default function AcademicSetup() {
                     }));
                   }
                 }}
-                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-none focus:ring-2 ${
+                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-hidden focus:ring-2 ${
                   errors.start_date
                     ? "border-red-300 focus:ring-red-200"
                     : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
@@ -626,7 +447,7 @@ export default function AcademicSetup() {
                 htmlFor="end_date"
                 className="block text-xs font-semibold text-[#141A2E] mb-1.5"
               >
-                Academic Year End Date <span className="text-red-500">*</span>
+                Academic year end date <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
@@ -640,7 +461,7 @@ export default function AcademicSetup() {
                     setErrors((prev) => ({ ...prev, end_date: undefined }));
                   }
                 }}
-                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-none focus:ring-2 ${
+                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-hidden focus:ring-2 ${
                   errors.end_date
                     ? "border-red-300 focus:ring-red-200"
                     : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
@@ -660,30 +481,122 @@ export default function AcademicSetup() {
           </div>
         </div>
 
-        {/* SECTION 3: Current Academic Year Toggle */}
-        <div className="p-4 rounded-xl border border-[#E6EAF3] bg-white flex items-start gap-3">
-          <input
-            type="checkbox"
-            id="is_current_checkbox"
-            name="is_current"
-            checked={formData.is_current}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, is_current: e.target.checked }))
-            }
-            className="w-4 h-4 mt-1 rounded text-[#2158E0] border-[#CBD5E1] focus:ring-[#2158E0]/20"
-          />
-          <div className="text-xs">
-            <label
-              htmlFor="is_current_checkbox"
-              className="font-bold text-[#141A2E] cursor-pointer block"
-            >
-              Set as the current active academic year for {school.name}
-            </label>
-            <p className="text-[#5B6478] mt-0.5">
-              Active academic years serve as the default session for student registrations, attendance registers, timetable slots, and fee structures.
-            </p>
+        {/* Collapsed disclosure for Start year, End year, Label */}
+        <details className="group p-4 rounded-xl border border-[#E6EAF3] bg-white">
+          <summary className="text-xs font-semibold text-[#2158E0] cursor-pointer hover:underline">
+            Customize year label
+          </summary>
+          <div className="pt-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Start Year */}
+              <div>
+                <label
+                  htmlFor="start_year"
+                  className="block text-xs font-semibold text-[#141A2E] mb-1.5"
+                >
+                  Start year <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="start_year"
+                  name="start_year"
+                  min={1990}
+                  max={2100}
+                  value={formData.start_year || ""}
+                  onChange={(e) => handleStartYearChange(parseInt(e.target.value, 10))}
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-hidden focus:ring-2 ${
+                    errors.start_year
+                      ? "border-red-300 focus:ring-red-200"
+                      : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
+                  }`}
+                  placeholder="2026"
+                  required
+                />
+                {errors.start_year && (
+                  <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" /> {errors.start_year}
+                  </p>
+                )}
+              </div>
+
+              {/* End Year */}
+              <div>
+                <label
+                  htmlFor="end_year"
+                  className="block text-xs font-semibold text-[#141A2E] mb-1.5"
+                >
+                  End year <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="end_year"
+                  name="end_year"
+                  min={1990}
+                  max={2100}
+                  value={formData.end_year || ""}
+                  onChange={(e) => handleEndYearChange(parseInt(e.target.value, 10))}
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] transition-colors focus:outline-hidden focus:ring-2 ${
+                    errors.end_year
+                      ? "border-red-300 focus:ring-red-200"
+                      : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
+                  }`}
+                  placeholder="2027"
+                  required
+                />
+                {errors.end_year && (
+                  <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" /> {errors.end_year}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Academic Year Label */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label
+                  htmlFor="academic_year_label"
+                  className="block text-xs font-semibold text-[#141A2E]"
+                >
+                  Academic year display label <span className="text-red-500">*</span>
+                </label>
+                {isCustomLabel && (
+                  <button
+                    type="button"
+                    onClick={handleResetLabel}
+                    className="inline-flex items-center gap-1 text-[11px] text-[#2158E0] hover:underline"
+                    title="Reset to default format"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Auto-sync with years
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                id="academic_year_label"
+                name="label"
+                value={formData.label}
+                onChange={(e) => handleLabelChange(e.target.value)}
+                className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white text-[#141A2E] font-medium transition-colors focus:outline-hidden focus:ring-2 ${
+                  errors.label
+                    ? "border-red-300 focus:ring-red-200"
+                    : "border-[#E6EAF3] focus:border-[#2158E0] focus:ring-[#2158E0]/15"
+                }`}
+                placeholder="e.g. 2026–2027 or AY 2026-27"
+                required
+              />
+              {errors.label ? (
+                <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" /> {errors.label}
+                </p>
+              ) : (
+                <p className="text-[11px] text-[#5B6478] mt-1">
+                  How this academic year will appear on report cards, fee receipts, and official transcripts.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        </details>
 
         {/* Navigation Action Buttons */}
         <div className="pt-4 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-center justify-between gap-3">

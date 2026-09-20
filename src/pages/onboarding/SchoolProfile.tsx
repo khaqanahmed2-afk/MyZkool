@@ -80,7 +80,7 @@ export default function SchoolProfile() {
     contact_phone: "",
     address: "",
     city: "",
-    state: "Delhi / NCR",
+    state: "",
     pin_code: "",
   });
 
@@ -104,7 +104,7 @@ export default function SchoolProfile() {
   const [globalError, setGlobalError] = useState<string | null>(null);
 
   // Debounce ref for subdomain check
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Redirect to /admin if school admin already finished onboarding
   useEffect(() => {
@@ -755,6 +755,7 @@ export default function SchoolProfile() {
                   onChange={handleChange}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-[#E6EAF3] bg-white text-sm text-[#141A2E] hover:border-[#D1D5DB] focus:border-[#2158E0] focus:ring-2 focus:ring-[#2158E0]/15 focus:outline-hidden"
                 >
+                  <option value="">Select state</option>
                   {INDIAN_STATES.map((st) => (
                     <option key={st} value={st}>
                       {st}

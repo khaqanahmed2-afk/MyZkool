@@ -763,7 +763,7 @@ export async function saveClassesSetupProgress({
       await supabase
         .from("profiles")
         .update({
-          current_onboarding_step: "/onboarding/subjects",
+          current_onboarding_step: "/onboarding/subscription",
           updated_at: timestamp,
         })
         .eq("auth_id", userId);
@@ -771,7 +771,7 @@ export async function saveClassesSetupProgress({
       await supabase.auth.updateUser({
         data: {
           onboarding_step: newStep,
-          current_onboarding_step: "/onboarding/subjects",
+          current_onboarding_step: "/onboarding/subscription",
         },
       });
     } catch (err) {

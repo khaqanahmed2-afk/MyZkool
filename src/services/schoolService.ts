@@ -171,7 +171,7 @@ export async function checkSubdomainAvailability(
             return {
               status: "available",
               isAvailable: true,
-              message: "This is your current school address ✓",
+              message: "This is your current school address",
               subdomain,
             };
           }
@@ -187,7 +187,7 @@ export async function checkSubdomainAvailability(
         return {
           status: "available",
           isAvailable: true,
-          message: "Website address is available ✓",
+          message: "Website address is available",
           subdomain,
         };
       }
@@ -225,7 +225,7 @@ export async function checkSubdomainAvailability(
   return {
     status: "available",
     isAvailable: true,
-    message: "Website address is available ✓",
+    message: "Website address is available",
     subdomain,
   };
 }
@@ -499,7 +499,7 @@ export async function completeOnboarding({
         .from("schools")
         .update({
           onboarding_completed: true,
-          onboarding_step: 8,
+          onboarding_step: 6,
           updated_at: timestamp,
         })
         .eq("id", schoolId);
@@ -516,7 +516,7 @@ export async function completeOnboarding({
       await supabase.auth.updateUser({
         data: {
           onboarding_completed: true,
-          onboarding_step: 8,
+          onboarding_step: 6,
           current_onboarding_step: "/admin",
         },
       });
@@ -533,7 +533,7 @@ export async function completeOnboarding({
     if (raw) {
       const parsed = JSON.parse(raw);
       parsed.onboarding_completed = true;
-      parsed.onboarding_step = 8;
+      parsed.onboarding_step = 6;
       parsed.updated_at = timestamp;
       localStorage.setItem(schoolKey, JSON.stringify(parsed));
       updatedSchool = parsed;

@@ -11,7 +11,6 @@ import {
   updateStaffStatus,
   archiveStaff,
   deleteStaff,
-  saveStaffSetupProgress,
   generateEmployeeCode,
   isValidEmail,
   STAFF_CACHE_KEY_PREFIX,
@@ -392,48 +391,8 @@ async function runStaffTests() {
   assert(!crossTenantUpdate.success, "Cross-tenant staff update blocked");
 
   // -----------------------------------------------------------------
-  // 8. Onboarding Progression & Non-Regression
+  // Note: Staff onboarding progress tests removed (staff managed in admin)
   // -----------------------------------------------------------------
-  console.log("\n8. Onboarding Progression & Non-Regression:");
-
-  const schoolKey1 = `myzkool_school_profile_${adminUserId1}`;
-  const mockSchool1 = {
-    id: schoolId1,
-    name: "Greenwood Academy",
-    subdomain: "greenwood",
-    onboarding_step: 7,
-    onboarding_completed: false,
-    created_by: adminUserId1,
-  };
-  localStorage.setItem(schoolKey1, JSON.stringify(mockSchool1));
-
-  const progressRes = await saveStaffSetupProgress({
-    schoolId: schoolId1,
-    userId: adminUserId1,
-  });
-
-  assert(progressRes.success, "Saves staff setup progress successfully");
-
-  const cachedSchool = JSON.parse(localStorage.getItem(schoolKey1) || "{}");
-  assert(
-    cachedSchool.onboarding_step === 8,
-    "Advances onboarding_step to 8 (Complete page)"
-  );
-
-  // Non-regression: If school already completed, step does not decrease
-  cachedSchool.onboarding_step = 8;
-  localStorage.setItem(schoolKey1, JSON.stringify(cachedSchool));
-
-  await saveStaffSetupProgress({
-    schoolId: schoolId1,
-    userId: adminUserId1,
-  });
-
-  const nonRegSchool = JSON.parse(localStorage.getItem(schoolKey1) || "{}");
-  assert(
-    nonRegSchool.onboarding_step === 8,
-    "Non-regression: onboarding_step does not regress below 8"
-  );
 
   // -----------------------------------------------------------------
   // Summary

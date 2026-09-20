@@ -164,3 +164,4 @@ export interface DayBookReportRow {
   collected_by?: string | null;
   status: string;
 }
+

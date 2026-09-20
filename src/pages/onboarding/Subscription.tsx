@@ -21,20 +21,14 @@ import type { School } from "../../types/school";
 import {
   Check,
   ShieldCheck,
-  Zap,
   ArrowRight,
   ArrowLeft,
-  CheckCircle2,
   AlertCircle,
   Loader2,
-  Calendar,
-  CreditCard,
-  Building2,
   Users,
   Sparkles,
   Receipt,
   Clock,
-  HelpCircle,
 } from "lucide-react";
 
 export default function Subscription() {
@@ -55,89 +49,81 @@ export default function Subscription() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [plansError, setPlansError] = useState<string | null>(null);
   const [prerequisiteError, setPrerequisiteError] = useState<{
     msg: string;
     route: string;
     linkText: string;
   } | null>(null);
 
-  // 1. Initial Load: Fetch School & Subscription Plans
-  useEffect(() => {
-    let isMounted = true;
+  const loadData = React.useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setPlansError(null);
 
-    async function loadData() {
-      setIsLoading(true);
-      setErrorMessage(null);
+    try {
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
 
-      try {
-        if (!user) {
-          setIsLoading(false);
-          return;
+      // Fetch Current School
+      const { school: currentSchool, error: schoolErr } = await getSchoolForCurrentUser(
+        user.id,
+        profile?.school_id
+      );
+
+      if (schoolErr || !currentSchool) {
+        setPrerequisiteError({
+          msg: "School profile not found. Please complete Step 1 (School Profile) first.",
+          route: "/onboarding/school",
+          linkText: "Go to Step 1: School Profile",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      setSchool(currentSchool);
+
+      // Fetch Plans
+      const { plans: loadedPlans, error: plansErr } = await getSubscriptionPlans();
+
+      if (plansErr || !loadedPlans || loadedPlans.length === 0) {
+        setPlansError("Failed to load subscription tiers. Please check your connection and try again.");
+      } else {
+        setPlans(loadedPlans);
+      }
+
+      // Fetch Existing Subscription if user is resuming
+      const { subscription: currentSub } = await getCurrentSchoolSubscription(currentSchool.id);
+
+      if (currentSub) {
+        setExistingSubscription(currentSub);
+        if (currentSub.plan?.slug) {
+          setSelectedPlanSlug(currentSub.plan.slug);
         }
-
-        // Fetch Current School
-        const { school: currentSchool, error: schoolErr } = await getSchoolForCurrentUser(
-          user.id,
-          profile?.school_id
-        );
-        if (!isMounted) return;
-
-        if (schoolErr || !currentSchool) {
-          setPrerequisiteError({
-            msg: "School profile not found. Please complete Step 1 (School Profile) first.",
-            route: "/onboarding/school",
-            linkText: "Go to Step 1: School Profile",
-          });
-          setIsLoading(false);
-          return;
-        }
-
-        setSchool(currentSchool);
-
-        // Fetch Plans
-        const { plans: loadedPlans, error: plansErr } = await getSubscriptionPlans();
-        if (!isMounted) return;
-
-        if (plansErr || !loadedPlans || loadedPlans.length === 0) {
-          setErrorMessage("Failed to load subscription tiers. Using default catalog.");
-        } else {
-          setPlans(loadedPlans);
-        }
-
-        // Fetch Existing Subscription if user is resuming
-        const { subscription: currentSub } = await getCurrentSchoolSubscription(currentSchool.id);
-        if (!isMounted) return;
-
-        if (currentSub) {
-          setExistingSubscription(currentSub);
-          if (currentSub.plan?.slug) {
-            setSelectedPlanSlug(currentSub.plan.slug);
-          }
-          if (currentSub.billing_cycle) {
-            setBillingCycle(currentSub.billing_cycle);
-          }
-        }
-      } catch (err) {
-        console.error("Subscription load error:", err);
-        if (isMounted) {
-          setErrorMessage("An unexpected error occurred while loading subscription data.");
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
+        if (currentSub.billing_cycle) {
+          setBillingCycle(currentSub.billing_cycle);
         }
       }
+    } catch (err) {
+      console.error("Subscription load error:", err);
+      setPlansError("An unexpected error occurred while loading subscription data.");
+    } finally {
+      setIsLoading(false);
     }
+  }, [user, profile?.school_id]);
 
+  // 1. Initial Load: Fetch School & Subscription Plans
+  useEffect(() => {
     loadData();
+  }, [loadData]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [user]);
-
-  // Selected Plan Object & Pricing Calculation
-  const selectedPlan = plans.find((p) => p.slug === selectedPlanSlug) || plans[1] || plans[0];
+  // Selected Plan Object & Pricing Calculation (Select by slug 'pro', not array index)
+  const selectedPlan =
+    plans.find((p) => p.slug === selectedPlanSlug) ||
+    plans.find((p) => p.slug === "pro") ||
+    plans[0];
   const pricingCalculation: PlanPriceCalculation | null = selectedPlan
     ? calculatePlanPricing(selectedPlan, billingCycle)
     : null;
@@ -203,9 +189,9 @@ export default function Subscription() {
   if (isLoading) {
     return (
       <OnboardingLayout
-        currentStepNumber={5}
-        completedStepNumbers={[1, 2, 3, 4]}
-        title="Select School Plan & Subscription"
+        currentStepNumber={4}
+        completedStepNumbers={[1, 2, 3]}
+        title="Select school plan"
         subtitle="Choose your school subscription tier and billing cycle."
       >
         <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
@@ -219,13 +205,40 @@ export default function Subscription() {
     );
   }
 
+  // Plans Error State with Try Again
+  if (plansError && plans.length === 0) {
+    return (
+      <OnboardingLayout
+        currentStepNumber={4}
+        completedStepNumbers={[1, 2, 3]}
+        title="Select school plan"
+        subtitle="Choose your school subscription tier and billing cycle."
+      >
+        <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-center space-y-4">
+          <AlertCircle className="w-10 h-10 text-rose-600 mx-auto" />
+          <div>
+            <h2 className="text-base font-bold text-rose-900">Failed to load subscription plans</h2>
+            <p className="text-xs text-rose-700 mt-1">{plansError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={loadData}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1a4ec4] transition-colors cursor-pointer"
+          >
+            <span>Try again</span>
+          </button>
+        </div>
+      </OnboardingLayout>
+    );
+  }
+
   // Prerequisite Error State
   if (prerequisiteError) {
     return (
       <OnboardingLayout
-        currentStepNumber={5}
+        currentStepNumber={4}
         completedStepNumbers={[]}
-        title="Select School Plan & Subscription"
+        title="Select school plan"
         subtitle="Step 1 required before selecting subscription."
       >
         <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center space-y-4">
@@ -245,34 +258,21 @@ export default function Subscription() {
 
   return (
     <OnboardingLayout
-      currentStepNumber={5}
-      completedStepNumbers={[1, 2, 3, 4]}
-      title="Select School Plan & Subscription"
+      currentStepNumber={4}
+      completedStepNumbers={[1, 2, 3]}
+      title="Select school plan"
       subtitle="Activate your 14-day free trial on any tier. Zero upfront payment or credit card required."
     >
       <form onSubmit={handleSubmit} className="space-y-8" id="subscription-selection-form">
-        {/* Prior Steps Success Banner */}
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-800">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>
-              <strong>Steps 1, 2, 3 &amp; 4 Completed:</strong> School profile, academic year, classes, and curriculum configured.
-            </span>
-          </div>
-          <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md bg-emerald-100/80 text-emerald-700 font-medium text-[11px]">
-            Ready for Step 5
-          </span>
-        </div>
-
         {/* Existing Active Subscription Notice (Resume Support) */}
         {existingSubscription && (
           <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#2158E0] shrink-0" />
               <span>
-                <strong>Current Selection Saved:</strong> You have selected the{" "}
+                <strong>Current selection saved:</strong> You have selected the{" "}
                 <strong>{existingSubscription.plan?.name || existingSubscription.plan_id}</strong> tier (
-                {existingSubscription.status === "trialing" ? "14-Day Free Trial" : existingSubscription.status}). You can change tiers or continue to Website Setup.
+                {existingSubscription.status === "trialing" ? "14-day free trial" : existingSubscription.status}). You can change tiers or continue to website setup.
               </span>
             </div>
           </div>
@@ -525,10 +525,7 @@ export default function Subscription() {
                 )}
 
                 <div className="flex justify-between text-[#5B6478] pt-1 border-t border-[#F1F5F9]">
-                  <span className="flex items-center gap-1">
-                    <span>Statutory 18% GST</span>
-                    <span className="text-[10px] text-[#5B6478]">(ITC Eligible B2B Invoice)</span>
-                  </span>
+                  <span>Statutory 18% GST</span>
                   <span>{pricingCalculation.formattedGst}</span>
                 </div>
 
@@ -546,45 +543,22 @@ export default function Subscription() {
             {pricingCalculation.isCustomQuote && (
               <div className="bg-white rounded-xl border border-[#E6EAF3] p-4 text-xs space-y-2">
                 <p className="text-[#141A2E] font-medium">
-                  Custom quote requested for schools with 1,800+ students or multi-branch structures.
-                </p>
-                <p className="text-[#5B6478]">
-                  Our enterprise onboarding team will contact you to configure custom domain mapping, dedicated servers, and statutory state-board reporting. You can proceed directly to Website Setup today.
+                  Schools with more than 1,800 students or multiple branches get a custom quote. Our team will contact you. You can continue setting up today.
                 </p>
               </div>
             )}
-
-            {/* Trust Badges */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] text-[#5B6478]">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Zero Upfront Card</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-[#2158E0] shrink-0" />
-                <span>GST B2B Tax Invoice</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span>UPI / RuPay / Cards</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <LockIcon className="w-3.5 h-3.5 text-[#141A2E] shrink-0" />
-                <span>DPDP Act Compliant</span>
-              </div>
-            </div>
           </div>
         )}
 
         {/* Navigation Buttons */}
         <div className="pt-4 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-center justify-between gap-3">
           <Link
-            to="/onboarding/subjects"
-            id="back-to-subjects-btn"
+            to="/onboarding/classes"
+            id="back-to-classes-btn"
             className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] transition-colors py-2.5 px-3 rounded-lg"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Subjects Setup</span>
+            <span>Back to classes</span>
           </Link>
 
           <button
@@ -596,14 +570,14 @@ export default function Subscription() {
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Activating 14-Day Free Trial...</span>
+                <span>Activating 14-day free trial...</span>
               </>
             ) : (
               <>
                 <span>
                   {pricingCalculation?.isCustomQuote
-                    ? "Confirm Custom Plan & Continue to Website Setup"
-                    : "Activate 14-Day Free Trial & Continue to Website Setup"}
+                    ? "Confirm custom plan and continue to website"
+                    : "Activate 14-day free trial and continue to website"}
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </>
@@ -612,24 +586,5 @@ export default function Subscription() {
         </div>
       </form>
     </OnboardingLayout>
-  );
-}
-
-// Internal Helper for Trust Badge Lock
-function LockIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="w-3.5 h-3.5"
-      {...props}
-    >
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
   );
 }

@@ -772,8 +772,8 @@ export async function saveWebsiteSetupProgress({
         .eq("id", schoolId)
         .maybeSingle();
 
-      const currentStep = currentSchool?.onboarding_step || 6;
-      const newStep = Math.max(currentStep, 7);
+      const currentStep = currentSchool?.onboarding_step || 5;
+      const newStep = Math.max(currentStep, 6);
 
       await supabase
         .from("schools")
@@ -786,7 +786,7 @@ export async function saveWebsiteSetupProgress({
       await supabase
         .from("profiles")
         .update({
-          current_onboarding_step: "/onboarding/staff",
+          current_onboarding_step: "/onboarding/complete",
           updated_at: timestamp,
         })
         .eq("auth_id", userId);
@@ -794,7 +794,7 @@ export async function saveWebsiteSetupProgress({
       await supabase.auth.updateUser({
         data: {
           onboarding_step: newStep,
-          current_onboarding_step: "/onboarding/staff",
+          current_onboarding_step: "/onboarding/complete",
         },
       });
     } catch (err) {
@@ -808,7 +808,7 @@ export async function saveWebsiteSetupProgress({
     const raw = localStorage.getItem(schoolKey);
     if (raw) {
       const cached = JSON.parse(raw);
-      cached.onboarding_step = Math.max(cached.onboarding_step || 6, 7);
+      cached.onboarding_step = Math.max(cached.onboarding_step || 5, 6);
       localStorage.setItem(schoolKey, JSON.stringify(cached));
     }
   } catch {

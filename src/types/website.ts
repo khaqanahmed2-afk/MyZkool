@@ -149,6 +149,13 @@ export const WEBSITE_COLOR_PRESETS: WebsiteColorPreset[] = [
     secondary: "#0F172A",
     accent: "#EA580C",
   },
+  {
+    name: "Modern Slate & Teal",
+    description: "Contemporary, technology-forward focus for progressive academies",
+    primary: "#0F766E",
+    secondary: "#0F172A",
+    accent: "#0284C7",
+  },
 ];
 
 /**

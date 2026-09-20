@@ -431,8 +431,8 @@ export async function saveSubscriptionSetupProgress({
         .eq("id", schoolId)
         .maybeSingle();
 
-      const currentStep = currentSchool?.onboarding_step || 5;
-      const newStep = Math.max(currentStep, 6);
+      const currentStep = currentSchool?.onboarding_step || 4;
+      const newStep = Math.max(currentStep, 5);
 
       await supabase
         .from("schools")
@@ -467,7 +467,7 @@ export async function saveSubscriptionSetupProgress({
     const raw = localStorage.getItem(schoolKey);
     if (raw) {
       const cached = JSON.parse(raw);
-      cached.onboarding_step = Math.max(cached.onboarding_step || 5, 6);
+      cached.onboarding_step = Math.max(cached.onboarding_step || 4, 5);
       localStorage.setItem(schoolKey, JSON.stringify(cached));
     }
   } catch {

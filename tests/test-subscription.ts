@@ -248,14 +248,14 @@ async function runTests() {
   assert(school1Current?.id !== school2Current?.id, "Tenant subscriptions have distinct unique records");
 
   // 7. Onboarding Step Progression & Non-Regression
-  console.log("\n7. Onboarding Progression & Non-Regression (Step 5 to Step 6):");
-  // Set initial step 5
+  console.log("\n7. Onboarding Progression & Non-Regression (Step 4 to Step 5):");
+  // Set initial step 4
   const userKey = `myzkool_school_profile_${testUserId1}`;
   globalThis.localStorage.setItem(
     userKey,
     JSON.stringify({
       id: testSchoolId1,
-      onboarding_step: 5,
+      onboarding_step: 4,
     })
   );
 
@@ -267,10 +267,10 @@ async function runTests() {
   assert(progResult.success, "Advances onboarding progress after subscription setup");
 
   const cachedProfile = JSON.parse(globalThis.localStorage.getItem(userKey) || "{}");
-  assert(cachedProfile.onboarding_step === 6, "Advances school onboarding_step from 5 to 6 (Website Setup)");
+  assert(cachedProfile.onboarding_step === 5, "Advances school onboarding_step from 4 to 5 (Website Setup)");
 
-  // Non-regression test: If school is already at step 7, updating subscription should not regress to 6
-  cachedProfile.onboarding_step = 7;
+  // Non-regression test: If school is already at step 6, updating subscription should not regress to 5
+  cachedProfile.onboarding_step = 6;
   globalThis.localStorage.setItem(userKey, JSON.stringify(cachedProfile));
 
   await saveSubscriptionSetupProgress({
@@ -280,8 +280,8 @@ async function runTests() {
 
   const nonRegressedProfile = JSON.parse(globalThis.localStorage.getItem(userKey) || "{}");
   assert(
-    nonRegressedProfile.onboarding_step === 7,
-    "Preserves higher onboarding_step (7) when updating Step 5 (non-regression)"
+    nonRegressedProfile.onboarding_step === 6,
+    "Preserves higher onboarding_step (6) when updating Step 4 (non-regression)"
   );
 
   // 8. Currency Formatting Helpers

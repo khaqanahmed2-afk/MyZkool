@@ -349,7 +349,7 @@ export default function ClassesSections() {
       }
 
       await refreshSession();
-      navigate("/onboarding/subjects");
+      navigate("/onboarding/subscription");
     } catch (err) {
       console.error("Progression error:", err);
       setActionError("Failed to save progress. Please try again.");
@@ -727,7 +727,7 @@ export default function ClassesSections() {
               </>
             ) : (
               <>
-                <span>Continue to Subjects</span>
+                <span>Continue to plan</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -902,7 +902,7 @@ export default function ClassesSections() {
               </h3>
               <p className="text-xs text-[#5B6478] mt-1">
                 {deleteTarget.type === "class"
-                  ? "This will delete this class and all associated sections and subject assignments. You can always re-create it later."
+                  ? "This will delete this class and its sections."
                   : `This will remove Section ${deleteTarget.sectionName} from ${deleteTarget.className}.`}
               </p>
             </div>

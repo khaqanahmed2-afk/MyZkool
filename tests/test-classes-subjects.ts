@@ -23,7 +23,6 @@ import {
   assignSubjectToClass,
   removeSubjectFromClass,
   assignSubjectToMultipleClasses,
-  saveSubjectsSetupProgress,
 } from "../src/services/subjectService";
 
 // Mock localStorage if in Node environment
@@ -504,24 +503,16 @@ async function runTests() {
     "Advances school onboarding_step from Step 3 to Step 4"
   );
 
-  // Progress Step 4 (Subjects) -> Step 5 (Subscription)
-  const saveSubjectsStep = await saveSubjectsSetupProgress({
-    schoolId: schoolA,
-    userId: userAdminA,
-    academicYearId: academicYearA1,
-    classIds: [class1Id, class2Id],
-  });
-  assert(saveSubjectsStep.success === true, "Step 4 (Subjects) saves progress");
-
-  cachedSchool = JSON.parse(
-    localStorage.getItem(`myzkool_school_profile_${userAdminA}`)!
-  );
-  assert(
-    cachedSchool.onboarding_step === 5,
-    "Advances school onboarding_step from Step 4 to Step 5"
+  // Non-regression: if user returns to Step 3 while on Step 5, does NOT regress step back to 4
+  localStorage.setItem(
+    `myzkool_school_profile_${userAdminA}`,
+    JSON.stringify({
+      id: schoolA,
+      name: "St. Jude Academy",
+      onboarding_step: 5,
+    })
   );
 
-  // Non-regression: if user returns to Step 3 while on Step 5, does NOT regress step back to 3
   await saveClassesSetupProgress({
     schoolId: schoolA,
     userId: userAdminA,

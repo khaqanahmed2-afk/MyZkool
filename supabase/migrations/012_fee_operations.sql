@@ -87,8 +87,9 @@ SELECT
 FROM public.fee_receipts r
 JOIN public.fee_payments p ON p.receipt_id = r.id
 JOIN public.students s ON s.id = r.student_id
-LEFT JOIN public.classes c ON c.id = s.class_id
-WHERE r.deleted_at IS NULL;
+LEFT JOIN public.student_enrollments enr ON enr.student_id = r.student_id AND enr.academic_year_id = r.academic_year_id
+LEFT JOIN public.classes c ON c.id = COALESCE(enr.class_id, s.admission_class_id)
+WHERE s.deleted_at IS NULL;
 
 -- 2. Outstanding & Defaulters View
 CREATE OR REPLACE VIEW public.v_fee_outstanding WITH (security_invoker = true) AS
@@ -117,8 +118,9 @@ SELECT
   END AS aging_bucket
 FROM public.student_dues d
 JOIN public.students s ON s.id = d.student_id
-LEFT JOIN public.classes c ON c.id = s.class_id
-LEFT JOIN public.sections sec ON sec.id = s.section_id
+LEFT JOIN public.student_enrollments enr ON enr.student_id = d.student_id AND enr.academic_year_id = d.academic_year_id
+LEFT JOIN public.classes c ON c.id = COALESCE(enr.class_id, s.admission_class_id)
+LEFT JOIN public.sections sec ON sec.id = enr.section_id
 WHERE d.status IN ('pending', 'partial')
   AND d.balance_paise > 0
   AND s.deleted_at IS NULL
@@ -141,8 +143,10 @@ SELECT
   d.created_at
 FROM public.student_dues d
 JOIN public.students s ON s.id = d.student_id
-LEFT JOIN public.classes c ON c.id = s.class_id
-WHERE d.concession_paise > 0;
+LEFT JOIN public.student_enrollments enr ON enr.student_id = d.student_id AND enr.academic_year_id = d.academic_year_id
+LEFT JOIN public.classes c ON c.id = COALESCE(enr.class_id, s.admission_class_id)
+WHERE d.concession_paise > 0
+  AND s.deleted_at IS NULL;
 
 -- 4. Cancelled Receipts View
 CREATE OR REPLACE VIEW public.v_fee_cancelled_receipts WITH (security_invoker = true) AS
@@ -175,3 +179,4 @@ CREATE POLICY "fee_followups_school" ON public.fee_followups
 
 CREATE POLICY "fee_refunds_school" ON public.fee_refunds
   FOR ALL USING (school_id = current_school_id());
+

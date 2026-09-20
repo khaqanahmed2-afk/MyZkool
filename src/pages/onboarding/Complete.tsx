@@ -8,35 +8,28 @@ import {
 } from "../../services/schoolService";
 import { getCurrentAcademicYear } from "../../services/academicService";
 import { getClassesWithSections } from "../../services/classSectionService";
-import { getSubjects } from "../../services/subjectService";
 import { getSchoolSubscription } from "../../services/subscriptionService";
 import {
   getSchoolWebsite,
   formatSchoolWebsiteUrl,
   formatParentPortalUrl,
 } from "../../services/websiteService";
-import { getStaff } from "../../services/staffService";
 import type { School } from "../../types/school";
 import type { AcademicYear } from "../../types/academic";
 import type { SchoolClass } from "../../types/curriculum";
-import type { Subject } from "../../types/curriculum";
 import type { SchoolSubscription } from "../../types/subscription";
 import type { SchoolWebsite } from "../../types/website";
-import type { StaffMember } from "../../types/staff";
 import {
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
   School as SchoolIcon,
   Calendar,
-  BookOpen,
   CreditCard,
   Globe,
-  Users,
   ExternalLink,
   Copy,
   Check,
-  ShieldCheck,
   Sparkles,
   Loader2,
   AlertCircle,
@@ -44,17 +37,15 @@ import {
 } from "lucide-react";
 
 export default function Complete() {
-  const { user, refreshSession } = useAuth();
+  const { user, profile, refreshSession } = useAuth();
   const navigate = useNavigate();
 
   // Core Data State
   const [school, setSchool] = useState<School | null>(null);
   const [academicYear, setAcademicYear] = useState<AcademicYear | null>(null);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [subscription, setSubscription] = useState<SchoolSubscription | null>(null);
   const [website, setWebsite] = useState<SchoolWebsite | null>(null);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
 
   // UI State
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -73,13 +64,13 @@ export default function Complete() {
       try {
         // 1. Fetch School
         const { school: currentSchool, error: schoolErr } =
-          await getSchoolForCurrentUser(user.id);
+          await getSchoolForCurrentUser(user.id, profile?.school_id);
 
         if (!isMounted) return;
 
         if (schoolErr || !currentSchool) {
           setErrorMessage(
-            "School profile not found. Please complete Step 1: School Profile first."
+            "School profile not found. Please complete Step 1: School profile first."
           );
           setIsLoading(false);
           return;
@@ -94,18 +85,12 @@ export default function Complete() {
         if (isMounted && currentYear) {
           setAcademicYear(currentYear);
 
-          // 3. Fetch Classes & Subjects with year
+          // 3. Fetch Classes with year
           const { classes: classList } = await getClassesWithSections(
             currentSchool.id,
             currentYear.id
           );
           if (isMounted && classList) setClasses(classList);
-
-          const { subjects: subjectList } = await getSubjects(
-            currentSchool.id,
-            currentYear.id
-          );
-          if (isMounted && subjectList) setSubjects(subjectList);
         }
 
         // 4. Fetch Subscription
@@ -119,10 +104,6 @@ export default function Complete() {
           currentSchool.id
         );
         if (isMounted && currentWeb) setWebsite(currentWeb);
-
-        // 6. Fetch Staff
-        const { staff: staffList } = await getStaff(currentSchool.id);
-        if (isMounted && staffList) setStaff(staffList);
       } catch (err: unknown) {
         if (!isMounted) return;
         const msg =
@@ -138,7 +119,7 @@ export default function Complete() {
     return () => {
       isMounted = false;
     };
-  }, [user]);
+  }, [user, profile?.school_id]);
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -185,17 +166,17 @@ export default function Complete() {
   if (!school) {
     return (
       <OnboardingLayout
-        currentStepNumber={8}
-        completedStepNumbers={[1, 2, 3, 4, 5, 6, 7]}
-        title="Your School Is Ready"
-        subtitle="Onboarding Summary"
+        currentStepNumber={6}
+        completedStepNumbers={[1, 2, 3, 4, 5]}
+        title="Your school is ready"
+        subtitle="Onboarding summary"
       >
         <div className="text-center py-8">
           <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-3">
             <AlertCircle className="w-6 h-6" />
           </div>
           <h2 className="text-base font-bold text-[#141A2E] mb-1">
-            Setup Incomplete
+            Setup incomplete
           </h2>
           <p className="text-xs text-[#5B6478] mb-5">
             {errorMessage || "School record not found. Please restart onboarding."}
@@ -218,15 +199,13 @@ export default function Complete() {
     (acc, curr) => acc + (curr.sections?.length || 0),
     0
   );
-  const teacherCount = staff.filter((s) => s.role === "teacher" && s.status !== "archived").length;
-  const accountantCount = staff.filter((s) => s.role === "accountant" && s.status !== "archived").length;
 
   return (
     <OnboardingLayout
-      currentStepNumber={8}
-      completedStepNumbers={[1, 2, 3, 4, 5, 6, 7]}
-      title="Your School Is Ready"
-      subtitle="Congratulations! Your school workspace, academic structure, website, and staff directory are successfully configured."
+      currentStepNumber={6}
+      completedStepNumbers={[1, 2, 3, 4, 5]}
+      title="Your school is ready"
+      subtitle="Congratulations! Your school workspace, academic structure, and website are configured."
     >
       <div className="space-y-8">
         {/* Error Banner */}
@@ -253,11 +232,11 @@ export default function Complete() {
                     {school.name}
                   </h2>
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> Ready for Launch
+                    <Sparkles className="w-3 h-3" /> Ready for launch
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 mt-1 max-w-xl">
-                  Your tenant-isolated database, academic year, curriculum, public website, and administrative controls are fully operational.
+                  Your academic calendar, class structures, plan subscription, and public website are fully configured.
                 </p>
               </div>
             </div>
@@ -272,12 +251,12 @@ export default function Complete() {
               {isLaunching ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Launching Workspace...</span>
+                  <span>Launching workspace...</span>
                 </>
               ) : (
                 <>
                   <LayoutDashboard className="w-4 h-4" />
-                  <span>Launch Admin Dashboard</span>
+                  <span>Launch admin dashboard</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -285,43 +264,31 @@ export default function Complete() {
           </div>
         </div>
 
-        {/* 8 Verified Milestones Checklist */}
+        {/* 5 Verified Milestones Checklist */}
         <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[#5B6478] mb-3">
-            Onboarding Milestones Completed
+          <h3 className="text-xs font-semibold text-[#5B6478] mb-3">
+            Onboarding milestones completed
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
             {[
-              { title: "1. School Profile", desc: school.subdomain + ".myzkool.com" },
+              { title: "1. School profile", desc: school.subdomain + ".myzkool.com" },
               {
-                title: "2. Academic Year",
+                title: "2. Academic year",
                 desc: academicYear
                   ? `${academicYear.start_year} – ${academicYear.end_year}`
                   : "Configured",
               },
               {
-                title: "3. Classes & Sections",
-                desc: `${classes.length} Classes · ${totalSections} Sections`,
+                title: "3. Classes",
+                desc: `${classes.length} classes · ${totalSections} sections`,
               },
               {
-                title: "4. Subjects Library",
-                desc: `${subjects.length} Subjects Defined`,
+                title: "4. Plan",
+                desc: subscription?.plan?.name || "Professional",
               },
               {
-                title: "5. Subscription",
-                desc: subscription?.plan?.name || "14-Day Free Trial",
-              },
-              {
-                title: "6. School Website",
-                desc: website?.published ? "Published" : "Draft Prepared",
-              },
-              {
-                title: "7. Staff Directory",
-                desc: `${staff.length} Staff Enrolled`,
-              },
-              {
-                title: "8. Admin Workspace",
-                desc: "100% Ready",
+                title: "5. School website",
+                desc: website?.published ? "Published" : "Draft prepared",
               },
             ].map((milestone, idx) => (
               <div
@@ -353,37 +320,37 @@ export default function Complete() {
                 <SchoolIcon className="w-4 h-4" />
               </div>
               <h3 className="text-xs font-bold text-[#141A2E]">
-                School Profile &amp; Location
+                School profile &amp; location
               </h3>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Institution Name</span>
+                <span className="text-[#5B6478] block text-[11px]">Institution name</span>
                 <strong className="text-[#141A2E] font-semibold block truncate">
                   {school.name}
                 </strong>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Affiliation Board</span>
+                <span className="text-[#5B6478] block text-[11px]">Affiliation board</span>
                 <strong className="text-[#141A2E] font-semibold block truncate">
                   {school.affiliation_board || "Standard Board"}
                 </strong>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Official Email</span>
+                <span className="text-[#5B6478] block text-[11px]">Official email</span>
                 <strong className="text-[#141A2E] font-semibold block truncate">
                   {school.official_email}
                 </strong>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Contact Phone</span>
+                <span className="text-[#5B6478] block text-[11px]">Contact phone</span>
                 <strong className="text-[#141A2E] font-semibold block truncate">
                   {school.contact_phone || "—"}
                 </strong>
               </div>
               <div className="col-span-2">
-                <span className="text-[#5B6478] block text-[11px]">Campus Address</span>
+                <span className="text-[#5B6478] block text-[11px]">Campus address</span>
                 <p className="text-[#141A2E] text-[11px] truncate">
                   {school.address ? `${school.address}, ${school.city}, ${school.state}` : "Configured"}
                 </p>
@@ -391,40 +358,40 @@ export default function Complete() {
             </div>
           </div>
 
-          {/* Card 2: Academic & Curriculum */}
+          {/* Card 2: Academic & Classes */}
           <div className="p-5 rounded-2xl bg-white border border-[#E6EAF3] shadow-xs space-y-3">
             <div className="flex items-center gap-2 pb-2 border-b border-[#F1F5F9]">
               <div className="w-7 h-7 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center">
                 <Calendar className="w-4 h-4" />
               </div>
               <h3 className="text-xs font-bold text-[#141A2E]">
-                Academic Year &amp; Curriculum
+                Academic year &amp; classes
               </h3>
             </div>
 
             <div className="grid grid-cols-3 gap-3 text-xs">
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Active Academic Year</span>
+                <span className="text-[#5B6478] block text-[11px]">Active academic year</span>
                 <strong className="text-[#141A2E] font-semibold block">
                   {academicYear ? `${academicYear.start_year} – ${academicYear.end_year}` : "2026 – 2027"}
                 </strong>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Classes &amp; Grades</span>
+                <span className="text-[#5B6478] block text-[11px]">Classes &amp; grades</span>
                 <strong className="text-[#141A2E] font-semibold block">
                   {classes.length} Classes
                 </strong>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Total Sections</span>
+                <span className="text-[#5B6478] block text-[11px]">Total sections</span>
                 <strong className="text-[#141A2E] font-semibold block">
                   {totalSections} Sections
                 </strong>
               </div>
               <div className="col-span-3 pt-1 border-t border-[#F1F5F9]">
-                <span className="text-[#5B6478] block text-[11px]">Curriculum Library</span>
+                <span className="text-[#5B6478] block text-[11px]">Academic cycle label</span>
                 <p className="text-[#141A2E] text-xs font-medium mt-0.5">
-                  {subjects.length} Core &amp; Elective Subjects assigned across grade levels.
+                  {academicYear?.label || "Annual Academic Session"}
                 </p>
               </div>
             </div>
@@ -438,7 +405,7 @@ export default function Complete() {
                   <Globe className="w-4 h-4" />
                 </div>
                 <h3 className="text-xs font-bold text-[#141A2E]">
-                  Public Website &amp; Portal
+                  Public website &amp; portal
                 </h3>
               </div>
               <span
@@ -448,14 +415,16 @@ export default function Complete() {
                     : "bg-amber-50 text-amber-700 border border-amber-200"
                 }`}
               >
-                {website?.published ? "Published" : "Draft Mode"}
+                {website?.published ? "Published" : "Draft mode"}
               </span>
             </div>
 
             <div className="space-y-2.5 text-xs">
               <div>
                 <span className="text-[#5B6478] block text-[11px] mb-1">
-                  Public Website Address
+                  {website?.published
+                    ? "Public website address"
+                    : "Your website address (goes live when you publish)"}
                 </span>
                 <div className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-lg font-mono text-xs">
                   <span className="truncate flex-1 text-[#141A2E] font-medium">
@@ -487,7 +456,7 @@ export default function Complete() {
 
               <div>
                 <span className="text-[#5B6478] block text-[11px] mb-1">
-                  Separate Parent Portal URL
+                  Parent portal URL
                 </span>
                 <div className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-lg font-mono text-xs">
                   <span className="truncate flex-1 text-[#141A2E] font-medium">
@@ -510,65 +479,90 @@ export default function Complete() {
             </div>
           </div>
 
-          {/* Card 4: Plan, Subscription & Staff */}
+          {/* Card 4: Subscription Plan */}
           <div className="p-5 rounded-2xl bg-white border border-[#E6EAF3] shadow-xs space-y-3">
             <div className="flex items-center gap-2 pb-2 border-b border-[#F1F5F9]">
               <div className="w-7 h-7 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center">
                 <CreditCard className="w-4 h-4" />
               </div>
               <h3 className="text-xs font-bold text-[#141A2E]">
-                Subscription Plan &amp; Staff
+                Subscription plan
               </h3>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Selected Plan</span>
+                <span className="text-[#5B6478] block text-[11px]">Selected plan</span>
                 <strong className="text-[#141A2E] font-semibold block truncate">
                   {subscription?.plan?.name || "Professional"}
                 </strong>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Trial Status</span>
+                <span className="text-[#5B6478] block text-[11px]">Trial status</span>
                 <span className="text-emerald-700 font-semibold block text-xs">
-                  14-Day Free Trial Active
+                  14-Day free trial active
                 </span>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Billing Cycle</span>
+                <span className="text-[#5B6478] block text-[11px]">Billing cycle</span>
                 <span className="text-[#141A2E] font-medium capitalize block">
                   {subscription?.billing_cycle || "Monthly"}
                 </span>
               </div>
               <div>
-                <span className="text-[#5B6478] block text-[11px]">Staff Roster</span>
-                <span className="text-[#141A2E] font-semibold block">
-                  {staff.length} Members ({teacherCount} T / {accountantCount} A)
+                <span className="text-[#5B6478] block text-[11px]">Platform status</span>
+                <span className="text-emerald-700 font-semibold block">
+                  Ready for school launch
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Security & Multi-Tenant Isolation Callout */}
-        <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E6EAF3] flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2 text-xs text-[#5B6478]">
-            <ShieldCheck className="w-4 h-4 text-[#10B981]" />
-            <span>Strict multi-tenant isolation enforced via PostgreSQL Row-Level Security (RLS)</span>
+        {/* Next in your dashboard */}
+        <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 sm:p-6 shadow-xs space-y-3">
+          <h3 className="text-xs font-bold text-[#141A2E] flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#2158E0]" />
+            Next in your dashboard
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+              <span className="font-semibold text-[#141A2E] block mb-1">Add subjects</span>
+              <p className="text-[#5B6478] text-[11px] leading-relaxed">
+                Configure curriculum and assign subject teachers from academics.
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+              <span className="font-semibold text-[#141A2E] block mb-1">Add staff</span>
+              <p className="text-[#5B6478] text-[11px] leading-relaxed">
+                Invite teachers, accountants, and staff members to your school workspace.
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-blue-50/50 border border-blue-100 flex flex-col justify-between">
+              <div>
+                <span className="font-semibold text-[#141A2E] block mb-1">Admit students</span>
+                <p className="text-[#5B6478] text-[11px] leading-relaxed mb-2">
+                  Begin student admissions and generate admission registers.
+                </p>
+              </div>
+              <Link
+                to="/admin/students/new"
+                className="text-[11px] font-semibold text-[#2158E0] hover:underline flex items-center gap-1"
+              >
+                Admit student <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
-          <span className="font-mono text-[11px] text-[#475569] bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
-            school_id: {school.id.slice(0, 8)}...
-          </span>
         </div>
 
         {/* Final Completion Action Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-[#E6EAF3]">
           <Link
-            to="/onboarding/staff"
+            to="/onboarding/website"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] px-4 py-2.5 rounded-full hover:bg-[#F1F5F9] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Previous: Staff Setup</span>
+            <span>Back to website</span>
           </Link>
 
           <button
@@ -581,12 +575,12 @@ export default function Complete() {
             {isLaunching ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Launching Admin Workspace...</span>
+                <span>Launching admin workspace...</span>
               </>
             ) : (
               <>
                 <LayoutDashboard className="w-4 h-4" />
-                <span>Complete Onboarding &amp; Launch Admin Dashboard</span>
+                <span>Launch admin dashboard</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}

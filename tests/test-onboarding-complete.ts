@@ -1,6 +1,6 @@
 /**
  * Test Suite: MyZkool Final Onboarding Completion & Full Pipeline Test
- * Onboarding Step 8 of 8 - Route: /onboarding/complete -> /admin
+ * Onboarding Step 6 of 6 - Route: /onboarding/complete -> /admin
  */
 
 import {
@@ -21,12 +21,11 @@ import {
   createSubject,
   assignSubjectToClass,
   getSubjects,
-  saveSubjectsSetupProgress,
 } from "../src/services/subjectService";
 import {
   selectSubscriptionPlan,
   getSchoolSubscription,
-  saveSubscriptionProgress,
+  saveSubscriptionSetupProgress,
 } from "../src/services/subscriptionService";
 import {
   initializeSchoolWebsite,
@@ -38,7 +37,6 @@ import {
 import {
   createStaff,
   getStaff,
-  saveStaffSetupProgress,
 } from "../src/services/staffService";
 
 // Polyfill localStorage in Node test environment
@@ -71,7 +69,7 @@ function assert(condition: boolean, testName: string, details?: string) {
 
 async function runOnboardingCompleteTests() {
   console.log("\n==========================================================");
-  console.log("MYZKOOL: FULL ONBOARDING PIPELINE & COMPLETION TEST SUITE");
+  console.log("MYZKOOL: FULL ONBOARDING PIPELINE & COMPLETION TEST SUITE (6 STEPS)");
   console.log("==========================================================\n");
 
   localStorage.clear();
@@ -80,9 +78,9 @@ async function runOnboardingCompleteTests() {
   const userEmail = "principal@heritage.edu";
 
   // -----------------------------------------------------------------
-  // Phase 1: End-to-End Onboarding Stages 1 through 8 Progression
+  // Phase 1: End-to-End Onboarding Stages 1 through 6 Progression
   // -----------------------------------------------------------------
-  console.log("1. Full Pipeline Progression (Steps 1 -> 8):");
+  console.log("1. Full Pipeline Progression (Steps 1 -> 6):");
 
   // Step 1: School Profile
   const schoolProfileRes = await saveSchoolProfile({
@@ -104,8 +102,6 @@ async function runOnboardingCompleteTests() {
 
   assert(schoolProfileRes.success && Boolean(schoolProfileRes.school), "Step 1: Creates school profile");
   const school = schoolProfileRes.school!;
-  assert(school.onboarding_step === 2, "Step 1 completes: advances onboarding_step to 2");
-  assert(school.onboarding_completed === false, "onboarding_completed is false during setup");
 
   // Step 2: Academic Setup
   const academicRes = await saveAcademicSetup({
@@ -114,14 +110,14 @@ async function runOnboardingCompleteTests() {
     input: {
       start_year: 2026,
       end_year: 2027,
-      label: "Academic Year 2026-2027",
-      start_date: "2026-06-01",
-      end_date: "2027-05-31",
+      label: "2026–2027",
+      start_date: "2026-04-01",
+      end_date: "2027-03-31",
       is_current: true,
     },
   });
 
-  assert(academicRes.success && Boolean(academicRes.academicYear), "Step 2: Saves academic year");
+  assert(academicRes.success && Boolean(academicRes.academicYear), "Step 2: Configures academic year 2026–2027");
   const academicYear = academicRes.academicYear!;
 
   // Step 3: Classes & Sections
@@ -143,35 +139,13 @@ async function runOnboardingCompleteTests() {
     academicYearId: academicYear.id,
   });
 
-  // Step 4: Subjects / Curriculum
-  const subjectRes = await createSubject({
-    schoolId: school.id,
-    academicYearId: academicYear.id,
-    input: {
-      name: "Mathematics",
-      code: "MATH-10",
-      subject_type: "core",
-    },
-  });
+  const schoolAfterStep3 = await getSchoolForCurrentUser(userId);
+  assert(
+    schoolAfterStep3.school?.onboarding_step === 4,
+    "Step 3 completes: advances onboarding_step to 4"
+  );
 
-  assert(subjectRes.success && Boolean(subjectRes.subject), "Step 4: Creates Mathematics subject");
-  const subject = subjectRes.subject!;
-
-  await assignSubjectToClass({
-    schoolId: school.id,
-    academicYearId: academicYear.id,
-    classId: schoolClass.id,
-    subjectId: subject.id,
-  });
-
-  await saveSubjectsSetupProgress({
-    schoolId: school.id,
-    userId,
-    academicYearId: academicYear.id,
-    classIds: [schoolClass.id],
-  });
-
-  // Step 5: Subscription & Plan Selection
+  // Step 4: Subscription & Plan Selection
   const subRes = await selectSubscriptionPlan({
     schoolId: school.id,
     userId,
@@ -179,51 +153,41 @@ async function runOnboardingCompleteTests() {
     billingCycle: "yearly",
   });
 
-  assert(subRes.success, "Step 5: Selects Pro subscription plan with 14-day trial");
+  assert(subRes.success, "Step 4: Selects Pro subscription plan with 14-day trial");
 
-  // Step 6: Website Setup & Initialization
+  await saveSubscriptionSetupProgress({
+    schoolId: school.id,
+    userId,
+  });
+
+  const schoolAfterStep4 = await getSchoolForCurrentUser(userId);
+  assert(
+    schoolAfterStep4.school?.onboarding_step === 5,
+    "Step 4 completes: advances onboarding_step to 5"
+  );
+
+  // Step 5: Website Setup & Initialization
   const webInitRes = await initializeSchoolWebsite({
     school,
   });
 
-  assert(Boolean(webInitRes.website), "Step 6: Initializes public school website");
+  assert(Boolean(webInitRes.website), "Step 5: Initializes public school website");
 
   await saveWebsiteSetupProgress({
     schoolId: school.id,
     userId,
   });
 
-  // Step 7: Staff Setup
-  const staffRes = await createStaff({
-    schoolId: school.id,
-    input: {
-      first_name: "Anita",
-      last_name: "Sharma",
-      role: "teacher",
-      designation: "Head of Science",
-      employee_code: "TCH-001",
-      email: "anita@heritage.edu",
-    },
-    userRole: "school_admin",
-  });
-
-  assert(staffRes.success, "Step 7: Adds initial teacher to staff directory");
-
-  await saveStaffSetupProgress({
-    schoolId: school.id,
-    userId,
-  });
-
-  const schoolAfterStep7 = await getSchoolForCurrentUser(userId);
+  const schoolAfterStep5 = await getSchoolForCurrentUser(userId);
   assert(
-    schoolAfterStep7.school?.onboarding_step === 8,
-    "Step 7 completes: advances onboarding_step to 8"
+    schoolAfterStep5.school?.onboarding_step === 6,
+    "Step 5 completes: advances onboarding_step to 6"
   );
 
   // -----------------------------------------------------------------
-  // Phase 2: Onboarding Completion Execution
+  // Phase 2: Onboarding Completion Execution (Step 6)
   // -----------------------------------------------------------------
-  console.log("\n2. Onboarding Completion Execution (Step 8):");
+  console.log("\n2. Onboarding Completion Execution (Step 6):");
 
   const completionRes = await completeOnboarding({
     schoolId: school.id,
@@ -236,8 +200,8 @@ async function runOnboardingCompleteTests() {
     "Sets schools.onboarding_completed = true"
   );
   assert(
-    completionRes.school?.onboarding_step === 8,
-    "Keeps schools.onboarding_step = 8"
+    completionRes.school?.onboarding_step === 6,
+    "Keeps schools.onboarding_step = 6"
   );
 
   // -----------------------------------------------------------------
@@ -257,24 +221,8 @@ async function runOnboardingCompleteTests() {
     "Non-regression: onboarding_completed remains true after re-saving Website Setup"
   );
   assert(
-    checkSchoolAfterWebSave.school?.onboarding_step === 8,
-    "Non-regression: onboarding_step remains 8 after re-saving Website Setup"
-  );
-
-  // Re-saving Staff Setup should NOT reset onboarding_completed or regress step
-  await saveStaffSetupProgress({
-    schoolId: school.id,
-    userId,
-  });
-
-  const checkSchoolAfterStaffSave = await getSchoolForCurrentUser(userId);
-  assert(
-    checkSchoolAfterStaffSave.school?.onboarding_completed === true,
-    "Non-regression: onboarding_completed remains true after re-saving Staff Setup"
-  );
-  assert(
-    checkSchoolAfterStaffSave.school?.onboarding_step === 8,
-    "Non-regression: onboarding_step remains 8 after re-saving Staff Setup"
+    checkSchoolAfterWebSave.school?.onboarding_step === 6,
+    "Non-regression: onboarding_step remains 6 after re-saving Website Setup"
   );
 
   // -----------------------------------------------------------------
@@ -295,10 +243,6 @@ async function runOnboardingCompleteTests() {
     "Retrieves sections for completion summary"
   );
 
-  // Verify Subjects
-  const { subjects: schoolSubjects } = await getSubjects(school.id, activeYear!.id);
-  assert(schoolSubjects.length === 1, "Retrieves subjects for completion summary");
-
   // Verify Subscription
   const { subscription: schoolSub } = await getSchoolSubscription(school.id);
   assert(Boolean(schoolSub), "Retrieves subscription for completion summary");
@@ -316,9 +260,44 @@ async function runOnboardingCompleteTests() {
     "Parent portal URL properly formatted"
   );
 
-  // Verify Staff
+  // Verify Admin Panel CRUD operations (Subjects & Staff work independently)
+  const subjectRes = await createSubject({
+    schoolId: school.id,
+    academicYearId: academicYear.id,
+    input: {
+      name: "Mathematics",
+      code: "MATH-10",
+      subject_type: "core",
+    },
+  });
+  assert(subjectRes.success && Boolean(subjectRes.subject), "Admin CRUD: Creates Mathematics subject");
+
+  await assignSubjectToClass({
+    schoolId: school.id,
+    academicYearId: academicYear.id,
+    classId: schoolClass.id,
+    subjectId: subjectRes.subject!.id,
+  });
+
+  const { subjects: schoolSubjects } = await getSubjects(school.id, activeYear!.id);
+  assert(schoolSubjects.length === 1, "Admin CRUD: Retrieves assigned subjects");
+
+  const staffRes = await createStaff({
+    schoolId: school.id,
+    input: {
+      first_name: "Anita",
+      last_name: "Sharma",
+      role: "teacher",
+      designation: "Head of Science",
+      employee_code: "TCH-001",
+      email: "anita@heritage.edu",
+    },
+    userRole: "school_admin",
+  });
+  assert(staffRes.success, "Admin CRUD: Adds teacher to staff directory");
+
   const { staff: schoolStaff } = await getStaff(school.id);
-  assert(schoolStaff.length === 1, "Retrieves staff members for completion summary");
+  assert(schoolStaff.length === 1, "Admin CRUD: Retrieves staff members");
   assert(schoolStaff[0].first_name === "Anita", "Staff member name matches");
 
   // -----------------------------------------------------------------
@@ -327,7 +306,6 @@ async function runOnboardingCompleteTests() {
   console.log("\n5. Multi-Tenant Segregation Across Full Stack:");
 
   const schoolId2 = "tenant-002";
-  const user2 = "user-002";
 
   // Check that Tenant 2 gets 0 staff from Tenant 1
   const tenant2Staff = await getStaff(schoolId2);

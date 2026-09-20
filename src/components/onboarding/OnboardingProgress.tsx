@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import { ONBOARDING_STEPS } from "../../types/school";
 
 interface OnboardingProgressProps {
-  currentStepNumber: number; // 1 through 8
+  currentStepNumber: number; // 1 through 6
   completedStepNumbers?: number[]; // list of completed step numbers
 }
 
@@ -23,7 +23,7 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#2158E0]/10 text-[#2158E0]">
-            Step {currentStepNumber} of 8
+            Step {currentStepNumber} of 6
           </span>
           <span className="text-sm font-semibold text-[#141A2E]">
             {currentStep.title}
@@ -43,7 +43,7 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
       </div>
 
       {/* Responsive Step Indicator Nodes (Desktop & Tablet) */}
-      <div className="hidden sm:grid grid-cols-8 gap-2 mb-6" role="list">
+      <div className="hidden sm:grid grid-cols-6 gap-2 mb-6" role="list">
         {ONBOARDING_STEPS.map((step) => {
           const isCompleted =
             completedStepNumbers.includes(step.stepNumber) ||

@@ -16,15 +16,14 @@ import Register from "./pages/auth/Register";
 import Login from "./pages/auth/Login";
 import Verify from "./pages/auth/Verify";
 import ResetPassword from "./pages/auth/ResetPassword";
+import ParentPayPage from "./pages/public/ParentPayPage";
 
-// Onboarding Routes (Step 1 Placeholders)
+// Onboarding Routes
 import SchoolProfile from "./pages/onboarding/SchoolProfile";
 import AcademicSetup from "./pages/onboarding/AcademicSetup";
 import ClassesSections from "./pages/onboarding/ClassesSections";
-import Subjects from "./pages/onboarding/Subjects";
 import Subscription from "./pages/onboarding/Subscription";
 import WebsiteSetup from "./pages/onboarding/WebsiteSetup";
-import StaffSetup from "./pages/onboarding/StaffSetup";
 import Complete from "./pages/onboarding/Complete";
 
 // Admin Routes
@@ -74,6 +73,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/verify" element={<Verify />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/pay/:token" element={<ParentPayPage />} />
 
           {/* Authenticated Onboarding Flow */}
           <Route
@@ -111,14 +111,7 @@ export default function App() {
           />
           <Route
             path="/onboarding/subjects"
-            element={
-              <ProtectedRoute
-                allowedRoles={["school_admin", "super_admin"]}
-                requireCompletedOnboarding={false}
-              >
-                <Subjects />
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/onboarding/subscription" replace />}
           />
           <Route
             path="/onboarding/subscription"
@@ -144,14 +137,7 @@ export default function App() {
           />
           <Route
             path="/onboarding/staff"
-            element={
-              <ProtectedRoute
-                allowedRoles={["school_admin", "super_admin"]}
-                requireCompletedOnboarding={false}
-              >
-                <StaffSetup />
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/onboarding/complete" replace />}
           />
           <Route
             path="/onboarding/complete"

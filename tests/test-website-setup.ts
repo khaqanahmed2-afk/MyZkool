@@ -459,13 +459,13 @@ async function runTests() {
   );
 
   // -----------------------------------------------------------------
-  // 9. Onboarding Progression & Non-Regression (Step 6 -> Step 7)
+  // 9. Onboarding Progression & Non-Regression (Step 5 -> Step 6)
   // -----------------------------------------------------------------
   console.log("\n9. Onboarding Progression & Non-Regression:");
 
-  // Set mock school onboarding_step to 6 in localStorage
+  // Set mock school onboarding_step to 5 in localStorage
   const schoolKey1 = `myzkool_school_profile_${adminUserId1}`;
-  localStorage.setItem(schoolKey1, JSON.stringify(mockSchool1));
+  localStorage.setItem(schoolKey1, JSON.stringify({ ...mockSchool1, onboarding_step: 5 }));
 
   const progressRes1 = await saveWebsiteSetupProgress({
     schoolId: mockSchool1.id,
@@ -476,14 +476,14 @@ async function runTests() {
 
   const cachedSchoolAfter = JSON.parse(localStorage.getItem(schoolKey1) || "{}");
   assert(
-    cachedSchoolAfter.onboarding_step === 7,
-    "Advances school onboarding_step from 6 to 7 (Staff Setup)"
+    cachedSchoolAfter.onboarding_step === 6,
+    "Advances school onboarding_step from 5 to 6 (Complete)"
   );
 
-  // Non-regression: If school was already at Step 8 (e.g. returning to edit website settings),
+  // Non-regression: If school was already at Step 6 (e.g. returning to edit website settings),
   // onboarding_step must NOT decrease
-  const mockSchoolStep8 = { ...mockSchool1, onboarding_step: 8 };
-  localStorage.setItem(schoolKey1, JSON.stringify(mockSchoolStep8));
+  const mockSchoolStep6 = { ...mockSchool1, onboarding_step: 6 };
+  localStorage.setItem(schoolKey1, JSON.stringify(mockSchoolStep6));
 
   await saveWebsiteSetupProgress({
     schoolId: mockSchool1.id,
@@ -492,8 +492,8 @@ async function runTests() {
 
   const cachedSchoolNonReg = JSON.parse(localStorage.getItem(schoolKey1) || "{}");
   assert(
-    cachedSchoolNonReg.onboarding_step === 8,
-    "Non-regression: Step 8 does not decrease when re-saving Website Setup"
+    cachedSchoolNonReg.onboarding_step === 6,
+    "Non-regression: Step 6 does not decrease when re-saving Website Setup"
   );
 
   // -----------------------------------------------------------------

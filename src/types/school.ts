@@ -37,7 +37,7 @@ export interface School {
   pin_code: string;
   logo_url?: string;
   onboarding_completed: boolean;
-  onboarding_step: number; // 1 to 8
+  onboarding_step: number; // 1 to 6
   created_by: string; // Auth User ID
   created_at: string;
   updated_at: string;
@@ -78,7 +78,7 @@ export interface SubdomainCheckResult {
 }
 
 /**
- * Standard 8-step onboarding definition
+ * Standard 6-step onboarding definition
  */
 export interface OnboardingStepDefinition {
   stepNumber: number;
@@ -88,12 +88,10 @@ export interface OnboardingStepDefinition {
 }
 
 export const ONBOARDING_STEPS: OnboardingStepDefinition[] = [
-  { stepNumber: 1, title: "School Profile", subtitle: "Identity & Location", route: "/onboarding/school" },
-  { stepNumber: 2, title: "Academic Setup", subtitle: "Calendar & Terms", route: "/onboarding/academics" },
-  { stepNumber: 3, title: "Classes & Sections", subtitle: "Grade Structure", route: "/onboarding/classes" },
-  { stepNumber: 4, title: "Subjects", subtitle: "Curriculum Setup", route: "/onboarding/subjects" },
-  { stepNumber: 5, title: "Subscription", subtitle: "Plan & Billing", route: "/onboarding/subscription" },
-  { stepNumber: 6, title: "Website Setup", subtitle: "Public Portal", route: "/onboarding/website" },
-  { stepNumber: 7, title: "Staff Setup", subtitle: "Teachers & Admin", route: "/onboarding/staff" },
-  { stepNumber: 8, title: "Complete", subtitle: "Ready to Launch", route: "/onboarding/complete" },
+  { stepNumber: 1, title: "School profile", subtitle: "Identity and location", route: "/onboarding/school" },
+  { stepNumber: 2, title: "Academic year", subtitle: "Calendar and terms", route: "/onboarding/academics" },
+  { stepNumber: 3, title: "Classes", subtitle: "Grade structure", route: "/onboarding/classes" },
+  { stepNumber: 4, title: "Plan", subtitle: "Plan and billing", route: "/onboarding/subscription" },
+  { stepNumber: 5, title: "Website", subtitle: "Public portal", route: "/onboarding/website" },
+  { stepNumber: 6, title: "Launch", subtitle: "Ready to launch", route: "/onboarding/complete" },
 ];
