@@ -142,25 +142,7 @@ CREATE TABLE IF NOT EXISTS public.student_previous_schools (
 CREATE INDEX IF NOT EXISTS idx_student_previous_schools_student_id ON public.student_previous_schools(student_id);
 CREATE INDEX IF NOT EXISTS idx_student_previous_schools_school_id ON public.student_previous_schools(school_id);
 
--- 6. Create student_achievements table
-CREATE TABLE IF NOT EXISTS public.student_achievements (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
-  student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('academic', 'sports', 'arts', 'olympiad', 'other')),
-  title TEXT NOT NULL,
-  level TEXT NOT NULL CHECK (level IN ('school', 'district', 'state', 'national', 'international')),
-  year INTEGER NOT NULL,
-  position_or_award TEXT,
-  document_id UUID REFERENCES public.student_documents(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_student_achievements_student_id ON public.student_achievements(student_id);
-CREATE INDEX IF NOT EXISTS idx_student_achievements_school_id ON public.student_achievements(school_id);
-
--- 7. Create document_types table (per school, editable)
+-- 6. Create document_types table (per school, editable)
 CREATE TABLE IF NOT EXISTS public.document_types (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
@@ -176,7 +158,7 @@ CREATE TABLE IF NOT EXISTS public.document_types (
 
 CREATE INDEX IF NOT EXISTS idx_document_types_school_id ON public.document_types(school_id);
 
--- 8. Create student_documents table (Document Vault)
+-- 7. Create student_documents table (Document Vault)
 CREATE TABLE IF NOT EXISTS public.student_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
@@ -200,6 +182,24 @@ CREATE TABLE IF NOT EXISTS public.student_documents (
 CREATE INDEX IF NOT EXISTS idx_student_documents_student_id ON public.student_documents(student_id);
 CREATE INDEX IF NOT EXISTS idx_student_documents_school_id ON public.student_documents(school_id);
 CREATE INDEX IF NOT EXISTS idx_student_documents_status ON public.student_documents(student_id, status);
+
+-- 8. Create student_achievements table
+CREATE TABLE IF NOT EXISTS public.student_achievements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('academic', 'sports', 'arts', 'olympiad', 'other')),
+  title TEXT NOT NULL,
+  level TEXT NOT NULL CHECK (level IN ('school', 'district', 'state', 'national', 'international')),
+  year INTEGER NOT NULL,
+  position_or_award TEXT,
+  document_id UUID REFERENCES public.student_documents(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_student_achievements_student_id ON public.student_achievements(student_id);
+CREATE INDEX IF NOT EXISTS idx_student_achievements_school_id ON public.student_achievements(school_id);
 
 -- 9. Create student_medical table (separate for RLS gating)
 CREATE TABLE IF NOT EXISTS public.student_medical (
