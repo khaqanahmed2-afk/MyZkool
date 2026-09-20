@@ -42,9 +42,7 @@ CREATE TABLE IF NOT EXISTS public.students (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  CONSTRAINT unique_admission_no_per_school UNIQUE (school_id, admission_no),
-  CONSTRAINT unique_sr_no_per_school UNIQUE (school_id, sr_no) WHERE sr_no IS NOT NULL,
-  CONSTRAINT unique_apaar_id_per_school UNIQUE (school_id, apaar_id) WHERE apaar_id IS NOT NULL
+  CONSTRAINT unique_admission_no_per_school UNIQUE (school_id, admission_no)
 );
 
 -- Indexes for students
@@ -53,6 +51,8 @@ CREATE INDEX IF NOT EXISTS idx_students_status ON public.students(school_id, sta
 CREATE INDEX IF NOT EXISTS idx_students_admission_class ON public.students(admission_class_id);
 CREATE INDEX IF NOT EXISTS idx_students_name_trgm ON public.students USING gin (first_name gin_trgm_ops, last_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_students_aadhaar_hash ON public.students(school_id, aadhaar_hash) WHERE aadhaar_hash IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS unique_sr_no_per_school ON public.students(school_id, sr_no) WHERE sr_no IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS unique_apaar_id_per_school ON public.students(school_id, apaar_id) WHERE apaar_id IS NOT NULL;
 
 -- 2. Create student_addresses table
 CREATE TABLE IF NOT EXISTS public.student_addresses (
