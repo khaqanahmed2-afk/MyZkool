@@ -343,3 +343,4 @@ export function generateReceiptHTML(
 </body>
 </html>`;
 }
+

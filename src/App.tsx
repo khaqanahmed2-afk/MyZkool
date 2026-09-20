@@ -51,6 +51,13 @@ import ApprovalsPage from "./pages/admin/approvals/ApprovalsPage";
 import FeeCollectPage from "./pages/admin/fees/FeeCollectPage";
 import ReceiptsPage from "./pages/admin/fees/ReceiptsPage";
 import StudentLedgerPage from "./pages/admin/fees/StudentLedgerPage";
+import FeeDashboard from "./pages/admin/fees/FeeDashboard";
+import DefaultersPage from "./pages/admin/fees/DefaultersPage";
+import ChequeRegisterPage from "./pages/admin/fees/ChequeRegisterPage";
+import RefundsPage from "./pages/admin/fees/RefundsPage";
+import DayClosePage from "./pages/admin/fees/DayClosePage";
+import FeeReportsPage from "./pages/admin/fees/FeeReportsPage";
+
 
 
 
@@ -179,7 +186,8 @@ export default function App() {
             <Route path="students/id-cards" element={<StudentIdCards />} />
             <Route path="students/:id" element={<StudentProfileView />} />
             <Route path="attendance" element={<ModulePlaceholder />} />
-            <Route path="fees" element={<FeeSetupChecklist />} />
+            <Route path="fees" element={<FeeDashboard />} />
+            <Route path="fees/dashboard" element={<FeeDashboard />} />
             <Route path="fees/setup" element={<FeeSetupChecklist />} />
             <Route path="fees/setup/heads" element={<FeeHeadsPage />} />
             <Route path="fees/setup/terms" element={<FeeTermsPage />} />
@@ -191,7 +199,14 @@ export default function App() {
             <Route path="fees/collect" element={<FeeCollectPage />} />
             <Route path="fees/receipts" element={<ReceiptsPage />} />
             <Route path="fees/students/:id" element={<StudentLedgerPage />} />
+            <Route path="fees/dues-report" element={<DefaultersPage />} />
+            <Route path="fees/defaulters" element={<DefaultersPage />} />
+            <Route path="fees/cheques" element={<ChequeRegisterPage />} />
+            <Route path="fees/refunds" element={<RefundsPage />} />
+            <Route path="fees/day-close" element={<DayClosePage />} />
+            <Route path="fees/reports" element={<FeeReportsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
+
 
             <Route path="staff" element={<ModulePlaceholder />} />
             <Route path="timetable" element={<ModulePlaceholder />} />

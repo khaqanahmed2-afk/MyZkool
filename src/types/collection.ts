@@ -62,25 +62,6 @@ export interface FeePayment {
   created_at: string;
 }
 
-export interface DayClosing {
-  id: string;
-  school_id: string;
-  business_date: string;
-  opening_cash_paise: number;
-  system_cash_paise: number;
-  refunds_cash_paise: number;
-  expected_cash_paise: number;
-  counted_cash_paise: number | null;
-  denominations: Record<string, number> | null;
-  difference_paise: number | null;
-  notes: string | null;
-  status: "closed" | "reopened";
-  closed_by: string | null;
-  closed_at: string;
-  created_at: string;
-  updated_at: string;
-}
-
 // ─── Allocation ───────────────────────────────────────────────────────────────
 
 export interface AllocationLine {

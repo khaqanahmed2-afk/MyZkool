@@ -10,3 +10,5 @@ export * from "./staff";
 export * from "./students";
 export * from "./fees";
 export * from "./collection";
+export * from "./feeOperations";
+
