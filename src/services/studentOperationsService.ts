@@ -308,25 +308,25 @@ export function autoMapColumns(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   headers.forEach((h, index) => {
     const clean = h.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (clean.includes("firstname") || clean === "fname") mapping["first_name"] = String(index);
-    else if (clean.includes("middlename") || clean === "mname") mapping["middle_name"] = String(index);
-    else if (clean.includes("lastname") || clean === "lname") mapping["last_name"] = String(index);
-    else if (clean.includes("dob") || clean.includes("birth")) mapping["dob"] = String(index);
-    else if (clean.includes("gender") || clean === "sex") mapping["gender"] = String(index);
-    else if (clean === "class" || clean.includes("grade")) mapping["class_name"] = String(index);
-    else if (clean === "section") mapping["section_name"] = String(index);
-    else if (clean.includes("roll")) mapping["roll_no"] = String(index);
-    else if (clean.includes("parentname") || clean.includes("fathername") || clean.includes("guardianname")) {
+    if (!mapping["first_name"] && (clean.includes("firstname") || clean === "fname")) mapping["first_name"] = String(index);
+    else if (!mapping["middle_name"] && (clean.includes("middlename") || clean === "mname")) mapping["middle_name"] = String(index);
+    else if (!mapping["last_name"] && (clean.includes("lastname") || clean === "lname")) mapping["last_name"] = String(index);
+    else if (!mapping["dob"] && (clean.includes("dob") || clean.includes("birth"))) mapping["dob"] = String(index);
+    else if (!mapping["gender"] && (clean.includes("gender") || clean === "sex")) mapping["gender"] = String(index);
+    else if (!mapping["class_name"] && (clean === "class" || clean.includes("grade"))) mapping["class_name"] = String(index);
+    else if (!mapping["section_name"] && clean === "section") mapping["section_name"] = String(index);
+    else if (!mapping["roll_no"] && clean.includes("roll")) mapping["roll_no"] = String(index);
+    else if (!mapping["parent_name"] && (clean.includes("parentname") || clean.includes("fathername") || clean.includes("guardianname"))) {
       mapping["parent_name"] = String(index);
-    } else if (clean.includes("phone") || clean.includes("mobile") || clean.includes("contact")) {
+    } else if (!mapping["parent_phone"] && (clean.includes("phone") || clean.includes("mobile") || clean.includes("contact"))) {
       mapping["parent_phone"] = String(index);
-    } else if (clean.includes("relation")) mapping["parent_relation"] = String(index);
-    else if (clean.includes("category")) mapping["category"] = String(index);
-    else if (clean.includes("address")) mapping["address_line1"] = String(index);
-    else if (clean.includes("city")) mapping["city"] = String(index);
-    else if (clean.includes("state")) mapping["state"] = String(index);
-    else if (clean.includes("pin")) mapping["pin"] = String(index);
-    else if (clean.includes("rte")) mapping["is_rte"] = String(index);
+    } else if (!mapping["parent_relation"] && clean.includes("relation")) mapping["parent_relation"] = String(index);
+    else if (!mapping["category"] && clean.includes("category")) mapping["category"] = String(index);
+    else if (!mapping["address_line1"] && clean.includes("address")) mapping["address_line1"] = String(index);
+    else if (!mapping["city"] && clean.includes("city")) mapping["city"] = String(index);
+    else if (!mapping["state"] && clean.includes("state")) mapping["state"] = String(index);
+    else if (!mapping["pin"] && clean.includes("pin")) mapping["pin"] = String(index);
+    else if (!mapping["is_rte"] && clean.includes("rte")) mapping["is_rte"] = String(index);
   });
   return mapping;
 }
@@ -1929,5 +1929,564 @@ export async function copySectionsFromPreviousYear(
   }
 
   return { copied_count: sectionsToCreate.length };
+}
+
+// -----------------------------------------------------------------------------
+// 7. Student Re-admission (Spec 1.5, A5.4, A9, A10)
+// -----------------------------------------------------------------------------
+
+export interface ReAdmitStudentInput {
+  academic_year_id: string;
+  class_id: string;
+  section_id?: string | null;
+  admission_date: string;
+  reason?: string;
+  roll_no?: string | null;
+}
+
+export async function reAdmitStudent(
+  schoolId: string,
+  studentId: string,
+  actorId: string,
+  input: ReAdmitStudentInput,
+  actorRole: string = "admin"
+): Promise<{ success: boolean; student: Student; enrollment: StudentEnrollment }> {
+  // 1. Plan limit gating (Spec 1.5, A10)
+  const limits = await checkSchoolStudentLimit(schoolId);
+  if (limits.is_blocked) {
+    const err = new Error(`LIMIT_REACHED: School active student limit of ${limits.max_allowed} reached for plan ${limits.plan_tier}`);
+    (err as any).code = "LIMIT_REACHED";
+    throw err;
+  }
+
+  let student: Student | null = null;
+  let allStudents: Student[] = [];
+
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("students")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("id", studentId)
+      .maybeSingle();
+    student = data;
+  } else if (typeof localStorage !== "undefined") {
+    const sKey = getStudentsCacheKey(schoolId);
+    const raw = localStorage.getItem(sKey);
+    allStudents = raw ? JSON.parse(raw) : [];
+    student = allStudents.find((s) => s.id === studentId && !s.deleted_at) || null;
+  }
+
+  if (!student) {
+    throw new Error("Student record not found");
+  }
+
+  if (student.status === "enrolled") {
+    throw new Error("Student is already active/enrolled");
+  }
+
+  const previousStatus = student.status;
+  const nowStr = new Date().toISOString();
+
+  // 2. Update Student status and retain existing admission_no (Spec [DECISION])
+  student.status = "enrolled";
+  student.status_changed_on = input.admission_date;
+  student.status_reason = input.reason || "Student re-admitted";
+  student.admission_type = "re_admission";
+  student.updated_at = nowStr;
+  student.updated_by = actorId;
+
+  // 3. Create active enrollment record
+  const newEnrollment: StudentEnrollment = {
+    id: crypto.randomUUID(),
+    school_id: schoolId,
+    student_id: studentId,
+    academic_year_id: input.academic_year_id,
+    class_id: input.class_id,
+    section_id: input.section_id || null,
+    roll_no: input.roll_no || null,
+    status: "active",
+    enrolled_on: input.admission_date,
+    created_at: nowStr,
+    updated_at: nowStr,
+  };
+
+  if (isSupabaseConfigured) {
+    await supabase
+      .from("students")
+      .update({
+        status: "enrolled",
+        status_changed_on: input.admission_date,
+        status_reason: input.reason || "Student re-admitted",
+        admission_type: "re_admission",
+        updated_at: nowStr,
+        updated_by: actorId,
+      })
+      .eq("school_id", schoolId)
+      .eq("id", studentId);
+
+    await supabase.from("student_enrollments").insert(newEnrollment);
+  } else if (typeof localStorage !== "undefined") {
+    const sKey = getStudentsCacheKey(schoolId);
+    const targetIdx = allStudents.findIndex((s) => s.id === studentId);
+    if (targetIdx >= 0) {
+      allStudents[targetIdx] = student;
+      localStorage.setItem(sKey, JSON.stringify(allStudents));
+    }
+
+    const seKey = getStudentEnrollmentsCacheKey(schoolId);
+    const rawSE = localStorage.getItem(seKey);
+    const allSE: StudentEnrollment[] = rawSE ? JSON.parse(rawSE) : [];
+    allSE.push(newEnrollment);
+    localStorage.setItem(seKey, JSON.stringify(allSE));
+  }
+
+  // 4. Record student timeline event
+  await recordStudentEvent(
+    schoolId,
+    studentId,
+    "readmitted",
+    input.reason || `Re-admitted to Class on ${input.admission_date}`,
+    actorId
+  );
+
+  // 5. Append-only audit log
+  await audit(schoolId, {
+    actor_id: actorId,
+    actor_role: actorRole,
+    entity_type: "student",
+    entity_id: studentId,
+    action: "student_readmitted",
+    before: { status: previousStatus },
+    after: {
+      status: "enrolled",
+      academic_year_id: input.academic_year_id,
+      class_id: input.class_id,
+      section_id: input.section_id || null,
+      admission_no: student.admission_no,
+    },
+    reason: input.reason || "Student re-admitted",
+  });
+
+  return { success: true, student, enrollment: newEnrollment };
+}
+
+// -----------------------------------------------------------------------------
+// 8. Masked & Audited Student Export (Spec A4.1, A5.8)
+// -----------------------------------------------------------------------------
+
+export interface MaskedStudentExport {
+  id: string;
+  admission_no: string;
+  sr_no?: string | null;
+  apaar_id?: string | null;
+  first_name: string;
+  middle_name?: string | null;
+  last_name: string;
+  dob: string;
+  gender: StudentGender;
+  blood_group?: string | null;
+  category?: StudentCategory | null;
+  is_rte: boolean;
+  status: StudentStatus;
+  admission_date: string;
+  admission_type: string;
+  masked_aadhaar: string | null;
+  parents: {
+    relation: string;
+    full_name: string;
+    phone: string;
+    email?: string | null;
+    occupation?: string | null;
+  }[];
+  current_enrollment?: {
+    academic_year_id: string;
+    class_id: string;
+    section_id?: string | null;
+    roll_no?: string | null;
+  } | null;
+  exported_at: string;
+}
+
+export async function exportStudentData(
+  schoolId: string,
+  studentId: string,
+  actorId: string,
+  actorRole: string = "admin"
+): Promise<MaskedStudentExport> {
+  const profileRes = await getStudentProfile(schoolId, studentId);
+  if (profileRes.error || !profileRes.profile) {
+    throw new Error(profileRes.error || "Student profile not found");
+  }
+
+  const p = profileRes.profile;
+
+  // Mask Aadhaar: never expose full Aadhaar or hashes/enc
+  const maskedAadhaar = p.aadhaar_last4 ? `****-****-${p.aadhaar_last4}` : null;
+
+  // Masked parent details
+  const maskedParents = (p.parents || []).map((parent) => ({
+    relation: parent.relation,
+    full_name: parent.full_name,
+    phone: parent.phone,
+    email: parent.email || null,
+    occupation: parent.occupation || null,
+  }));
+
+  // Exclude staff-only notes / internal system fields
+  const exportData: MaskedStudentExport = {
+    id: p.id,
+    admission_no: p.admission_no,
+    sr_no: p.sr_no,
+    apaar_id: p.apaar_id,
+    first_name: p.first_name,
+    middle_name: p.middle_name,
+    last_name: p.last_name,
+    dob: p.dob,
+    gender: p.gender,
+    blood_group: p.blood_group,
+    category: p.category,
+    is_rte: p.is_rte,
+    status: p.status,
+    admission_date: p.admission_date,
+    admission_type: p.admission_type,
+    masked_aadhaar: maskedAadhaar,
+    parents: maskedParents,
+    current_enrollment: (() => {
+      const activeEnr = p.enrollments?.find((e) => e.status === "active") || p.enrollments?.[0];
+      return activeEnr
+        ? {
+            academic_year_id: activeEnr.academic_year_id,
+            class_id: activeEnr.class_id,
+            section_id: activeEnr.section_id,
+            roll_no: activeEnr.roll_no,
+          }
+        : null;
+    })(),
+    exported_at: new Date().toISOString(),
+  };
+
+  // Write append-only audit entry (Spec A5.8)
+  await audit(schoolId, {
+    actor_id: actorId,
+    actor_role: actorRole,
+    entity_type: "student",
+    entity_id: studentId,
+    action: "student_exported",
+    reason: `Exported student profile data (masked) for student ${p.admission_no}`,
+  });
+
+  return exportData;
+}
+
+export interface ExportStudentsListFilter {
+  class_id?: string;
+  section_id?: string;
+  status?: StudentStatus;
+  search?: string;
+}
+
+export async function exportStudentsList(
+  schoolId: string,
+  actorId: string,
+  filters?: ExportStudentsListFilter,
+  actorRole: string = "admin"
+): Promise<{ csv: string; count: number; filename: string }> {
+  let students: Student[] = [];
+  let enrollments: StudentEnrollment[] = [];
+  let parents: Parent[] = [];
+  let studentParents: any[] = [];
+
+  if (isSupabaseConfigured) {
+    let q = supabase.from("students").select("*").eq("school_id", schoolId).is("deleted_at", null);
+    if (filters?.status) q = q.eq("status", filters.status);
+    const sRes = await q;
+    if (sRes.data) students = sRes.data;
+
+    const [enrRes, pRes, spRes] = await Promise.all([
+      supabase.from("student_enrollments").select("*").eq("school_id", schoolId).eq("status", "active"),
+      supabase.from("parents").select("*").eq("school_id", schoolId).is("deleted_at", null),
+      supabase.from("student_parents").select("*").eq("school_id", schoolId),
+    ]);
+    if (enrRes.data) enrollments = enrRes.data;
+    if (pRes.data) parents = pRes.data;
+    if (spRes.data) studentParents = spRes.data;
+  } else if (typeof localStorage !== "undefined") {
+    const rawS = localStorage.getItem(getStudentsCacheKey(schoolId));
+    const allS: Student[] = rawS ? JSON.parse(rawS) : [];
+    students = allS.filter((s) => !s.deleted_at);
+    if (filters?.status) {
+      students = students.filter((s) => s.status === filters.status);
+    }
+
+    const rawE = localStorage.getItem(getStudentEnrollmentsCacheKey(schoolId));
+    enrollments = rawE ? JSON.parse(rawE) : [];
+
+    const rawP = localStorage.getItem(getParentsCacheKey(schoolId));
+    parents = rawP ? JSON.parse(rawP) : [];
+
+    const rawSP = localStorage.getItem(getStudentParentsCacheKey(schoolId));
+    studentParents = rawSP ? JSON.parse(rawSP) : [];
+  }
+
+  const enrollmentMap = new Map<string, StudentEnrollment>();
+  enrollments.forEach((e) => {
+    if (e.status === "active") enrollmentMap.set(e.student_id, e);
+  });
+
+  const parentMap = new Map<string, Parent>();
+  parents.forEach((p) => parentMap.set(p.id, p));
+
+  const primaryParentMap = new Map<string, Parent>();
+  studentParents.forEach((sp) => {
+    if (sp.is_primary_contact || !primaryParentMap.has(sp.student_id)) {
+      const p = parentMap.get(sp.parent_id);
+      if (p) primaryParentMap.set(sp.student_id, p);
+    }
+  });
+
+  // Filter by class_id or section_id if requested
+  if (filters?.class_id) {
+    students = students.filter((s) => {
+      const enr = enrollmentMap.get(s.id);
+      return enr?.class_id === filters.class_id;
+    });
+  }
+
+  if (filters?.section_id) {
+    students = students.filter((s) => {
+      const enr = enrollmentMap.get(s.id);
+      return enr?.section_id === filters.section_id;
+    });
+  }
+
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    students = students.filter(
+      (s) =>
+        s.first_name.toLowerCase().includes(q) ||
+        s.last_name.toLowerCase().includes(q) ||
+        s.admission_no.toLowerCase().includes(q)
+    );
+  }
+
+  // Generate CSV
+  const headers = [
+    "Admission No",
+    "First Name",
+    "Middle Name",
+    "Last Name",
+    "Gender",
+    "Date of Birth",
+    "Category",
+    "Class",
+    "Section",
+    "Parent Name",
+    "Parent Phone",
+    "Status",
+    "Aadhaar (Masked)",
+  ];
+
+  const escapeCSV = (val: string | null | undefined) => {
+    if (val === null || val === undefined) return "";
+    const str = String(val);
+    if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const rows = students.map((s) => {
+    const enr = enrollmentMap.get(s.id);
+    const parent = primaryParentMap.get(s.id);
+    const maskedAadhaar = s.aadhaar_last4 ? `****-****-${s.aadhaar_last4}` : "Not Provided";
+
+    return [
+      escapeCSV(s.admission_no),
+      escapeCSV(s.first_name),
+      escapeCSV(s.middle_name || ""),
+      escapeCSV(s.last_name),
+      escapeCSV(s.gender),
+      escapeCSV(s.dob),
+      escapeCSV(s.category || "General"),
+      escapeCSV(enr?.class_id || ""),
+      escapeCSV(enr?.section_id || ""),
+      escapeCSV(parent?.full_name || ""),
+      escapeCSV(parent?.phone || ""),
+      escapeCSV(s.status),
+      escapeCSV(maskedAadhaar),
+    ].join(",");
+  });
+
+  const csvContent = [headers.join(","), ...rows].join("\n");
+  const filename = `students_export_${new Date().toISOString().split("T")[0]}.csv`;
+
+  // Append-only audit row (Spec A4.1, A5.8)
+  await audit(schoolId, {
+    actor_id: actorId,
+    actor_role: actorRole,
+    entity_type: "students",
+    entity_id: schoolId,
+    action: "students_bulk_exported",
+    reason: `Exported ${students.length} student records as CSV (Aadhaar masked, staff notes excluded)`,
+  });
+
+  return {
+    csv: csvContent,
+    count: students.length,
+    filename,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// 9. ID Card Print Sheet (Spec A4.10)
+// -----------------------------------------------------------------------------
+
+export interface StudentIdCardItem {
+  student_id: string;
+  admission_no: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  photo_url?: string | null;
+  class_id?: string | null;
+  class_name: string;
+  section_id?: string | null;
+  section_name?: string | null;
+  guardian_name: string;
+  guardian_phone: string;
+  blood_group?: string | null;
+  dob: string;
+  qr_payload: string; // MYZKOOL:STUDENT:{admission_no}:{student_id}
+  school_name?: string;
+}
+
+export async function getStudentIdCardData(
+  schoolId: string,
+  options?: {
+    classId?: string;
+    sectionId?: string;
+    academicYearId?: string;
+    studentId?: string;
+  }
+): Promise<StudentIdCardItem[]> {
+  let students: Student[] = [];
+  let enrollments: StudentEnrollment[] = [];
+  let parents: Parent[] = [];
+  let studentParents: any[] = [];
+  let classes: any[] = [];
+  let sections: any[] = [];
+
+  if (isSupabaseConfigured) {
+    let q = supabase.from("students").select("*").eq("school_id", schoolId).is("deleted_at", null);
+    if (options?.studentId) {
+      q = q.eq("id", options.studentId);
+    } else {
+      q = q.eq("status", "enrolled");
+    }
+    const sRes = await q;
+    if (sRes.data) students = sRes.data;
+
+    const [enrRes, pRes, spRes, clsRes, secRes] = await Promise.all([
+      supabase.from("student_enrollments").select("*").eq("school_id", schoolId).eq("status", "active"),
+      supabase.from("parents").select("*").eq("school_id", schoolId).is("deleted_at", null),
+      supabase.from("student_parents").select("*").eq("school_id", schoolId),
+      supabase.from("classes").select("*").eq("school_id", schoolId),
+      supabase.from("sections").select("*").eq("school_id", schoolId),
+    ]);
+    if (enrRes.data) enrollments = enrRes.data;
+    if (pRes.data) parents = pRes.data;
+    if (spRes.data) studentParents = spRes.data;
+    if (clsRes.data) classes = clsRes.data;
+    if (secRes.data) sections = secRes.data;
+  } else if (typeof localStorage !== "undefined") {
+    const rawS = localStorage.getItem(getStudentsCacheKey(schoolId));
+    const allS: Student[] = rawS ? JSON.parse(rawS) : [];
+    students = allS.filter((s) => !s.deleted_at);
+    if (options?.studentId) {
+      students = students.filter((s) => s.id === options.studentId);
+    } else {
+      students = students.filter((s) => s.status === "enrolled");
+    }
+
+    const rawE = localStorage.getItem(getStudentEnrollmentsCacheKey(schoolId));
+    enrollments = rawE ? JSON.parse(rawE) : [];
+
+    const rawP = localStorage.getItem(getParentsCacheKey(schoolId));
+    parents = rawP ? JSON.parse(rawP) : [];
+
+    const rawSP = localStorage.getItem(getStudentParentsCacheKey(schoolId));
+    studentParents = rawSP ? JSON.parse(rawSP) : [];
+
+    const rawC = localStorage.getItem(getClassesCacheKey(schoolId));
+    classes = rawC ? JSON.parse(rawC) : [];
+
+    const rawSec = localStorage.getItem(getSectionsCacheKey(schoolId));
+    sections = rawSec ? JSON.parse(rawSec) : [];
+  }
+
+  const enrollmentMap = new Map<string, StudentEnrollment>();
+  enrollments.forEach((e) => {
+    if (e.status === "active") enrollmentMap.set(e.student_id, e);
+  });
+
+  const parentMap = new Map<string, Parent>();
+  parents.forEach((p) => parentMap.set(p.id, p));
+
+  const primaryParentMap = new Map<string, Parent>();
+  studentParents.forEach((sp) => {
+    if (sp.is_primary_contact || !primaryParentMap.has(sp.student_id)) {
+      const p = parentMap.get(sp.parent_id);
+      if (p) primaryParentMap.set(sp.student_id, p);
+    }
+  });
+
+  const classMap = new Map<string, string>();
+  classes.forEach((c) => classMap.set(c.id, c.name));
+
+  const sectionMap = new Map<string, string>();
+  sections.forEach((s) => sectionMap.set(s.id, s.name));
+
+  // Filter by class / section
+  if (options?.classId) {
+    students = students.filter((s) => {
+      const enr = enrollmentMap.get(s.id);
+      return enr?.class_id === options.classId;
+    });
+  }
+
+  if (options?.sectionId) {
+    students = students.filter((s) => {
+      const enr = enrollmentMap.get(s.id);
+      return enr?.section_id === options.sectionId;
+    });
+  }
+
+  return students.map((s) => {
+    const enr = enrollmentMap.get(s.id);
+    const parent = primaryParentMap.get(s.id);
+    const className = (enr?.class_id && classMap.get(enr.class_id)) || enr?.class_id || "Class 1";
+    const sectionName = (enr?.section_id && sectionMap.get(enr.section_id)) || enr?.section_id || null;
+    const fullName = `${s.first_name} ${s.middle_name ? `${s.middle_name} ` : ""}${s.last_name}`;
+
+    return {
+      student_id: s.id,
+      admission_no: s.admission_no,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      full_name: fullName,
+      photo_url: s.photo_path || null,
+      class_id: enr?.class_id || null,
+      class_name: className,
+      section_id: enr?.section_id || null,
+      section_name: sectionName,
+      guardian_name: parent?.full_name || "Parent/Guardian",
+      guardian_phone: parent?.phone || "N/A",
+      blood_group: s.blood_group || null,
+      dob: s.dob,
+      qr_payload: `MYZKOOL:STUDENT:${s.admission_no}:${s.id}`,
+      school_name: "MyZkool Academy",
+    };
+  });
 }
 

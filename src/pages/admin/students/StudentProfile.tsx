@@ -27,6 +27,8 @@ import {
   FileCheck,
   FileWarning,
   Stethoscope,
+  UserCheck,
+  Download,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import type {
@@ -49,6 +51,10 @@ import {
   deleteStudentDocument,
   STUDENT_ROLE_PERMISSIONS,
 } from "../../../services/studentService";
+import {
+  reAdmitStudent,
+  exportStudentData,
+} from "../../../services/studentOperationsService";
 import TransferCertificateModal from "./TransferCertificateModal";
 
 type ProfileTab = "overview" | "personal" | "family" | "academics" | "fees" | "transport" | "documents" | "medical" | "timeline";
@@ -116,6 +122,92 @@ export default function StudentProfileView() {
     STUDENT_ROLE_PERMISSIONS[userRole as keyof typeof STUDENT_ROLE_PERMISSIONS] || [];
   const canReadMedical = userRole === "owner" || userPermissions.includes("students.medical.read");
   const canWriteMedical = userRole === "owner" || userPermissions.includes("students.medical.write");
+
+  // Re-admission state
+  const [isReAdmitModalOpen, setIsReAdmitModalOpen] = useState(false);
+  const [reAdmitForm, setReAdmitForm] = useState({
+    academic_year_id: "ay-2026",
+    class_id: "",
+    section_id: "",
+    admission_date: new Date().toISOString().split("T")[0],
+    reason: "",
+    roll_no: "",
+  });
+  const [reAdmitLoading, setReAdmitLoading] = useState(false);
+  const [reAdmitError, setReAdmitError] = useState<string | null>(null);
+
+  // Export state
+  const [isExportingData, setIsExportingData] = useState(false);
+
+  const handleExecuteReAdmission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !schoolId) return;
+
+    if (!reAdmitForm.class_id) {
+      setReAdmitError("Please select a target class");
+      return;
+    }
+
+    setReAdmitLoading(true);
+    setReAdmitError(null);
+
+    try {
+      const actorId = currentUserProfile?.id || "admin";
+      await reAdmitStudent(
+        schoolId,
+        id,
+        actorId,
+        {
+          academic_year_id: reAdmitForm.academic_year_id,
+          class_id: reAdmitForm.class_id,
+          section_id: reAdmitForm.section_id || null,
+          admission_date: reAdmitForm.admission_date,
+          reason: reAdmitForm.reason,
+          roll_no: reAdmitForm.roll_no || null,
+        },
+        userRole
+      );
+
+      setIsReAdmitModalOpen(false);
+      // Reload profile
+      const res = await getStudentProfile(schoolId, id);
+      if (res.profile) {
+        setProfile(res.profile);
+        setTimelineEvents(res.profile.events || []);
+      }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err: any) {
+      setReAdmitError(err.message || "Failed to re-admit student");
+    } finally {
+      setReAdmitLoading(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    if (!profile || !id) return;
+    try {
+      setIsExportingData(true);
+      const actorId = currentUserProfile?.id || "admin";
+      const data = await exportStudentData(schoolId, id, actorId, userRole);
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `student_${profile.admission_no}_export.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 4000);
+    } catch (err: any) {
+      alert(`Export failed: ${err.message || err}`);
+    } finally {
+      setIsExportingData(false);
+    }
+  };
 
   useEffect(() => {
     if (!id || !schoolId) return;
@@ -471,6 +563,15 @@ export default function StudentProfileView() {
 
           {/* Quick actions */}
           <div className="flex items-center gap-2 flex-wrap">
+            {profile.status !== "enrolled" && (
+              <button
+                type="button"
+                onClick={() => setIsReAdmitModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs"
+              >
+                <UserCheck className="w-3.5 h-3.5" /> Re-admit student
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -497,10 +598,18 @@ export default function StudentProfileView() {
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() => navigate(`/admin/students/id-cards?studentId=${profile.id}`)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" /> Print ID
+            </button>
+            <button
+              type="button"
+              onClick={handleExportData}
+              disabled={isExportingData}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" /> {isExportingData ? "Exporting..." : "Export Data"}
             </button>
           </div>
         </div>
@@ -518,6 +627,163 @@ export default function StudentProfileView() {
             window.location.reload();
           }}
         />
+      )}
+
+      {/* Re-admission Modal (Spec A5.4, 1.5, Decision) */}
+      {isReAdmitModalOpen && profile && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-bold text-slate-900 text-lg">Re-admit Student</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReAdmitModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">Re-admission Policy (Spec A5.4, Decision):</p>
+              <p>
+                The student's original admission number <strong>{profile.admission_no}</strong> will be retained. A new enrollment record will be created for the selected class and academic year.
+              </p>
+            </div>
+
+            {reAdmitError && (
+              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Cannot Re-admit</p>
+                  <p>{reAdmitError}</p>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleExecuteReAdmission} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Academic Year <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reAdmitForm.academic_year_id}
+                  onChange={(e) => setReAdmitForm({ ...reAdmitForm, academic_year_id: e.target.value })}
+                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
+                  required
+                >
+                  <option value="ay-2026">AY 2026-2027 (Current)</option>
+                  <option value="ay-2025">AY 2025-2026</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Target Class <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={reAdmitForm.class_id}
+                    onChange={(e) => setReAdmitForm({ ...reAdmitForm, class_id: e.target.value })}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
+                    required
+                  >
+                    <option value="">Select Class</option>
+                    <option value="Class 1">Class 1</option>
+                    <option value="Class 2">Class 2</option>
+                    <option value="Class 3">Class 3</option>
+                    <option value="Class 4">Class 4</option>
+                    <option value="Class 5">Class 5</option>
+                    <option value="Class 6">Class 6</option>
+                    <option value="Class 7">Class 7</option>
+                    <option value="Class 8">Class 8</option>
+                    <option value="Class 9">Class 9</option>
+                    <option value="Class 10">Class 10</option>
+                    <option value="Class 11">Class 11</option>
+                    <option value="Class 12">Class 12</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Section (Optional)
+                  </label>
+                  <select
+                    value={reAdmitForm.section_id}
+                    onChange={(e) => setReAdmitForm({ ...reAdmitForm, section_id: e.target.value })}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
+                  >
+                    <option value="">No Section (Class level)</option>
+                    <option value="Section A">Section A</option>
+                    <option value="Section B">Section B</option>
+                    <option value="Section C">Section C</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Re-admission Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={reAdmitForm.admission_date}
+                    onChange={(e) => setReAdmitForm({ ...reAdmitForm, admission_date: e.target.value })}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Roll No (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={reAdmitForm.roll_no}
+                    onChange={(e) => setReAdmitForm({ ...reAdmitForm, roll_no: e.target.value })}
+                    placeholder="e.g. 15"
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Reason for Re-admission
+                </label>
+                <textarea
+                  value={reAdmitForm.reason}
+                  onChange={(e) => setReAdmitForm({ ...reAdmitForm, reason: e.target.value })}
+                  placeholder="e.g. Relocated back to town; completed medical treatment"
+                  rows={2}
+                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsReAdmitModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={reAdmitLoading}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {reAdmitLoading ? "Processing..." : "Confirm Re-admission"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Save Success Alert */}

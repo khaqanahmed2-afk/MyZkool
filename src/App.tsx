@@ -37,6 +37,7 @@ import { StudentAdmissionWizard } from "./pages/admin/students/wizard/StudentAdm
 import StudentBulkImport from "./pages/admin/students/StudentBulkImport";
 import StudentPromotionPipeline from "./pages/admin/students/StudentPromotionPipeline";
 import StudentTCRegister from "./pages/admin/students/StudentTCRegister";
+import StudentIdCards from "./pages/admin/students/StudentIdCards";
 import ClassesSettings from "./pages/admin/settings/ClassesSettings";
 
 export default function App() {
@@ -161,6 +162,7 @@ export default function App() {
             <Route path="students/import" element={<StudentBulkImport />} />
             <Route path="students/promotion" element={<StudentPromotionPipeline />} />
             <Route path="students/tc" element={<StudentTCRegister />} />
+            <Route path="students/id-cards" element={<StudentIdCards />} />
             <Route path="students/:id" element={<StudentProfileView />} />
             <Route path="attendance" element={<ModulePlaceholder />} />
             <Route path="fees" element={<ModulePlaceholder />} />
