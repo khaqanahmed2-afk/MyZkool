@@ -2446,6 +2446,13 @@ export async function admitStudentTransactional(
       return { error: "Insufficient permissions to admit student" };
     }
 
+    // Plan limits check (Spec 1.5, A10)
+    const { checkSchoolStudentLimit } = await import("./studentOperationsService");
+    const limitStatus = await checkSchoolStudentLimit(schoolId);
+    if (limitStatus.is_blocked) {
+      throw new Error(`LIMIT_REACHED: School active student limit of ${limitStatus.max_allowed} reached for plan ${limitStatus.plan_tier}`);
+    }
+
     // STEP 1: Counter & Admission Number
     const counterRes = await getNextCounter(schoolId, "student_admission_no");
     if (counterRes.error) {
@@ -3084,3 +3091,4 @@ export const admitStudent = admitStudentTransactional;
 
 export { STUDENT_PERMISSIONS, STUDENT_ROLE_PERMISSIONS };
 export type { StudentPermissionKey };
+export * from "./studentOperationsService";

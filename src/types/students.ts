@@ -55,6 +55,7 @@ export interface Student {
   status_reason?: string | null;
   house?: string | null;
   medium?: string | null;
+  import_batch_id?: string | null;
   deleted_at?: string | null;
   deleted_by?: string | null;
   delete_reason?: string | null;
@@ -398,6 +399,8 @@ export interface StudentDraftInput {
 /**
  * Student transfer certificate
  */
+export type TCStatus = 'draft' | 'approved' | 'rejected';
+
 export interface StudentTransferCertificate {
   id: string;
   school_id: string;
@@ -415,6 +418,8 @@ export interface StudentTransferCertificate {
   pdf_path?: string | null;
   is_duplicate_copy: boolean;
   original_tc_id?: string | null;
+  status: TCStatus;
+  qr_verification_code?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -432,6 +437,8 @@ export interface StudentTransferCertificateInput {
   approved_by?: string;
   is_duplicate_copy?: boolean;
   original_tc_id?: string;
+  status?: TCStatus;
+  qr_verification_code?: string;
 }
 
 /**
@@ -478,6 +485,7 @@ export interface StudentEnrollment {
   section_id?: string | null;
   roll_no?: string | null;
   status: EnrollmentStatus;
+  promotion_batch_id?: string | null;
   enrolled_on: string; // YYYY-MM-DD
   ended_on?: string | null; // YYYY-MM-DD
   created_at: string;
@@ -883,3 +891,169 @@ export const STUDENT_ROLE_PERMISSIONS: Record<string, StudentPermissionKey[]> = 
     'students.contacts.read', // self
   ],
 };
+
+/**
+ * Stage 4 Operations Types
+ */
+
+// Bulk Import
+export interface ImportRowData {
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  dob: string;
+  gender: StudentGender;
+  class_name: string;
+  section_name?: string;
+  roll_no?: string;
+  parent_name: string;
+  parent_phone: string;
+  parent_relation?: ParentRelation;
+  father_name?: string;
+  father_phone?: string;
+  mother_name?: string;
+  mother_phone?: string;
+  category?: StudentCategory;
+  religion?: string;
+  blood_group?: string;
+  address_line1?: string;
+  city?: string;
+  state?: string;
+  pin?: string;
+  is_rte?: boolean;
+}
+
+export interface ImportValidationRow {
+  row_index: number;
+  data: Partial<ImportRowData>;
+  errors: string[];
+  is_valid: boolean;
+}
+
+export interface ImportValidationResult {
+  file_name: string;
+  total_rows: number;
+  valid_rows_count: number;
+  invalid_rows_count: number;
+  rows: ImportValidationRow[];
+  can_commit: boolean;
+  column_mapping: Record<string, string>;
+}
+
+export interface ImportCommitResult {
+  batch_id: string;
+  total_rows: number;
+  created_rows: number;
+  skipped_rows: number;
+  status: ImportBatchStatus;
+  created_student_ids: string[];
+}
+
+// Promotion Pipeline
+export type PromotionAction = 'promote' | 'detain' | 'leave' | 'pass_out';
+export type SectionDistributionMode = 'keep_letter' | 'distribute_evenly' | 'unassigned';
+
+export interface PromotionClassMapping {
+  from_class_id: string;
+  from_class_name: string;
+  to_class_id?: string | null;
+  to_class_name?: string | null;
+  student_count: number;
+}
+
+export interface PromotionStudentItem {
+  student_id: string;
+  admission_no: string;
+  first_name: string;
+  last_name: string;
+  current_class_id: string;
+  current_class_name: string;
+  current_section_id?: string | null;
+  current_section_name?: string | null;
+  action: PromotionAction;
+  target_class_id?: string | null;
+  target_class_name?: string | null;
+  target_section_id?: string | null;
+  target_section_name?: string | null;
+  has_dues: boolean;
+  dues_amount_paise: number;
+}
+
+export interface PromotionPreviewResult {
+  from_year_id: string;
+  to_year_id: string;
+  total_eligible: number;
+  promote_count: number;
+  detain_count: number;
+  leave_count: number;
+  pass_out_count: number;
+  dues_count: number;
+  class_mappings: PromotionClassMapping[];
+  students: PromotionStudentItem[];
+}
+
+export interface PromotionConfig {
+  from_year_id: string;
+  to_year_id: string;
+  section_distribution: SectionDistributionMode;
+  overrides?: Record<string, { action: PromotionAction; target_section_id?: string }>;
+}
+
+export interface PromotionExecuteResult {
+  batch_id: string;
+  from_year_id: string;
+  to_year_id: string;
+  total_processed: number;
+  promoted_count: number;
+  detained_count: number;
+  passed_out_count: number;
+  left_count: number;
+  summary: Record<string, unknown>;
+}
+
+// Status Change & TC
+export interface StatusChangeInput {
+  new_status: StudentStatus;
+  effective_date: string;
+  reason: string;
+  end_transport?: boolean;
+}
+
+export interface IssueTCInput {
+  issued_on: string;
+  last_class_id?: string;
+  last_academic_year_id?: string;
+  reason: string;
+  conduct?: string;
+  remarks?: string;
+  dues_cleared?: boolean;
+  dues_override_reason?: string;
+  require_owner_approval?: boolean;
+}
+
+// Plan Limits
+export interface PlanLimitsStatus {
+  active_count: number;
+  max_allowed: number;
+  plan_tier: string;
+  warning_threshold: number; // 90%
+  is_warning: boolean;
+  is_blocked: boolean;
+  remaining_capacity: number;
+}
+
+// Parent Merge
+export interface ParentMergePreview {
+  surviving_parent: Parent;
+  duplicate_parent: Parent;
+  students_to_link: { id: string; first_name: string; last_name: string; admission_no: string }[];
+  already_linked_students: { id: string; first_name: string; last_name: string }[];
+  consents_to_transfer: CommunicationConsent[];
+}
+
+export interface ParentMergeResult {
+  surviving_parent_id: string;
+  duplicate_parent_id: string;
+  moved_links_count: number;
+  transferred_consents_count: number;
+}

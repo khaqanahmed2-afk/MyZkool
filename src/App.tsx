@@ -34,6 +34,10 @@ import ModulePlaceholder from "./pages/admin/ModulePlaceholder";
 import StudentList from "./pages/admin/students/StudentList";
 import StudentProfileView from "./pages/admin/students/StudentProfile";
 import { StudentAdmissionWizard } from "./pages/admin/students/wizard/StudentAdmissionWizard";
+import StudentBulkImport from "./pages/admin/students/StudentBulkImport";
+import StudentPromotionPipeline from "./pages/admin/students/StudentPromotionPipeline";
+import StudentTCRegister from "./pages/admin/students/StudentTCRegister";
+import ClassesSettings from "./pages/admin/settings/ClassesSettings";
 
 export default function App() {
   return (
@@ -154,6 +158,9 @@ export default function App() {
             <Route index element={<DashboardHome />} />
             <Route path="students" element={<StudentList />} />
             <Route path="students/new" element={<StudentAdmissionWizard />} />
+            <Route path="students/import" element={<StudentBulkImport />} />
+            <Route path="students/promotion" element={<StudentPromotionPipeline />} />
+            <Route path="students/tc" element={<StudentTCRegister />} />
             <Route path="students/:id" element={<StudentProfileView />} />
             <Route path="attendance" element={<ModulePlaceholder />} />
             <Route path="fees" element={<ModulePlaceholder />} />
@@ -162,7 +169,8 @@ export default function App() {
             <Route path="exams" element={<ModulePlaceholder />} />
             <Route path="communication" element={<ModulePlaceholder />} />
             <Route path="reports" element={<ModulePlaceholder />} />
-            <Route path="settings" element={<ModulePlaceholder />} />
+            <Route path="settings" element={<ClassesSettings />} />
+            <Route path="settings/classes" element={<ClassesSettings />} />
           </Route>
 
           {/* Fallback route */}

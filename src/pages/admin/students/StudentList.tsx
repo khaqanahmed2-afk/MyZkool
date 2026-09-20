@@ -13,11 +13,15 @@ import {
   ChevronLeft,
   ChevronRight,
   RotateCcw,
+  Sparkles,
+  FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
-import type { StudentListItem, StudentStatus } from "../../../types/students";
+import type { StudentListItem, StudentStatus, PlanLimitsStatus } from "../../../types/students";
 import type { SchoolClass, SchoolSection } from "../../../types/curriculum";
 import { listStudents, getStudentDraft } from "../../../services/studentService";
+import { checkSchoolStudentLimit } from "../../../services/studentOperationsService";
 import { getClassesWithSections } from "../../../services/classSectionService";
 import { getCurrentAcademicYear } from "../../../services/academicService";
 import { StudentSummaryStrip } from "./StudentSummaryStrip";
@@ -56,6 +60,7 @@ export default function StudentList() {
   const [sections, setSections] = useState<SchoolSection[]>([]);
   const [academicYearLabel, setAcademicYearLabel] = useState("2026–27");
   const [draftCount, setDraftCount] = useState(0);
+  const [planLimits, setPlanLimits] = useState<PlanLimitsStatus | null>(null);
 
   // Column visibility
   const [columns, setColumns] = useState<ColumnVisibility>({
@@ -89,6 +94,8 @@ export default function StudentList() {
     getStudentDraft(schoolId, profile?.id || "user-draft").then(draftRes => {
       if (draftRes.draft) setDraftCount(1);
     });
+
+    checkSchoolStudentLimit(schoolId).then(setPlanLimits).catch(() => {});
   }, [schoolId, profile?.id]);
 
   // Fetch students
@@ -211,14 +218,71 @@ export default function StudentList() {
 
           <button
             type="button"
+            onClick={() => navigate("/admin/students/promotion")}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            <span>Promotion</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/admin/students/tc")}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
+          >
+            <FileText className="w-3.5 h-3.5 text-slate-500" />
+            <span>TC Register</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => navigate("/admin/students/new")}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#2158E0] hover:bg-[#1A46B8] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+            disabled={planLimits?.is_blocked}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs ${
+              planLimits?.is_blocked
+                ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                : "bg-[#2158E0] hover:bg-[#1A46B8] text-white"
+            }`}
           >
             <Plus className="w-4 h-4" />
-            <span>Add student</span>
+            <span>{planLimits?.is_blocked ? "Limit reached" : "Add student"}</span>
           </button>
         </div>
       </div>
+
+      {/* Plan Limits Warning / Block Banner (Spec 1.5, A10) */}
+      {planLimits && (planLimits.is_warning || planLimits.is_blocked) && (
+        <div
+          className={`p-4 rounded-xl border flex items-center justify-between gap-4 text-sm shadow-xs ${
+            planLimits.is_blocked
+              ? "bg-red-50 border-red-200 text-red-800"
+              : "bg-amber-50 border-amber-200 text-amber-800"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-600" />
+            <div>
+              <p className="font-semibold">
+                {planLimits.is_blocked
+                  ? `Plan Limit Reached (${planLimits.active_count}/${planLimits.max_allowed} Active Students)`
+                  : `Plan Capacity Notice (${planLimits.active_count}/${planLimits.max_allowed} Active Students - 90% Capacity)`}
+              </p>
+              <p className="text-xs mt-0.5 opacity-90">
+                {planLimits.is_blocked
+                  ? "Your school has reached the maximum student limit for this tier. New admissions and bulk imports are blocked until upgraded."
+                  : "You are approaching your plan limit. Consider upgrading to the Pro plan for up to 1,800 active students."}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/onboarding/subscription")}
+            className="px-3 py-1.5 bg-white border border-current rounded-lg text-xs font-bold shadow-xs whitespace-nowrap"
+          >
+            Upgrade Subscription
+          </button>
+        </div>
+      )}
 
       {/* 2. Summary Strip */}
       <StudentSummaryStrip
