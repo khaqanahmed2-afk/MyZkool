@@ -42,13 +42,16 @@ import {
   Parent,
   AuditLog,
 } from "../types/students";
-import { feeService } from "./feeService";
+import { createFeeService } from "./feeService";
 import { transportService } from "./transportService";
 import {
   getNextCounter,
   logAudit,
   getStudentProfile,
 } from "./studentService";
+
+/** Get a fee service instance with school context (Phase 3a: wires real balance) */
+function getFeeService(schoolId: string) { return createFeeService(schoolId); }
 
 // Local storage cache keys
 const STUDENTS_CACHE_PREFIX = "myzkool_students_";
@@ -758,7 +761,7 @@ export async function rollbackImportBatch(
   // 3. Rule A4.5: Block rollback if any student has receipts, transport assignments, or later edits
   for (const student of students) {
     // Check fee receipts / balance
-    const feeRes = await feeService.getStudentBalance(student.id);
+    const feeRes = await getFeeService(schoolId).getStudentBalance(student.id);
     const balance = feeRes?.balance || 0;
     if (balance > 0) {
       throw new Error(
@@ -917,7 +920,7 @@ export async function getPromotionPreview(
     if (!student) continue;
 
     // Check dues
-    const duesRes = await feeService.getStudentBalance(student.id);
+    const duesRes = await getFeeService(schoolId).getStudentBalance(student.id);
     const dues = duesRes?.balance || 0;
     const hasDues = dues > 0;
     if (hasDues) duesCount++;
@@ -1203,7 +1206,7 @@ export async function undoPromotion(
   // Check if any student has fee transactions or attendance in the new year
   // If dependency exists: throw CANNOT_UNDO_PROMOTION error
   for (const sId of studentIds) {
-    const balance = await feeService.getStudentBalance(sId);
+    const balance = await getFeeService(schoolId).getStudentBalance(sId);
     // If payments were accepted in the new year (we verify through simulated check if tagged)
     if ((batch.summary as any)?.has_new_year_payments) {
       throw new Error("CANNOT_UNDO_PROMOTION: Fee receipts or attendance records exist in the target academic year.");
@@ -1376,7 +1379,7 @@ export async function issueTransferCertificate(
   }
 
   // 1. Dues Check (Spec A4.7)
-  const feeRes = await feeService.getStudentBalance(studentId);
+  const feeRes = await getFeeService(schoolId).getStudentBalance(studentId);
   const duesPaise = feeRes?.balance || 0;
   if (duesPaise > 0) {
     const isOwner = actorRole.toLowerCase() === "owner" || actorRole.toLowerCase() === "school_admin";
@@ -2489,4 +2492,5 @@ export async function getStudentIdCardData(
     };
   });
 }
+
 

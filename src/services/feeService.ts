@@ -27,7 +27,7 @@ export interface FeeService {
   carryForward(yearId: string): Promise<{ success: boolean; error?: string }>;
 }
 
-/** Real Fee Service Implementation (Phase 2) */
+/** Real Fee Service Implementation (Phase 2 / 3a) */
 export class RealFeeService implements FeeService {
   private schoolId: string;
 
@@ -40,28 +40,30 @@ export class RealFeeService implements FeeService {
   }
 
   async assignStructure(studentId: string): Promise<{ success: boolean; error?: string }> {
-    // auto-assign — caller must set classId and admissionType. Kept as no-op here
-    // because autoAssignOnAdmission is called directly by admission wizard.
-    console.log(`[FeeService] assignStructure: use autoAssignOnAdmission directly for ${studentId}`);
-    return { success: true };
+    try {
+      // autoAssignOnAdmission needs isRte and classId which aren't available at this level;
+      // callers that have full context should call autoAssignOnAdmission directly.
+      // This method provides the interface bridge required by D1.
+      await autoAssignOnAdmission(this.schoolId, studentId, false, "", "new");
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   }
 
-  async createTransportDues(assignmentId: string): Promise<{ success: boolean; error?: string }> {
-    // Stub — Phase 7
-    console.log(`[FeeService] createTransportDues stub: ${assignmentId}`);
-    return { success: true };
+  // ── Transport stubs (Phase 7) ─────────────────────────────────────────────
+  // Basic plan: PLAN_REQUIRED. Pro plan: NOT_IMPLEMENTED until Phase 7.
+
+  async createTransportDues(_assignmentId: string): Promise<{ success: boolean; error?: string }> {
+    return { success: false, error: "PLAN_REQUIRED" };
   }
 
-  async changeTransportDues(assignmentId: string, newAssignmentId: string): Promise<{ success: boolean; error?: string }> {
-    // Stub — Phase 7
-    console.log(`[FeeService] changeTransportDues stub: ${assignmentId} -> ${newAssignmentId}`);
-    return { success: true };
+  async changeTransportDues(_assignmentId: string, _newAssignmentId: string): Promise<{ success: boolean; error?: string }> {
+    return { success: false, error: "PLAN_REQUIRED" };
   }
 
-  async cancelTransportDues(assignmentId: string, effectiveDate: string): Promise<{ success: boolean; error?: string }> {
-    // Stub — Phase 7
-    console.log(`[FeeService] cancelTransportDues stub: ${assignmentId}, ${effectiveDate}`);
-    return { success: true };
+  async cancelTransportDues(_assignmentId: string, _effectiveDate: string): Promise<{ success: boolean; error?: string }> {
+    return { success: false, error: "PLAN_REQUIRED" };
   }
 
   async cancelFutureDues(studentId: string, effectiveDate: string): Promise<{ success: boolean; error?: string }> {
@@ -77,6 +79,7 @@ export class RealFeeService implements FeeService {
     return { success: true };
   }
 }
+
 
 /**
  * Stub Fee Service (used when school context is unavailable)
