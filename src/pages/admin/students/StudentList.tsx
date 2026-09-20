@@ -559,11 +559,18 @@ export default function StudentList() {
                           <span className="text-slate-400 italic">Not set</span>
                         )}
                       </td>
-                      <td className="py-3 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
+
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/admin/fees/collect?student=${student.id}`)}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition-colors cursor-pointer"
+                          title="Click to collect fee"
+                        >
                           Paid up
-                        </span>
+                        </button>
                       </td>
+
                       <td className="py-3 px-4">
                         <span className="text-slate-600 text-xs">Verified</span>
                       </td>

@@ -48,6 +48,10 @@ import LateFeeRulesPage from "./pages/admin/fees/LateFeeRulesPage";
 import FeeSettingsPage from "./pages/admin/fees/FeeSettingsPage";
 import DuesGenerationPage from "./pages/admin/fees/DuesGenerationPage";
 import ApprovalsPage from "./pages/admin/approvals/ApprovalsPage";
+import FeeCollectPage from "./pages/admin/fees/FeeCollectPage";
+import ReceiptsPage from "./pages/admin/fees/ReceiptsPage";
+import StudentLedgerPage from "./pages/admin/fees/StudentLedgerPage";
+
 
 
 export default function App() {
@@ -184,7 +188,11 @@ export default function App() {
             <Route path="fees/setup/late-fees" element={<LateFeeRulesPage />} />
             <Route path="fees/setup/settings" element={<FeeSettingsPage />} />
             <Route path="fees/dues" element={<DuesGenerationPage />} />
+            <Route path="fees/collect" element={<FeeCollectPage />} />
+            <Route path="fees/receipts" element={<ReceiptsPage />} />
+            <Route path="fees/students/:id" element={<StudentLedgerPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
+
             <Route path="staff" element={<ModulePlaceholder />} />
             <Route path="timetable" element={<ModulePlaceholder />} />
             <Route path="exams" element={<ModulePlaceholder />} />

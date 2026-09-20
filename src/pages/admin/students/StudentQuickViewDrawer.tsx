@@ -220,12 +220,25 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose }: StudentQu
               <CreditCard className="w-3.5 h-3.5 text-slate-400" /> Fee status
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Current balance</span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                ₹0 (Paid up)
-              </span>
+              <div>
+                <span className="text-xs text-slate-600 block">Current balance</span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 mt-0.5">
+                  ₹0 (Paid up)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  navigate(`/admin/fees/collect?student=${student.id}`);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#2158E0] text-white hover:bg-[#1A46B8] transition-colors cursor-pointer"
+              >
+                <CreditCard className="w-3.5 h-3.5" /> Collect fee
+              </button>
             </div>
           </div>
+
         </div>
 
         {/* Footer with Open Profile CTA */}

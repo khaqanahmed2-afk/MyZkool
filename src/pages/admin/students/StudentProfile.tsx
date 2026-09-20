@@ -56,6 +56,9 @@ import {
   exportStudentData,
 } from "../../../services/studentOperationsService";
 import TransferCertificateModal from "./TransferCertificateModal";
+import StudentLedgerTab from "../fees/StudentLedgerTab";
+
+
 
 type ProfileTab = "overview" | "personal" | "family" | "academics" | "fees" | "transport" | "documents" | "medical" | "timeline";
 
@@ -584,11 +587,12 @@ export default function StudentProfileView() {
             </button>
             <button
               type="button"
-              onClick={() => alert("Fee module dialog")}
+              onClick={() => navigate(`/admin/fees/collect?student=${profile.id}`)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors cursor-pointer"
             >
               <CreditCard className="w-3.5 h-3.5" /> Collect fee
             </button>
+
             <button
               type="button"
               onClick={() => setIsStatusModalOpen(true)}
@@ -1570,8 +1574,18 @@ export default function StudentProfileView() {
         </div>
       )}
 
-      {/* 8. PLACEHOLDER TABS (Fees, Transport) */}
-      {(activeTab === "fees" || activeTab === "transport") && (
+      {/* 8. FEES TAB */}
+      {activeTab === "fees" && profile && (
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs">
+          <StudentLedgerTab
+            studentId={profile.id}
+            studentName={`${profile.first_name} ${profile.last_name}`.trim()}
+          />
+        </div>
+      )}
+
+      {/* 9. TRANSPORT TAB (Placeholder) */}
+      {activeTab === "transport" && (
         <div className="bg-white border border-[#E6EAF3] rounded-2xl p-12 text-center space-y-3 shadow-2xs">
           <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
             <Activity className="w-6 h-6" />
@@ -1584,6 +1598,7 @@ export default function StudentProfileView() {
           </p>
         </div>
       )}
+
 
       {/* ================= MODALS ================= */}
 

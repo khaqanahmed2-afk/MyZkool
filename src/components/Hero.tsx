@@ -58,7 +58,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
             id="hero-eyebrow"
           >
             <span className="w-2 h-2 rounded-full bg-[#2158E0] animate-pulse" />
-            <span>Built for Tier 2 & Tier 3 schools across India</span>
+            <span>Built for Schools across India</span>
           </motion.div>
 
           {/* Headline: "One Login" (brand blue) for Your Entire School: Website, Fees, Attendance & WhatsApp Updates */}
