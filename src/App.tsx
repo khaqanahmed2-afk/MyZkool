@@ -39,6 +39,16 @@ import StudentPromotionPipeline from "./pages/admin/students/StudentPromotionPip
 import StudentTCRegister from "./pages/admin/students/StudentTCRegister";
 import StudentIdCards from "./pages/admin/students/StudentIdCards";
 import ClassesSettings from "./pages/admin/settings/ClassesSettings";
+import FeeSetupChecklist from "./pages/admin/fees/FeeSetupChecklist";
+import FeeHeadsPage from "./pages/admin/fees/FeeHeadsPage";
+import FeeTermsPage from "./pages/admin/fees/FeeTermsPage";
+import FeeStructuresPage from "./pages/admin/fees/FeeStructuresPage";
+import ConcessionRulesPage from "./pages/admin/fees/ConcessionRulesPage";
+import LateFeeRulesPage from "./pages/admin/fees/LateFeeRulesPage";
+import FeeSettingsPage from "./pages/admin/fees/FeeSettingsPage";
+import DuesGenerationPage from "./pages/admin/fees/DuesGenerationPage";
+import ApprovalsPage from "./pages/admin/approvals/ApprovalsPage";
+
 
 export default function App() {
   return (
@@ -165,7 +175,16 @@ export default function App() {
             <Route path="students/id-cards" element={<StudentIdCards />} />
             <Route path="students/:id" element={<StudentProfileView />} />
             <Route path="attendance" element={<ModulePlaceholder />} />
-            <Route path="fees" element={<ModulePlaceholder />} />
+            <Route path="fees" element={<FeeSetupChecklist />} />
+            <Route path="fees/setup" element={<FeeSetupChecklist />} />
+            <Route path="fees/setup/heads" element={<FeeHeadsPage />} />
+            <Route path="fees/setup/terms" element={<FeeTermsPage />} />
+            <Route path="fees/setup/structures" element={<FeeStructuresPage />} />
+            <Route path="fees/setup/concessions" element={<ConcessionRulesPage />} />
+            <Route path="fees/setup/late-fees" element={<LateFeeRulesPage />} />
+            <Route path="fees/setup/settings" element={<FeeSettingsPage />} />
+            <Route path="fees/dues" element={<DuesGenerationPage />} />
+            <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="staff" element={<ModulePlaceholder />} />
             <Route path="timetable" element={<ModulePlaceholder />} />
             <Route path="exams" element={<ModulePlaceholder />} />

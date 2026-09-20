@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -14,10 +14,12 @@ import {
   X,
   HelpCircle,
   IndianRupee,
+  Shield,
 } from "lucide-react";
 import { MyZkoolLogo } from "../MyZkoolLogo";
 import type { School } from "../../types/school";
 import { useAuth } from "../../hooks/useAuth";
+import { getPendingCount } from "../../services/approvalService";
 
 interface SidebarProps {
   school: School | null;
@@ -35,12 +37,23 @@ const NAVIGATION = [
   { label: "Exams & Results", href: "/admin/exams", icon: GraduationCap },
   { label: "Communication", href: "/admin/communication", icon: MessageSquare },
   { label: "Reports", href: "/admin/reports", icon: BarChart3 },
+  { label: "Approvals", href: "/admin/approvals", icon: Shield, badgeKey: "approvals" },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
 export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   const location = useLocation();
   const { profile } = useAuth();
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+
+  useEffect(() => {
+    if (!school?.id) return;
+    getPendingCount(school.id).then(count => setPendingApprovals(count)).catch(() => {});
+    const timer = setInterval(() => {
+      getPendingCount(school.id).then(count => setPendingApprovals(count)).catch(() => {});
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [school?.id]);
 
   return (
     <>
@@ -113,6 +126,8 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
               (item.href !== "/admin" &&
                 location.pathname.startsWith(item.href));
             const Icon = item.icon;
+            const badge = (item as any).badgeKey === "approvals" && pendingApprovals > 0
+              ? pendingApprovals : 0;
             return (
               <Link
                 key={item.href}
@@ -131,10 +146,16 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
                 <Icon
                   className={`w-4 h-4 ${isActive ? "text-white" : "text-[#5B6478]"}`}
                 />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {badge > 0 && (
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </Link>
             );
           })}
+
         </div>
 
         {/* Bottom Area */}
