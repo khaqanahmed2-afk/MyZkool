@@ -18,3 +18,4 @@ export function getPaymentGatewayAdapter(type: GatewayType = "razorpay"): Paymen
 }
 
 export { mockGateway, razorpayGateway };
+

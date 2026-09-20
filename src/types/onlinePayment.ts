@@ -178,3 +178,4 @@ export interface SettlementReportRow {
   net_payout_paise: number;
   status: "settled" | "captured" | "mismatch";
 }
+

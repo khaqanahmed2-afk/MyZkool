@@ -56,6 +56,11 @@ import ChequeRegisterPage from "./pages/admin/fees/ChequeRegisterPage";
 import RefundsPage from "./pages/admin/fees/RefundsPage";
 import DayClosePage from "./pages/admin/fees/DayClosePage";
 import FeeReportsPage from "./pages/admin/fees/FeeReportsPage";
+import TransportDashboard from "./pages/admin/transport/TransportDashboard";
+import VehiclesPage from "./pages/admin/transport/VehiclesPage";
+import TransportStaffPage from "./pages/admin/transport/TransportStaffPage";
+import RouteBuilderPage from "./pages/admin/transport/RouteBuilderPage";
+import FeeZonesPage from "./pages/admin/transport/FeeZonesPage";
 
 
 
@@ -192,6 +197,13 @@ export default function App() {
             <Route path="fees/day-close" element={<DayClosePage />} />
             <Route path="fees/reports" element={<FeeReportsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
+
+            <Route path="transport" element={<TransportDashboard />} />
+            <Route path="transport/dashboard" element={<TransportDashboard />} />
+            <Route path="transport/vehicles" element={<VehiclesPage />} />
+            <Route path="transport/staff" element={<TransportStaffPage />} />
+            <Route path="transport/routes" element={<RouteBuilderPage />} />
+            <Route path="transport/fees" element={<FeeZonesPage />} />
 
 
             <Route path="staff" element={<ModulePlaceholder />} />

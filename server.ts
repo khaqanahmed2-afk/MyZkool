@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality } from "@google/genai";
 import dotenv from "dotenv";
+import { transportRouter } from "./src/routes/transportRoutes";
 
 dotenv.config();
 
@@ -10,6 +11,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: "25mb" }));
+app.use("/api/transport", transportRouter);
 
 // Lazy initialize Gemini AI SDK
 let aiClient: GoogleGenAI | null = null;

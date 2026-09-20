@@ -12,8 +12,21 @@ import type { Request, Response, NextFunction } from "express";
 export function requireFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const schoolId = (req as any).schoolId;
+      const schoolId = (req as any).schoolId || (req.headers && req.headers["x-school-id"] as string);
       
+      // If req already has schoolPlan attached (e.g. from test or auth context)
+      if ((req as any).schoolPlan) {
+        const plan = (req as any).schoolPlan;
+        const features = Array.isArray(plan.features) ? plan.features : [];
+        if (!features.includes(feature) && (plan.plan_key === "basic" || plan.plan_slug === "basic")) {
+          return res.status(402).json({
+            code: "PLAN_REQUIRED",
+            feature,
+            message: `This feature requires a plan that includes ${feature}`,
+          });
+        }
+      }
+
       if (!schoolId) {
         return res.status(400).json({
           code: "BAD_REQUEST",
@@ -21,8 +34,6 @@ export function requireFeature(feature: string) {
         });
       }
       
-      // In a real implementation, this would call the school_has_feature() SQL function
-      // For now, we'll check the school's subscription plan
       const hasFeature = await checkSchoolFeature(schoolId, feature);
       
       if (!hasFeature) {
@@ -45,26 +56,57 @@ export function requireFeature(feature: string) {
 
 /**
  * Check if school has a feature enabled
- * In a real implementation, this would call the school_has_feature() SQL function
  */
-async function checkSchoolFeature(schoolId: string, feature: string): Promise<boolean> {
-  // This is a placeholder - in real implementation, call the SQL function
-  // For now, we'll check based on plan
+export async function checkSchoolFeature(schoolId: string, feature: string): Promise<boolean> {
+  // 1. Supabase check
   try {
-    // In a real app, this would query the database
-    // const { data } = await supabase.rpc('school_has_feature', { p_feature: feature });
-    // return data === true;
-    
-    // Placeholder logic based on feature
-    if (feature === 'transport') {
-      // Check if school is on Pro plan
-      return false; // Default to false for now
+    const { supabase, isSupabaseConfigured } = await import("../lib/supabase");
+    if (isSupabaseConfigured) {
+      const { data } = await supabase.rpc("school_has_feature", { p_feature: feature });
+      if (typeof data === "boolean") return data;
     }
-    
-    return true; // Other features available by default
   } catch {
-    return false;
+    // Continue to store check
   }
+
+  // 2. LocalStorage / Test environment check
+  if (typeof localStorage !== "undefined") {
+    // Check school plan cache
+    const planKey = `myzkool_school_plans_${schoolId}`;
+    const cachedPlan = localStorage.getItem(planKey);
+    if (cachedPlan) {
+      try {
+        const parsed = JSON.parse(cachedPlan);
+        if (Array.isArray(parsed.features)) {
+          return parsed.features.includes(feature);
+        }
+        if (parsed.plan_slug === "basic" || parsed.plan_key === "basic") {
+          return false;
+        }
+        if (parsed.plan_slug === "pro" || parsed.plan_key === "pro") {
+          return true;
+        }
+      } catch {}
+    }
+
+    // Check school subscription cache
+    const subKey = `myzkool_subscription_${schoolId}`;
+    const cachedSub = localStorage.getItem(subKey);
+    if (cachedSub) {
+      try {
+        const parsed = JSON.parse(cachedSub);
+        const planSlug = parsed.plan?.slug || parsed.plan_slug;
+        if (planSlug === "pro" || planSlug === "custom") return true;
+        if (planSlug === "basic") return false;
+      } catch {}
+    }
+  }
+
+  if (feature === "transport") {
+    return false; // Pro plan required for transport
+  }
+
+  return true;
 }
 
 /**

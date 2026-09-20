@@ -17,17 +17,11 @@ export interface PlanService {
  * Stub Plan Service Implementation
  * Checks subscription plan for feature access
  */
+import { checkSchoolFeature } from "../middleware/features";
+
 export class StubPlanService implements PlanService {
   async hasFeature(schoolId: string, feature: string): Promise<boolean> {
-    console.log(`[StubPlanService] hasFeature called for school: ${schoolId}, feature: ${feature}`);
-    
-    // In a real implementation, this would call the school_has_feature() SQL function
-    // For now, return false for transport (Pro only), true for others
-    if (feature === "transport") {
-      return false; // Basic plan doesn't have transport
-    }
-    
-    return true;
+    return checkSchoolFeature(schoolId, feature);
   }
 }
 

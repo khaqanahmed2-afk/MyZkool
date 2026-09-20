@@ -124,3 +124,4 @@ CREATE POLICY "parent_pay_tokens_school" ON public.parent_pay_tokens
 
 CREATE POLICY "parent_pay_sessions_school" ON public.parent_pay_sessions
   FOR ALL USING (token_id IN (SELECT id FROM public.parent_pay_tokens WHERE school_id = current_school_id()));
+

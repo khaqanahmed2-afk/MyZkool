@@ -15,11 +15,14 @@ import {
   HelpCircle,
   IndianRupee,
   Shield,
+  Bus,
+  Lock,
 } from "lucide-react";
 import { MyZkoolLogo } from "../MyZkoolLogo";
 import type { School } from "../../types/school";
 import { useAuth } from "../../hooks/useAuth";
 import { getPendingCount } from "../../services/approvalService";
+import { checkSchoolFeature } from "../../middleware/features";
 
 interface SidebarProps {
   school: School | null;
@@ -32,6 +35,7 @@ const NAVIGATION = [
   { label: "Students", href: "/admin/students", icon: Users },
   { label: "Attendance", href: "/admin/attendance", icon: CalendarCheck },
   { label: "Fees", href: "/admin/fees", icon: IndianRupee },
+  { label: "Transport", href: "/admin/transport", icon: Bus, featureKey: "transport" },
   { label: "Staff", href: "/admin/staff", icon: Briefcase },
   { label: "Timetable", href: "/admin/timetable", icon: CalendarDays },
   { label: "Exams & Results", href: "/admin/exams", icon: GraduationCap },
@@ -45,9 +49,11 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   const location = useLocation();
   const { profile } = useAuth();
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [hasTransport, setHasTransport] = useState<boolean>(true);
 
   useEffect(() => {
     if (!school?.id) return;
+    checkSchoolFeature(school.id, "transport").then(setHasTransport).catch(() => setHasTransport(false));
     getPendingCount(school.id).then(count => setPendingApprovals(count)).catch(() => {});
     const timer = setInterval(() => {
       getPendingCount(school.id).then(count => setPendingApprovals(count)).catch(() => {});
@@ -147,6 +153,12 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
                   className={`w-4 h-4 ${isActive ? "text-white" : "text-[#5B6478]"}`}
                 />
                 <span className="flex-1">{item.label}</span>
+                {(item as any).featureKey === "transport" && !hasTransport && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-1 shrink-0">
+                    <Lock className="w-2.5 h-2.5" />
+                    PRO
+                  </span>
+                )}
                 {badge > 0 && (
                   <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>
                     {badge > 99 ? "99+" : badge}
