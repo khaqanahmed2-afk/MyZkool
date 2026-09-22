@@ -16,7 +16,7 @@ import {
   FileCheck,
   CheckCircle2
 } from "lucide-react";
-import { ChatMessage } from "../types";
+import { ChatMessage } from "../types/landing";
 
 export const AiSchoolAdvisor: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);

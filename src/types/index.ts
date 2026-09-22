@@ -1,5 +1,5 @@
 // Re-export shared types
-export * from "../types";
+export * from "./landing";
 export * from "./auth";
 export * from "./school";
 export * from "./academic";

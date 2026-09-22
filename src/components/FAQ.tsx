@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ChevronDown, HelpCircle, MessageCircle } from "lucide-react";
-import { FAQItem } from "../types";
+import { FAQItem } from "../types/landing";
 
 export const FAQ: React.FC = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);

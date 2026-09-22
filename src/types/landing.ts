@@ -1,3 +1,10 @@
+/**
+ * Landing page type definitions.
+ * These interfaces are used exclusively by the public-facing landing page
+ * components (Hero, Features, Pricing, FAQ, AiSchoolAdvisor, etc.).
+ * Kept separate from the ERP domain types in this directory.
+ */
+
 export interface FeatureItem {
   id: string;
   title: string;

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Check, X, ArrowRight, ShieldCheck, HelpCircle } from "lucide-react";
-import { ComparisonRow } from "../types";
+import { ComparisonRow } from "../types/landing";
 
 interface PricingProps {
   onOpenDemo: (selectedPlan?: string) => void;
