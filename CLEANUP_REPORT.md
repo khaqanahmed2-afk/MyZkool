@@ -1,7 +1,7 @@
 # MyZkool — Cleanup Report
 **Branch**: `cleanup/phase2-safe-deletions`
 **Dates**: 2026-09-22
-**Phases completed**: Phase 1 (Audit), Phase 2 (Safe deletions), Phase 3 (Reorganization)
+**Phases completed**: Phase 1 (Audit), Phase 2 (Safe deletions), Phase 3 (Reorganization), Phase 4 (Database Cleanup & Documentation)
 
 ---
 
@@ -37,22 +37,34 @@
 
 **Zero logic changes** — only path relocations. Interfaces are byte-for-byte identical.
 
-### New deliverable files
-| File | Location |
-|---|---|
-| `FOLDER_STRUCTURE.md` | Project root |
-| `CLEANUP_REPORT.md` (this file) | Project root |
-| `SCHEMA.md` | Project root (Phase 4) |
+---
+
+## Phase 4 — Database Cleanup & Documentation
+
+### Database Audit Findings
+- **Orphaned / Dead Tables**: None. The candidate table `idempotency_keys` was verified to have never been migrated to Supabase (it existed only as a SQL string constant in the deleted `src/middleware/idempotency.ts`).
+- **Destructive Migrations Required**: None. No DROP TABLE migration is needed or safe to execute.
+- **Migration Naming Convention**:
+  - Legacy migrations `001_...` through `016_...` preserved without renaming to prevent breaking Supabase CLI migration history and CI/CD environments.
+  - Forward-looking standard: All future migrations must use the Supabase timestamp format `YYYYMMDDHHMMSS_<name>.sql`.
+- **Deliverable Created**: Comprehensive `SCHEMA.md` (2,000+ lines) detailing all 72 tables across 9 domains, primary keys, foreign keys, check constraints, indexes, RLS policies, Aadhaar data encryption/masking, and financial paise precision.
+
+### Deliverable files
+| File | Location | Status |
+|---|---|---|
+| `FOLDER_STRUCTURE.md` | Project root | ✅ Created (Phase 3) |
+| `CLEANUP_REPORT.md` (this file) | Project root | ✅ Created (Phase 3, updated Phase 4) |
+| `SCHEMA.md` | Project root | ✅ Created (Phase 4) |
 
 ---
 
 ## Verification Results
 
-| Check | Phase 2 | Phase 3 |
-|---|---|---|
-| `npx tsc --noEmit` | ✅ 0 errors | ✅ 0 errors |
-| Full test suite | ✅ 709 passed, 0 failed | ✅ 709 passed, 0 failed |
-| Baseline (pre-cleanup) | — | 709 passed |
+| Check | Phase 2 | Phase 3 | Phase 4 |
+|---|---|---|---|
+| `npx tsc --noEmit` | ✅ 0 errors | ✅ 0 errors | ✅ 0 errors |
+| Full test suite | ✅ 709 passed, 0 failed | ✅ 709 passed, 0 failed | ✅ 709 passed, 0 failed |
+| Baseline (pre-cleanup) | — | 709 passed | 709 passed |
 
 ---
 
