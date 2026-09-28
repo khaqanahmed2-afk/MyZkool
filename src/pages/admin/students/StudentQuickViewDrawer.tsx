@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, Phone, MessageSquare, ExternalLink, Calendar, Shield, Users, CreditCard } from "lucide-react";
+import { X, Phone, MessageSquare, ExternalLink, Calendar, Shield, Users, CreditCard, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { StudentListItem, StudentProfile } from "../../../types/students";
 import { getStudentProfile } from "../../../services/studentService";
@@ -8,9 +8,10 @@ interface StudentQuickViewDrawerProps {
   student: StudentListItem | null;
   schoolId: string;
   onClose: () => void;
+  onDelete?: (student: StudentListItem) => void;
 }
 
-export function StudentQuickViewDrawer({ student, schoolId, onClose }: StudentQuickViewDrawerProps) {
+export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }: StudentQuickViewDrawerProps) {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(false);
@@ -241,15 +242,29 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose }: StudentQu
 
         </div>
 
-        {/* Footer with Open Profile CTA */}
-        <div className="p-4 border-t border-[#E6EAF3] bg-white">
+        {/* Footer with Open Profile and Delete CTA */}
+        <div className="p-4 border-t border-[#E6EAF3] bg-white flex items-center gap-2">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onDelete(student);
+              }}
+              className="px-3 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+              title="Delete student and data"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span>Delete</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
               onClose();
               navigate(`/admin/students/${student.id}`);
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#2158E0] hover:bg-[#1A46B8] text-white font-semibold text-sm transition-colors cursor-pointer shadow-sm"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#2158E0] hover:bg-[#1A46B8] text-white font-semibold text-sm transition-colors cursor-pointer shadow-sm"
           >
             <span>Open full profile</span>
             <ExternalLink className="w-4 h-4" />

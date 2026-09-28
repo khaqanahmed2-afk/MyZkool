@@ -9,6 +9,7 @@ import type {
   ManualDueInput, FeeHead,
 } from "../../../types/fees";
 import { useAuth } from "../../../hooks/useAuth";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 export default function DuesGenerationPage() {
   const { school, profile } = useAuth() as any;
@@ -76,17 +77,20 @@ export default function DuesGenerationPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#141A2E]">Generate & Assign Dues</h1>
-          <p className="text-[#5B6478] text-sm mt-0.5">Bulk generate dues from fee structures or add individual charges.</p>
-        </div>
-        <button onClick={() => setManualDrawer(true)}
-          className="flex items-center gap-2 text-sm px-4 py-2 border border-[#E6EAF3] bg-white rounded-lg text-[#5B6478] hover:bg-gray-50">
-          <Plus className="w-4 h-4" /> Manual Due
-        </button>
-      </div>
+    <div className="max-w-5xl mx-auto py-6 px-4">
+      <FeeNavHeader
+        title="Assign Fees & Generate Invoices"
+        subtitle="Bulk generate dues from fee structures or add individual student charges."
+        action={
+          <button
+            onClick={() => setManualDrawer(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Manual Due</span>
+          </button>
+        }
+      />
 
       {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm flex gap-2"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{error}</div>}
 

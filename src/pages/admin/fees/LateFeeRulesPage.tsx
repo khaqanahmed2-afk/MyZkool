@@ -5,6 +5,7 @@ import {
 } from "../../../services/feeSetupService";
 import type { LateFeeRule, LateFeeRuleInput, LateFeeMethod } from "../../../types/fees";
 import { useAuth } from "../../../hooks/useAuth";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 const METHOD_LABELS: Record<LateFeeMethod, string> = {
   flat_once: "Flat (once)",
@@ -15,7 +16,9 @@ const METHOD_LABELS: Record<LateFeeMethod, string> = {
 };
 
 export default function LateFeeRulesPage() {
-  const { school } = useAuth() as any;
+  const { school, schoolId, loading: authLoading } = useAuth() as any;
+  const activeSchoolId = school?.id || schoolId || null;
+
   const [rules, setRules] = useState<LateFeeRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,13 +30,22 @@ export default function LateFeeRulesPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!school?.id) return;
+    if (authLoading) return;
+    if (!activeSchoolId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const { rules: r, error: e } = await getLateFeeRules(school.id);
-    setRules(r);
-    setError(e ?? null);
-    setLoading(false);
-  }, [school?.id]);
+    try {
+      const { rules: r, error: e } = await getLateFeeRules(activeSchoolId);
+      setRules(r || []);
+      setError(e ?? null);
+    } catch (err: any) {
+      setError(err.message || "Failed to load late fee rules.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeSchoolId, authLoading]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -58,7 +70,8 @@ export default function LateFeeRulesPage() {
   async function handleSave() {
     if (!form.name.trim() || form.value <= 0) { setFormError("Name and a positive value are required."); return; }
     setSaving(true);
-    const { error: e } = await createLateFeeRule(school.id, form);
+    if (!activeSchoolId) { setFormError("School ID missing."); setSaving(false); return; }
+    const { error: e } = await createLateFeeRule(activeSchoolId, form);
     if (e) { setFormError(e); setSaving(false); return; }
     await load();
     setSaving(false);
@@ -68,17 +81,20 @@ export default function LateFeeRulesPage() {
   const preview = previewRule(form);
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#141A2E]">Late Fee Rules</h1>
-          <p className="text-[#5B6478] text-sm mt-0.5">Penalties applied to overdue dues. Automatic application is a separate switch (off by default).</p>
-        </div>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 text-sm px-4 py-2 bg-[#2158E0] text-white rounded-lg hover:bg-[#1a46b8]">
-          <Plus className="w-4 h-4" /> Add Rule
-        </button>
-      </div>
+    <div className="max-w-5xl mx-auto py-6 px-4">
+      <FeeNavHeader
+        title="Late Fee Rules"
+        subtitle="Configure penalties for overdue dues and grace periods."
+        action={
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Rule</span>
+          </button>
+        }
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-[#5B6478]"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>

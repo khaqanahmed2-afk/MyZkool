@@ -155,6 +155,35 @@ export async function checkSubdomainAvailability(
   // 2. Query Supabase database
   if (isSupabaseConfigured) {
     try {
+      // First attempt using the secure SECURITY DEFINER RPC function
+      // This bypasses tenant SELECT RLS safely without exposing rows
+      const { data: rpcAvailable, error: rpcError } = await supabase.rpc(
+        "check_subdomain_availability",
+        {
+          p_subdomain: subdomain,
+          p_current_school_id: currentSchoolId || null,
+        }
+      );
+
+      if (!rpcError && typeof rpcAvailable === "boolean") {
+        if (rpcAvailable) {
+          return {
+            status: "available",
+            isAvailable: true,
+            message: "Website address is available",
+            subdomain,
+          };
+        } else {
+          return {
+            status: "taken",
+            isAvailable: false,
+            message: "This website address is already in use by another school.",
+            subdomain,
+          };
+        }
+      }
+
+      // Fallback query if RPC is not present in local/test database
       const query = supabase
         .from("schools")
         .select("id, subdomain")
@@ -163,10 +192,8 @@ export async function checkSubdomainAvailability(
       const { data, error } = await query;
 
       if (!error && data) {
-        // If a match exists
         if (data.length > 0) {
           const match = data[0];
-          // If the match belongs to the user's current school, it is allowed
           if (currentSchoolId && match.id === currentSchoolId) {
             return {
               status: "available",
@@ -296,6 +323,57 @@ export async function getSchoolForCurrentUser(
   return { school: null };
 }
 
+/**
+ * Resolves school context server-side strictly by subdomain lookup.
+ * Used for public tenant websites, admissions landing, and parent portals.
+ * Never trusts a client-supplied school_id.
+ */
+export async function getSchoolBySubdomain(
+  subdomain: string
+): Promise<{ school: School | null; error?: string }> {
+  const cleanSubdomain = (subdomain || "").trim().toLowerCase();
+  if (!cleanSubdomain) {
+    return { school: null, error: "Subdomain is required." };
+  }
+
+  // 1. Supabase lookup
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from("schools")
+        .select("*")
+        .ilike("subdomain", cleanSubdomain)
+        .maybeSingle();
+
+      if (!error && data) {
+        return { school: data as unknown as School };
+      }
+    } catch (err: any) {
+      console.warn("getSchoolBySubdomain Supabase error:", err);
+    }
+  }
+
+  // 2. Local storage fallback
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(LOCAL_STORAGE_KEY_PREFIX)) {
+          const itemStr = localStorage.getItem(key);
+          if (itemStr) {
+            const stored = JSON.parse(itemStr) as School;
+            if (stored.subdomain?.toLowerCase() === cleanSubdomain) {
+              return { school: stored };
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return { school: null, error: "School not found for the given subdomain." };
+}
+
 export interface SaveSchoolProfileParams {
   userId: string;
   userEmail: string;
@@ -325,6 +403,9 @@ export async function saveSchoolProfile({
   if (!profileInput.name?.trim()) {
     return { success: false, error: "Please enter your school name." };
   }
+  if (profileInput.name.trim().length < 2) {
+    return { success: false, error: "School name must be at least 2 characters." };
+  }
   if (!profileInput.subdomain?.trim()) {
     return { success: false, error: "Please configure a website address for your school." };
   }
@@ -341,8 +422,15 @@ export async function saveSchoolProfile({
   if (!profileInput.contact_phone?.trim()) {
     return { success: false, error: "Please provide a contact phone number." };
   }
+  const phoneDigits = profileInput.contact_phone.replace(/\D/g, "");
+  if (phoneDigits.length < 10) {
+    return { success: false, error: "Please enter a valid contact phone number (at least 10 digits)." };
+  }
   if (!profileInput.address?.trim()) {
     return { success: false, error: "Please enter the school address." };
+  }
+  if (profileInput.address.trim().length < 5) {
+    return { success: false, error: "Please enter a complete campus address." };
   }
   if (!profileInput.city?.trim()) {
     return { success: false, error: "Please enter the city." };
@@ -353,24 +441,42 @@ export async function saveSchoolProfile({
   if (!profileInput.pin_code?.trim()) {
     return { success: false, error: "Please enter the postal PIN code." };
   }
+  const cleanPin = profileInput.pin_code.trim();
+  if (!/^\d{6}$/.test(cleanPin)) {
+    return { success: false, error: "Please enter a valid 6-digit postal PIN code (e.g. 110001)." };
+  }
 
-  // 2. Subdomain check (server-side verification)
+  // 2. Resolve tenant school ownership: never trust arbitrary client-supplied school_id
+  const existingResult = await getSchoolForCurrentUser(userId);
+  const existingUserSchool = existingResult.school;
+
+  // Prevent cross-tenant tampering: if client passed an existingSchoolId that does not belong to this user
+  if (existingSchoolId && existingUserSchool && existingSchoolId !== existingUserSchool.id) {
+    return {
+      success: false,
+      error: "Unauthorized: You do not have permission to modify this school profile.",
+    };
+  }
+
+  const verifiedSchoolId = existingUserSchool?.id || existingSchoolId || crypto.randomUUID();
+
+  // 3. Subdomain check (server-side verification)
   const normalizedSubdomain = normalizeSubdomain(profileInput.subdomain);
   const availability = await checkSubdomainAvailability(
     normalizedSubdomain,
-    existingSchoolId
+    verifiedSchoolId
   );
 
   if (!availability.isAvailable) {
     return { success: false, error: availability.message };
   }
 
-  // 3. Resolve school_id: preserve existing or create new UUID
-  const schoolId = existingSchoolId || crypto.randomUUID();
   const timestamp = new Date().toISOString();
+  const currentStep = existingUserSchool?.onboarding_step || 1;
+  const nextStep = Math.max(currentStep, 2);
 
   const schoolRecord: School = {
-    id: schoolId,
+    id: verifiedSchoolId,
     name: profileInput.name.trim(),
     subdomain: normalizedSubdomain,
     school_type: profileInput.school_type,
@@ -380,56 +486,99 @@ export async function saveSchoolProfile({
     address: profileInput.address.trim(),
     city: profileInput.city.trim(),
     state: profileInput.state.trim(),
-    pin_code: profileInput.pin_code.trim(),
-    onboarding_completed: false,
-    onboarding_step: 2, // Successfully completed Step 1, now on Step 2
+    pin_code: cleanPin,
+    onboarding_completed: existingUserSchool?.onboarding_completed || false,
+    onboarding_step: nextStep, // Step 1 complete, advances to Step 2 without downgrading higher steps
     created_by: userId,
-    created_at: timestamp,
+    created_at: existingUserSchool?.created_at || timestamp,
     updated_at: timestamp,
   };
 
   // 4. Persist to Supabase
   if (isSupabaseConfigured) {
     try {
-      // Upsert into schools table
-      const { error: schoolError } = await supabase.from("schools").upsert({
-        id: schoolRecord.id,
-        name: schoolRecord.name,
-        subdomain: schoolRecord.subdomain,
-        school_type: schoolRecord.school_type,
-        affiliation_board: schoolRecord.affiliation_board,
-        official_email: schoolRecord.official_email,
-        contact_phone: schoolRecord.contact_phone,
-        address: schoolRecord.address,
-        city: schoolRecord.city,
-        state: schoolRecord.state,
-        pin_code: schoolRecord.pin_code,
-        onboarding_completed: false,
-        onboarding_step: 2,
-        created_by: userId,
-        updated_at: timestamp,
-      });
+      if (existingUserSchool) {
+        // Enforce update strictly bounded to user's verified school and created_by
+        const { error: schoolError } = await supabase
+          .from("schools")
+          .update({
+            name: schoolRecord.name,
+            subdomain: schoolRecord.subdomain,
+            school_type: schoolRecord.school_type,
+            affiliation_board: schoolRecord.affiliation_board,
+            official_email: schoolRecord.official_email,
+            contact_phone: schoolRecord.contact_phone,
+            address: schoolRecord.address,
+            city: schoolRecord.city,
+            state: schoolRecord.state,
+            pin_code: schoolRecord.pin_code,
+            onboarding_step: nextStep,
+            updated_at: timestamp,
+          })
+          .eq("id", schoolRecord.id)
+          .eq("created_by", userId);
 
-      if (schoolError) {
-        console.warn("Supabase school upsert error:", schoolError.message);
-        // If unique constraint violation on subdomain
-        if (schoolError.code === "23505") {
+        if (schoolError) {
+          console.warn("Supabase school update error:", schoolError.message);
+          if (schoolError.code === "23505") {
+            return {
+              success: false,
+              error: "This website address is already registered. Please choose another.",
+            };
+          }
           return {
             success: false,
-            error: "This website address is already registered. Please choose another.",
+            error: "Failed to update school profile in database. Please try again.",
+          };
+        }
+      } else {
+        // Fresh creation with created_by = userId
+        const { error: schoolError } = await supabase.from("schools").insert({
+          id: schoolRecord.id,
+          name: schoolRecord.name,
+          subdomain: schoolRecord.subdomain,
+          school_type: schoolRecord.school_type,
+          affiliation_board: schoolRecord.affiliation_board,
+          official_email: schoolRecord.official_email,
+          contact_phone: schoolRecord.contact_phone,
+          address: schoolRecord.address,
+          city: schoolRecord.city,
+          state: schoolRecord.state,
+          pin_code: schoolRecord.pin_code,
+          onboarding_completed: false,
+          onboarding_step: nextStep,
+          created_by: userId,
+          created_at: timestamp,
+          updated_at: timestamp,
+        });
+
+        if (schoolError) {
+          console.warn("Supabase school insert error:", schoolError.message);
+          if (schoolError.code === "23505") {
+            return {
+              success: false,
+              error: "This website address is already registered. Please choose another.",
+            };
+          }
+          return {
+            success: false,
+            error: "Failed to save school profile to database. Please try again.",
           };
         }
       }
 
       // Upsert into profiles table
       try {
-        await supabase.from("profiles").upsert({
-          auth_id: userId,
-          school_id: schoolRecord.id,
-          onboarding_completed: false,
-          current_onboarding_step: "/onboarding/academics",
-          updated_at: timestamp,
-        });
+        await supabase.from("profiles").upsert(
+          {
+            auth_id: userId,
+            school_id: schoolRecord.id,
+            onboarding_completed: false,
+            current_onboarding_step: "/onboarding/academics",
+            updated_at: timestamp,
+          },
+          { onConflict: "auth_id" }
+        );
       } catch {
         // Table might not exist yet
       }
@@ -439,7 +588,7 @@ export async function saveSchoolProfile({
         await supabase.auth.updateUser({
           data: {
             school_id: schoolRecord.id,
-            onboarding_step: 2,
+            onboarding_step: nextStep,
             current_onboarding_step: "/onboarding/academics",
             onboarding_completed: false,
           },
@@ -447,7 +596,7 @@ export async function saveSchoolProfile({
       } catch {
         // Safe fallback
       }
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       console.warn("Database save exception:", dbErr);
     }
   }

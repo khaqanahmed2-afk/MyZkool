@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   Download,
   CreditCard,
+  Bus,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import type { StudentListItem, StudentStatus, PlanLimitsStatus } from "../../../types/students";
@@ -31,6 +33,7 @@ import { StudentFilterChips, type StudentFilterState } from "./StudentFilterChip
 import { StudentColumnChooser, type ColumnVisibility } from "./StudentColumnChooser";
 import { StudentBulkActions } from "./StudentBulkActions";
 import { StudentQuickViewDrawer } from "./StudentQuickViewDrawer";
+import { DeleteStudentModal } from "./DeleteStudentModal";
 
 export default function StudentList() {
   const navigate = useNavigate();
@@ -39,10 +42,12 @@ export default function StudentList() {
 
   // State
   const [students, setStudents] = useState<StudentListItem[]>([]);
+  const [transportMap, setTransportMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<number>(100);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
@@ -56,6 +61,8 @@ export default function StudentList() {
   // Selection & Drawer
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [quickViewStudent, setQuickViewStudent] = useState<StudentListItem | null>(null);
+  const [deleteTargetStudent, setDeleteTargetStudent] = useState<StudentListItem | null>(null);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
 
   // Metadata
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -74,23 +81,24 @@ export default function StudentList() {
     sr_no: false,
   });
 
-  const schoolId = authSchoolId || "default-school";
+  const schoolId = authSchoolId || "";
 
   // Load classes, sections, academic year, and drafts
   useEffect(() => {
     if (!schoolId) return;
 
     getCurrentAcademicYear(schoolId).then(res => {
-      if (res.academicYear) {
-        setAcademicYearLabel(res.academicYear.label);
-        getClassesWithSections(schoolId, res.academicYear.id).then(clsRes => {
-          if (clsRes.classes) {
-            setClasses(clsRes.classes);
-            const allSections = clsRes.classes.flatMap(c => c.sections || []);
-            setSections(allSections);
-          }
-        });
+      const activeAy = (res as any).year || (res as any).academicYear;
+      if (activeAy) {
+        setAcademicYearLabel(activeAy.label);
       }
+      getClassesWithSections(schoolId, activeAy?.id || undefined).then(clsRes => {
+        if (clsRes.classes) {
+          setClasses(clsRes.classes);
+          const allSections = clsRes.classes.flatMap(c => c.sections || []);
+          setSections(allSections);
+        }
+      });
     });
 
     getStudentDraft(schoolId, profile?.id || "user-draft").then(draftRes => {
@@ -102,6 +110,10 @@ export default function StudentList() {
 
   // Fetch students
   const fetchStudents = useCallback(async (cursor?: string) => {
+    if (!schoolId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -115,23 +127,37 @@ export default function StudentList() {
       is_rte: filters.is_rte,
       documents_pending: filters.documents_pending,
       cursor,
-      limit: 50,
+      limit: pageSize,
       userRole: profile?.role,
     });
 
     if (res.error) {
       setError(res.error);
     } else if (res.response) {
-      setStudents(res.response.data);
+      // When loading next page (cursor provided), append to existing list
+      setStudents(prev => cursor ? [...prev, ...res.response!.data] : res.response!.data);
       setNextCursor(res.response.next_cursor || null);
       setTotalCount(res.response.total_estimate || res.response.data.length);
+
+      // Load transport mapping for quick chip if available in local cache
+      try {
+        const assigns = JSON.parse(localStorage.getItem(`myzkool_transport_assignments_${schoolId}`) || "[]");
+        const rts = JSON.parse(localStorage.getItem(`myzkool_transport_routes_${schoolId}`) || "[]");
+        const rMap = new Map(rts.map((r: any) => [r.id, r.name]));
+        const tMap: Record<string, string> = {};
+        assigns.filter((a: any) => a.status === "active").forEach((a: any) => {
+          tMap[a.student_id] = (rMap.get(a.route_id) as string) || "Transport";
+        });
+        setTransportMap(tMap);
+      } catch {}
     }
     setLoading(false);
-  }, [schoolId, searchQuery, filters, profile?.role]);
+  }, [schoolId, searchQuery, filters, profile?.role, pageSize]);
 
   useEffect(() => {
+    if (!schoolId) return;
     fetchStudents();
-  }, [fetchStudents]);
+  }, [fetchStudents, schoolId, pageSize]);
 
   // Saved view selector
   const handleSelectSavedView = (viewKey: string) => {
@@ -536,7 +562,13 @@ export default function StudentList() {
                         </div>
                       </td>
                       <td className="py-3 px-4 font-medium text-slate-700">
-                        {student.class_name || "Grade"} {student.section_name ? `- ${student.section_name}` : ""}
+                        <div>{student.class_name || "Grade"} {student.section_name ? `- ${student.section_name}` : ""}</div>
+                        {(student.transport_route || transportMap[student.id]) && (
+                          <div className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mt-1">
+                            <Bus className="w-2.5 h-2.5 shrink-0 text-amber-600" />
+                            <span className="truncate max-w-[120px]">{student.transport_route || transportMap[student.id]}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
                         {student.primary_parent_phone ? (
@@ -583,13 +615,23 @@ export default function StudentList() {
                       {columns.dob && <td className="py-3 px-4 text-slate-700">{student.dob}</td>}
                       {columns.category && <td className="py-3 px-4 uppercase text-slate-700">{student.category || "—"}</td>}
                       <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/admin/students/${student.id}`)}
-                          className="text-xs font-semibold text-[#2158E0] hover:underline px-2 py-1"
-                        >
-                          View
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/admin/students/${student.id}`)}
+                            className="text-xs font-semibold text-[#2158E0] hover:underline px-2 py-1 cursor-pointer"
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTargetStudent(student)}
+                            className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Delete student and all data"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -597,6 +639,7 @@ export default function StudentList() {
               </tbody>
             </table>
           </div>
+
 
           {/* Mobile Card List (<768px) */}
           <div className="md:hidden space-y-3">
@@ -662,21 +705,43 @@ export default function StudentList() {
             </button>
           </div>
 
-          {/* Cursor Pagination */}
-          <div className="flex items-center justify-between pt-3 text-xs text-slate-500">
-            <div>
-              Showing <span className="font-semibold text-slate-700">{students.length}</span> of ~{totalCount} students
+          {/* Unified Pagination Footer */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 text-xs text-slate-500 border-t border-slate-100">
+            <div className="flex items-center gap-3">
+              <div>
+                Showing <span className="font-semibold text-slate-700">{students.length}</span> of <span className="font-semibold text-slate-700">{totalCount}</span> students
+              </div>
+              <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
+                <span className="text-slate-500">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    const newLimit = Number(e.target.value);
+                    setPageSize(newLimit);
+                  }}
+                  className="px-2 py-1 bg-white border border-[#E6EAF3] rounded-md font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#2158E0] cursor-pointer"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                  <option value={500}>All (500)</option>
+                </select>
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!nextCursor}
-                onClick={() => fetchStudents(nextCursor || undefined)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#E6EAF3] bg-white hover:bg-slate-50 font-medium text-slate-700 disabled:opacity-50 cursor-pointer"
-              >
-                <span>Next page</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              {nextCursor ? (
+                <button
+                  type="button"
+                  onClick={() => fetchStudents(nextCursor)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] bg-white hover:bg-slate-50 font-medium text-slate-700 hover:text-slate-900 shadow-2xs cursor-pointer transition-colors"
+                >
+                  <span>Load more ({Math.max(0, totalCount - students.length)} remaining)</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              ) : students.length > 0 && totalCount > students.length ? (
+                <span className="text-slate-400 italic">All {students.length} matching students loaded</span>
+              ) : null}
             </div>
           </div>
         </>
@@ -687,6 +752,7 @@ export default function StudentList() {
         student={quickViewStudent}
         schoolId={schoolId}
         onClose={() => setQuickViewStudent(null)}
+        onDelete={(s) => setDeleteTargetStudent(s)}
       />
 
       {/* Bulk Action Bar */}
@@ -708,7 +774,51 @@ export default function StudentList() {
         onMarkDocumentsRequested={() => {
           alert(`Requested pending documents for ${selectedStudentIds.size} students`);
         }}
+        onDeleteSelected={() => setIsBulkDeleteModalOpen(true)}
       />
+
+      {/* Bulk Delete Modal */}
+      {isBulkDeleteModalOpen && (
+        <DeleteStudentModal
+          isOpen={isBulkDeleteModalOpen}
+          onClose={() => setIsBulkDeleteModalOpen(false)}
+          schoolId={schoolId}
+          bulkStudents={students
+            .filter((s) => selectedStudentIds.has(s.id))
+            .map((s) => ({
+              id: s.id,
+              name: `${s.first_name} ${s.last_name}`,
+              admission_no: s.admission_no,
+              class_name: s.class_name || undefined,
+            }))}
+          onSuccess={() => {
+            setSelectedStudentIds(new Set());
+            fetchStudents();
+          }}
+        />
+      )}
+
+      {/* Single Student Delete Modal */}
+      {deleteTargetStudent && (
+        <DeleteStudentModal
+          isOpen={Boolean(deleteTargetStudent)}
+          onClose={() => setDeleteTargetStudent(null)}
+          schoolId={schoolId}
+          student={{
+            id: deleteTargetStudent.id,
+            name: `${deleteTargetStudent.first_name} ${deleteTargetStudent.last_name}`,
+            admission_no: deleteTargetStudent.admission_no,
+            class_name: deleteTargetStudent.class_name || undefined,
+          }}
+          onSuccess={() => {
+            setDeleteTargetStudent(null);
+            if (quickViewStudent?.id === deleteTargetStudent.id) {
+              setQuickViewStudent(null);
+            }
+            fetchStudents();
+          }}
+        />
+      )}
     </div>
   );
 }

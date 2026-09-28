@@ -11,6 +11,8 @@ import {
   Compass,
   FileText,
   Calendar,
+  UserPlus,
+  CalendarSync,
 } from "lucide-react";
 import {
   getTransportDashboardData,
@@ -85,10 +87,24 @@ export function TransportDashboard() {
           </Link>
           <Link
             to="/admin/transport/fees"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50 shadow-sm"
+          >
+            <FileText className="w-3.5 h-3.5 text-[#2158E0]" />
+            Fee Zones
+          </Link>
+          <Link
+            to="/admin/transport/assign"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50 shadow-sm"
+          >
+            <UserPlus className="w-3.5 h-3.5 text-[#2158E0]" />
+            Bulk Assign
+          </Link>
+          <Link
+            to="/admin/transport/renewal"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white text-xs font-bold shadow-sm transition-colors"
           >
-            <FileText className="w-3.5 h-3.5" />
-            Fee Zones
+            <CalendarSync className="w-3.5 h-3.5" />
+            Year Renewal
           </Link>
         </div>
       </div>

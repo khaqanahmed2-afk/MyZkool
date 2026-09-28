@@ -41,11 +41,15 @@ import {
   EnrollmentStatus,
   Parent,
   AuditLog,
+  DeleteStudentOptions,
+  DeleteStudentResult,
+  BulkDeleteStudentsResult,
 } from "../types/students";
 import { createFeeService } from "./feeService";
 import { transportService } from "./transportService";
 import {
   getNextCounter,
+  reserveCounters,
   logAudit,
   getStudentProfile,
 } from "./studentService";
@@ -190,6 +194,18 @@ export async function getSchoolPlanTier(schoolId: string): Promise<"Basic" | "Pr
 }
 
 export async function checkSchoolStudentLimit(schoolId: string): Promise<PlanLimitsStatus> {
+  if (!schoolId) {
+    return {
+      active_count: 0,
+      max_allowed: 800,
+      plan_tier: "Basic",
+      warning_threshold: 720,
+      is_warning: false,
+      is_blocked: false,
+      remaining_capacity: 800,
+    };
+  }
+
   const planTier = await getSchoolPlanTier(schoolId);
   const maxAllowed = planTier === "Pro" ? 1800 : planTier === "Enterprise" ? 5000 : 800;
   const warningThreshold = Math.floor(maxAllowed * 0.9); // 720 for Basic, 1620 for Pro
@@ -202,7 +218,7 @@ export async function checkSchoolStudentLimit(schoolId: string): Promise<PlanLim
       .select("*", { count: "exact", head: true })
       .eq("school_id", schoolId)
       .is("deleted_at", null)
-      .eq("status", "enrolled");
+      .in("status", ["enrolled", "active"]);
 
     if (!error && typeof count === "number") {
       activeCount = count;
@@ -210,7 +226,7 @@ export async function checkSchoolStudentLimit(schoolId: string): Promise<PlanLim
   } else if (typeof localStorage !== "undefined") {
     const raw = localStorage.getItem(getStudentsCacheKey(schoolId));
     const students: Student[] = raw ? JSON.parse(raw) : [];
-    activeCount = students.filter((s) => !s.deleted_at && s.status === "enrolled").length;
+    activeCount = students.filter((s) => !s.deleted_at && (s.status === "enrolled" || (s.status as string) === "active")).length;
   }
 
   const isWarning = activeCount >= warningThreshold;
@@ -236,16 +252,19 @@ export function generateImportTemplate(
   classes: { name: string; sections?: { name: string }[] }[]
 ): { csv: string; filename: string } {
   const classesListStr = classes.map((c) => c.name).join(", ");
-  const headerComment = `# MyZkool Student Bulk Import Template\n# Available classes: ${classesListStr || "Class 1, Class 2, Class 3"}\n# Required columns: First Name, Last Name, Date of Birth, Gender, Class, Parent Name, Parent Phone\n`;
+  const headerComment = `# MyZkool Student Bulk Import Template\n# Available classes: ${classesListStr || "Class 1, Class 2, Class 3"}\n# Required columns: First Name, Last Name, Date of Birth, Gender, Class, Parent Name, Parent Phone\n# Optional: Admission No, SR No, Admission Date, Section, Roll No, Middle Name, Address Line 1, City, State, Pincode, Category, Is RTE\n`;
   const headers = [
     "First Name",
     "Middle Name",
     "Last Name",
-    "Date of Birth (YYYY-MM-DD)",
+    "Date of Birth (YYYY-MM-DD or DD/MM/YYYY)",
     "Gender (male/female/other)",
     "Class",
     "Section",
     "Roll No",
+    "Admission No (Optional)",
+    "SR No (Optional)",
+    "Admission Date (YYYY-MM-DD Optional)",
     "Parent Name",
     "Parent Phone",
     "Parent Relation (father/mother/guardian)",
@@ -266,6 +285,9 @@ export function generateImportTemplate(
     classes[0]?.name || "Class 1",
     classes[0]?.sections?.[0]?.name || "A",
     "1",
+    "",
+    "",
+    "",
     "Ramesh Sharma",
     "9876543210",
     "father",
@@ -283,68 +305,179 @@ export function generateImportTemplate(
   };
 }
 
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
+/**
+ * Robust CSV parser that handles:
+ * - UTF-8 BOM (\uFEFF)
+ * - Quoted fields with escaped quotes ("")
+ * - Embedded newlines inside quotes
+ * - Comments starting with #
+ */
+export function parseCSVRecords(text: string): string[][] {
+  const cleanText = text.replace(/^\uFEFF/, ""); // Strip BOM
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = "";
   let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+  let isCommentLine = false;
+
+  for (let i = 0; i < cleanText.length; i++) {
+    const char = cleanText[i];
+    const nextChar = cleanText[i + 1];
+
+    // Check comment at start of a line
+    if (currentRow.length === 0 && currentField === "" && !inQuotes && char === "#") {
+      isCommentLine = true;
+    }
+
+    if (isCommentLine) {
+      if (char === "\n" || (char === "\r" && nextChar === "\n")) {
+        if (char === "\r" && nextChar === "\n") i++;
+        isCommentLine = false;
+      }
+      continue;
+    }
+
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++; // skip escaped quote
       } else {
         inQuotes = !inQuotes;
       }
     } else if (char === "," && !inQuotes) {
-      result.push(current.trim());
-      current = "";
+      currentRow.push(currentField.trim());
+      currentField = "";
+    } else if ((char === "\r" || char === "\n") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") {
+        i++; // consume \n of CRLF
+      }
+      currentRow.push(currentField.trim());
+      currentField = "";
+
+      // Push non-empty rows
+      if (currentRow.some((field) => field !== "")) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
     } else {
-      current += char;
+      currentField += char;
     }
   }
-  result.push(current.trim());
-  return result;
+
+  // Final field & row flush
+  if (currentField !== "" || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some((field) => field !== "")) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
 }
 
 export function autoMapColumns(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   headers.forEach((h, index) => {
     const clean = h.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (!mapping["first_name"] && (clean.includes("firstname") || clean === "fname")) mapping["first_name"] = String(index);
-    else if (!mapping["middle_name"] && (clean.includes("middlename") || clean === "mname")) mapping["middle_name"] = String(index);
-    else if (!mapping["last_name"] && (clean.includes("lastname") || clean === "lname")) mapping["last_name"] = String(index);
-    else if (!mapping["dob"] && (clean.includes("dob") || clean.includes("birth"))) mapping["dob"] = String(index);
-    else if (!mapping["gender"] && (clean.includes("gender") || clean === "sex")) mapping["gender"] = String(index);
-    else if (!mapping["class_name"] && (clean === "class" || clean.includes("grade"))) mapping["class_name"] = String(index);
-    else if (!mapping["section_name"] && clean === "section") mapping["section_name"] = String(index);
-    else if (!mapping["roll_no"] && clean.includes("roll")) mapping["roll_no"] = String(index);
-    else if (!mapping["parent_name"] && (clean.includes("parentname") || clean.includes("fathername") || clean.includes("guardianname"))) {
+    if (!mapping["first_name"] && (clean.includes("firstname") || clean === "fname" || clean === "studentname" || clean === "name")) {
+      mapping["first_name"] = String(index);
+    } else if (!mapping["middle_name"] && (clean.includes("middlename") || clean === "mname")) {
+      mapping["middle_name"] = String(index);
+    } else if (!mapping["last_name"] && (clean.includes("lastname") || clean === "lname" || clean === "surname")) {
+      mapping["last_name"] = String(index);
+    } else if (!mapping["dob"] && (clean.includes("dob") || clean.includes("birth") || clean.includes("dateofbirth"))) {
+      mapping["dob"] = String(index);
+    } else if (!mapping["gender"] && (clean.includes("gender") || clean === "sex")) {
+      mapping["gender"] = String(index);
+    } else if (!mapping["class_name"] && (clean === "class" || clean.includes("grade") || clean === "standard" || clean === "std")) {
+      mapping["class_name"] = String(index);
+    } else if (!mapping["section_name"] && (clean === "section" || clean === "sec")) {
+      mapping["section_name"] = String(index);
+    } else if (!mapping["roll_no"] && (clean.includes("roll") || clean === "rno")) {
+      mapping["roll_no"] = String(index);
+    } else if (!mapping["admission_no"] && (clean.includes("admissionno") || clean.includes("admno") || clean === "admissionnumber")) {
+      mapping["admission_no"] = String(index);
+    } else if (!mapping["sr_no"] && (clean.includes("srno") || clean.includes("scholarno") || clean === "sr")) {
+      mapping["sr_no"] = String(index);
+    } else if (!mapping["apaar_id"] && (clean.includes("apaar") || clean.includes("pen"))) {
+      mapping["apaar_id"] = String(index);
+    } else if (!mapping["admission_date"] && (clean.includes("admissiondate") || clean.includes("doadm") || clean === "enrolledon")) {
+      mapping["admission_date"] = String(index);
+    } else if (!mapping["parent_name"] && (clean.includes("parentname") || clean.includes("fathername") || clean.includes("guardianname"))) {
       mapping["parent_name"] = String(index);
-    } else if (!mapping["parent_phone"] && (clean.includes("phone") || clean.includes("mobile") || clean.includes("contact"))) {
+    } else if (!mapping["parent_phone"] && (clean.includes("phone") || clean.includes("mobile") || clean.includes("contact") || clean.includes("cell"))) {
       mapping["parent_phone"] = String(index);
-    } else if (!mapping["parent_relation"] && clean.includes("relation")) mapping["parent_relation"] = String(index);
-    else if (!mapping["category"] && clean.includes("category")) mapping["category"] = String(index);
-    else if (!mapping["address_line1"] && clean.includes("address")) mapping["address_line1"] = String(index);
-    else if (!mapping["city"] && clean.includes("city")) mapping["city"] = String(index);
-    else if (!mapping["state"] && clean.includes("state")) mapping["state"] = String(index);
-    else if (!mapping["pin"] && clean.includes("pin")) mapping["pin"] = String(index);
-    else if (!mapping["is_rte"] && clean.includes("rte")) mapping["is_rte"] = String(index);
+    } else if (!mapping["parent_relation"] && clean.includes("relation")) {
+      mapping["parent_relation"] = String(index);
+    } else if (!mapping["category"] && clean.includes("category")) {
+      mapping["category"] = String(index);
+    } else if (!mapping["address_line1"] && clean.includes("address")) {
+      mapping["address_line1"] = String(index);
+    } else if (!mapping["city"] && clean.includes("city")) {
+      mapping["city"] = String(index);
+    } else if (!mapping["state"] && clean.includes("state")) {
+      mapping["state"] = String(index);
+    } else if (!mapping["pin"] && (clean.includes("pin") || clean.includes("zip") || clean.includes("postal"))) {
+      mapping["pin"] = String(index);
+    } else if (!mapping["is_rte"] && clean.includes("rte")) {
+      mapping["is_rte"] = String(index);
+    }
   });
   return mapping;
+}
+
+/**
+ * Normalizes multi-format date string (YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY)
+ */
+function normalizeDateString(val?: string | null): { iso: string; ageYears: number } | null {
+  if (!val) return null;
+  const trimmed = val.trim();
+  let year: number, month: number, day: number;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const parts = trimmed.split("-").map((p) => parseInt(p, 10));
+    year = parts[0];
+    month = parts[1];
+    day = parts[2];
+  } else if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(trimmed)) {
+    const delimiter = trimmed.includes("/") ? "/" : "-";
+    const parts = trimmed.split(delimiter).map((p) => parseInt(p, 10));
+    day = parts[0];
+    month = parts[1];
+    year = parts[2];
+  } else {
+    return null;
+  }
+
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const dateObj = new Date(year, month - 1, day);
+  if (
+    dateObj.getFullYear() !== year ||
+    dateObj.getMonth() !== month - 1 ||
+    dateObj.getDate() !== day
+  ) {
+    return null;
+  }
+
+  const now = new Date();
+  if (dateObj > now) return null; // Future date invalid
+
+  const ageMs = now.getTime() - dateObj.getTime();
+  const ageYears = ageMs / (1000 * 60 * 60 * 24 * 365.25);
+
+  const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return { iso, ageYears };
 }
 
 export async function parseAndValidateImportCSV(
   schoolId: string,
   csvContent: string,
-  customColumnMapping?: Record<string, string>
+  customColumnMapping?: Record<string, string>,
+  knownClassesInput?: { name: string; id?: string; sections?: { name: string; id?: string }[] }[] | string[]
 ): Promise<ImportValidationResult> {
-  const lines = csvContent
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("#"));
+  const records = parseCSVRecords(csvContent);
 
-  if (lines.length === 0) {
+  if (records.length === 0) {
     return {
       file_name: "import.csv",
       total_rows: 0,
@@ -356,25 +489,70 @@ export async function parseAndValidateImportCSV(
     };
   }
 
-  const rawHeaders = parseCSVLine(lines[0]);
+  const rawHeaders = records[0];
   const mapping = customColumnMapping || autoMapColumns(rawHeaders);
-  const dataLines = lines.slice(1);
+  const dataLines = records.slice(1);
 
-  // Maximum 2,000 rows rule (Spec A4.5)
   if (dataLines.length > 2000) {
     throw new Error(
       `Import file exceeds maximum allowed limit of 2,000 rows (${dataLines.length} rows provided)`
     );
   }
 
-  const maxRows = 2000;
-  const rowsToProcess = dataLines.slice(0, maxRows);
+  // Normalize classes and sections lookup map
+  const classesList: { name: string; id?: string; sections?: { name: string; id?: string }[] }[] = [];
+  if (Array.isArray(knownClassesInput)) {
+    knownClassesInput.forEach((item) => {
+      if (typeof item === "string") {
+        classesList.push({ name: item });
+      } else if (item && typeof item === "object") {
+        classesList.push(item);
+      }
+    });
+  }
+
+  const normalizeClassName = (s: string): string =>
+    s.trim().toLowerCase().replace(/^(class|grade|std|standard|form)\s*/i, "").trim();
+
+  // Load existing DB students to catch database duplicates
+  let existingDbStudents: { first_name: string; last_name: string; dob: string; admission_no: string }[] = [];
+  if (isSupabaseConfigured) {
+    try {
+      const { data } = await supabase
+        .from("students")
+        .select("first_name, last_name, dob, admission_no")
+        .eq("school_id", schoolId)
+        .is("deleted_at", null);
+      if (data) existingDbStudents = data;
+    } catch {
+      // Non-fatal
+    }
+  } else if (typeof localStorage !== "undefined") {
+    try {
+      const raw = localStorage.getItem(getStudentsCacheKey(schoolId));
+      if (raw) existingDbStudents = JSON.parse(raw);
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const dbStudentNameDobSet = new Set<string>();
+  const dbAdmissionNoSet = new Set<string>();
+  existingDbStudents.forEach((s) => {
+    if (s.first_name && s.last_name && s.dob) {
+      dbStudentNameDobSet.add(`${s.first_name.trim().toLowerCase()}_${s.last_name.trim().toLowerCase()}_${s.dob}`);
+    }
+    if (s.admission_no) {
+      dbAdmissionNoSet.add(s.admission_no.trim().toLowerCase());
+    }
+  });
 
   const validationRows: ImportValidationRow[] = [];
-  const seenKeys = new Set<string>();
+  const seenKeysInFile = new Set<string>();
+  const seenAdmissionNosInFile = new Set<string>();
 
-  for (let i = 0; i < rowsToProcess.length; i++) {
-    const rawCols = parseCSVLine(rowsToProcess[i]);
+  for (let i = 0; i < dataLines.length; i++) {
+    const rawCols = dataLines[i];
     const getVal = (field: string) => {
       const idx = mapping[field];
       return idx !== undefined && rawCols[parseInt(idx, 10)] !== undefined
@@ -391,6 +569,10 @@ export async function parseAndValidateImportCSV(
       class_name: getVal("class_name"),
       section_name: getVal("section_name") || undefined,
       roll_no: getVal("roll_no") || undefined,
+      admission_no: getVal("admission_no") || undefined,
+      sr_no: getVal("sr_no") || undefined,
+      apaar_id: getVal("apaar_id") || undefined,
+      admission_date: getVal("admission_date") || undefined,
       parent_name: getVal("parent_name"),
       parent_phone: getVal("parent_phone").replace(/\D/g, ""),
       parent_relation: (getVal("parent_relation").toLowerCase() as ParentRelation) || "father",
@@ -403,68 +585,167 @@ export async function parseAndValidateImportCSV(
     };
 
     const errors: string[] = [];
+    const warnings: string[] = [];
+    let isDbDuplicate = false;
 
-    // Required column validations
-    if (!rowData.first_name) errors.push("First name is required");
-    if (!rowData.last_name) errors.push("Last name is required");
+    // 1. First & Last Name
+    if (!rowData.first_name) {
+      errors.push("First name is required");
+    } else if (!/^[A-Za-z0-9\s.'-]+$/.test(rowData.first_name)) {
+      errors.push("First name contains invalid characters");
+    }
+
+    if (!rowData.last_name) {
+      errors.push("Last name is required");
+    } else if (!/^[A-Za-z0-9\s.'-]+$/.test(rowData.last_name)) {
+      errors.push("Last name contains invalid characters");
+    }
+
+    // 2. Date of Birth
     if (!rowData.dob) {
       errors.push("Date of birth is required");
-    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(rowData.dob)) {
-      errors.push("Date of birth must be in YYYY-MM-DD format");
     } else {
-      const dobDate = new Date(rowData.dob);
-      if (isNaN(dobDate.getTime()) || dobDate >= new Date()) {
-        errors.push("Date of birth must be a valid date in the past");
+      const parsedDob = normalizeDateString(rowData.dob);
+      if (!parsedDob) {
+        errors.push("Date of birth must be in YYYY-MM-DD format (or DD/MM/YYYY)");
+      } else {
+        rowData.dob = parsedDob.iso;
+        if (parsedDob.ageYears < 2 || parsedDob.ageYears > 25) {
+          warnings.push(`Student age (${Math.floor(parsedDob.ageYears)} yrs) is outside typical school range (2–25)`);
+        }
       }
     }
 
+    // 3. Gender
     if (!rowData.gender) {
       errors.push("Gender is required");
-    } else if (!["male", "female", "other"].includes(rowData.gender)) {
-      errors.push("Gender must be 'male', 'female', or 'other'");
+    } else {
+      const g = (rowData.gender as string).toLowerCase().trim();
+      if (["male", "m", "boy"].includes(g)) {
+        rowData.gender = "male";
+      } else if (["female", "f", "girl"].includes(g)) {
+        rowData.gender = "female";
+      } else if (["other", "o"].includes(g)) {
+        rowData.gender = "other";
+      } else {
+        errors.push("Gender must be 'male', 'female', or 'other'");
+      }
     }
 
+    // 4. Class & Section
+    let matchedClassObj: { name: string; id?: string; sections?: { name: string; id?: string }[] } | undefined;
     if (!rowData.class_name) {
       errors.push("Class is required");
+    } else if (classesList.length > 0) {
+      const csvNorm = normalizeClassName(rowData.class_name);
+      matchedClassObj = classesList.find(
+        (c) =>
+          c.name.trim().toLowerCase() === rowData.class_name!.trim().toLowerCase() ||
+          normalizeClassName(c.name) === csvNorm
+      );
+
+      if (!matchedClassObj) {
+        errors.push(
+          `Class "${rowData.class_name}" does not exist in school. Available: ${classesList.map((c) => c.name).join(", ")}`
+        );
+      } else {
+        rowData.class_name = matchedClassObj.name; // Canonical name
+      }
     }
 
+    // Validate section against matched class
+    if (rowData.section_name && matchedClassObj?.sections && matchedClassObj.sections.length > 0) {
+      const secNorm = rowData.section_name.trim().toLowerCase();
+      const matchedSec = matchedClassObj.sections.find((s) => s.name.trim().toLowerCase() === secNorm);
+      if (!matchedSec) {
+        errors.push(
+          `Section "${rowData.section_name}" does not exist in class "${rowData.class_name}". Available: ${matchedClassObj.sections.map((s) => s.name).join(", ")}`
+        );
+      } else {
+        rowData.section_name = matchedSec.name;
+      }
+    }
+
+    // 5. Parent Details
     if (!rowData.parent_name) {
       errors.push("Parent / Guardian name is required");
     }
 
     if (!rowData.parent_phone) {
       errors.push("Parent phone number is required");
-    } else if (rowData.parent_phone.length !== 10) {
-      errors.push("Parent phone must be exactly 10 digits");
+    } else {
+      let phone = rowData.parent_phone;
+      if (phone.length === 12 && phone.startsWith("91")) {
+        phone = phone.slice(2);
+      } else if (phone.length === 11 && phone.startsWith("0")) {
+        phone = phone.slice(1);
+      }
+      rowData.parent_phone = phone;
+
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        errors.push(`Parent phone must be a valid 10-digit Indian mobile number (got ${phone})`);
+      }
     }
 
-    // In-file duplicate check
-    const dedupeKey = `${rowData.first_name?.toLowerCase()}_${rowData.last_name?.toLowerCase()}_${rowData.dob}`;
-    if (seenKeys.has(dedupeKey)) {
-      errors.push("Duplicate student row found within this file");
-    } else {
-      seenKeys.add(dedupeKey);
+    if (rowData.parent_relation && !["father", "mother", "guardian"].includes(rowData.parent_relation)) {
+      rowData.parent_relation = "father";
+    }
+
+    // 6. Custom Admission No checks
+    if (rowData.admission_no) {
+      const admNorm = rowData.admission_no.trim().toLowerCase();
+      if (seenAdmissionNosInFile.has(admNorm)) {
+        errors.push(`Duplicate admission number "${rowData.admission_no}" in file`);
+      } else {
+        seenAdmissionNosInFile.add(admNorm);
+      }
+
+      if (dbAdmissionNoSet.has(admNorm)) {
+        errors.push(`Admission number "${rowData.admission_no}" already exists in the database`);
+      }
+    }
+
+    // 7. Duplicate Checks (In-file & Database)
+    if (rowData.first_name && rowData.last_name && rowData.dob) {
+      const dedupeKey = `${rowData.first_name.toLowerCase()}_${rowData.last_name.toLowerCase()}_${rowData.dob}`;
+      if (seenKeysInFile.has(dedupeKey)) {
+        errors.push("Duplicate student row found within this file");
+      } else {
+        seenKeysInFile.add(dedupeKey);
+      }
+
+      if (dbStudentNameDobSet.has(dedupeKey)) {
+        isDbDuplicate = true;
+        warnings.push("A student with this name & DOB is already registered in the school database");
+      }
     }
 
     validationRows.push({
       row_index: i + 1,
       data: rowData,
       errors,
+      warnings: warnings.length > 0 ? warnings : undefined,
       is_valid: errors.length === 0,
+      is_duplicate_db: isDbDuplicate,
     });
   }
 
   const validCount = validationRows.filter((r) => r.is_valid).length;
   const invalidCount = validationRows.length - validCount;
+  const warningCount = validationRows.filter((r) => r.warnings && r.warnings.length > 0).length;
+  const duplicateCount = validationRows.filter((r) => r.is_duplicate_db).length;
 
   return {
     file_name: "students_import.csv",
     total_rows: validationRows.length,
     valid_rows_count: validCount,
     invalid_rows_count: invalidCount,
+    warning_rows_count: warningCount,
+    duplicate_rows_count: duplicateCount,
     rows: validationRows,
     can_commit: validCount > 0,
     column_mapping: mapping,
+    raw_headers: rawHeaders,
   };
 }
 
@@ -487,13 +768,30 @@ export async function commitImportBatch(
   schoolId: string,
   actorId: string,
   fileName: string,
-  validRows: ImportValidationRow[]
+  validRows: ImportValidationRow[],
+  academicYearId?: string
 ): Promise<ImportCommitResult> {
   if (validRows.length === 0) {
     throw new Error("No valid rows to commit");
   }
 
-  // 1. Plan limits check
+  const isUuid = (str?: string | null): boolean =>
+    !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+  // 1. Resolve actorId to a valid authenticated UUID if available
+  let resolvedActorId: string | null = isUuid(actorId) ? actorId : null;
+  if (isSupabaseConfigured && !resolvedActorId) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user?.id) {
+        resolvedActorId = authData.user.id;
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // 2. Plan limits check
   const limits = await checkSchoolStudentLimit(schoolId);
   if (limits.active_count + validRows.length > limits.max_allowed) {
     throw new Error(
@@ -501,60 +799,174 @@ export async function commitImportBatch(
     );
   }
 
-  // 2. Create import_batches record
-  const batchId = crypto.randomUUID();
-  const importBatch: ImportBatch = {
-    id: batchId,
-    school_id: schoolId,
-    created_by: actorId,
-    file_name: fileName,
-    total_rows: validRows.length,
-    created_rows: 0,
-    skipped_rows: 0,
-    status: "committed",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  const createdStudentIds: string[] = [];
-
-  // Load existing parents to link siblings
-  let existingParents: Parent[] = [];
-  if (isSupabaseConfigured) {
-    const { data } = await supabase.from("parents").select("*").eq("school_id", schoolId).is("deleted_at", null);
-    if (data) existingParents = data;
-  } else if (typeof localStorage !== "undefined") {
-    const raw = localStorage.getItem(getParentsCacheKey(schoolId));
-    existingParents = raw ? JSON.parse(raw) : [];
+  // 3. Resolve active academic year if not a valid UUID
+  let resolvedAyId = academicYearId;
+  if (isSupabaseConfigured && !isUuid(resolvedAyId)) {
+    try {
+      const { data: ayData } = await supabase
+        .from("academic_years")
+        .select("id")
+        .eq("school_id", schoolId)
+        .eq("is_current", true)
+        .limit(1);
+      if (ayData && ayData.length > 0) {
+        resolvedAyId = ayData[0].id;
+      } else {
+        const { data: anyAy } = await supabase
+          .from("academic_years")
+          .select("id")
+          .eq("school_id", schoolId)
+          .order("start_year", { ascending: false })
+          .limit(1);
+        if (anyAy && anyAy.length > 0) {
+          resolvedAyId = anyAy[0].id;
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
   }
 
-  const parentPhoneMap = new Map<string, Parent>();
-  existingParents.forEach((p) => {
-    if (p.phone) parentPhoneMap.set(p.phone.replace(/\D/g, ""), p);
+  // 4. Build class name → ID map and section name → ID map for enrollment
+  const classNameToId = new Map<string, string>();
+  const sectionNameToId = new Map<string, string>(); // key: "classId|sectionName"
+
+  if (isSupabaseConfigured) {
+    const [classesRes, sectionsRes] = await Promise.all([
+      supabase.from("classes").select("id,name,academic_year_id").eq("school_id", schoolId),
+      supabase.from("sections").select("id,name,class_id").eq("school_id", schoolId),
+    ]);
+    (classesRes.data || []).forEach((c: any) => classNameToId.set(c.name.trim().toLowerCase(), c.id));
+    (sectionsRes.data || []).forEach((s: any) => sectionNameToId.set(`${s.class_id}|${s.name.trim().toLowerCase()}`, s.id));
+  } else if (typeof localStorage !== "undefined") {
+    const classKey = `${CLASSES_CACHE_PREFIX}${schoolId}_${resolvedAyId}`;
+    const sectionKey = `${SECTIONS_CACHE_PREFIX}${schoolId}_${resolvedAyId}`;
+    const rawClasses = localStorage.getItem(classKey);
+    const rawSections = localStorage.getItem(sectionKey);
+    const allClasses: any[] = rawClasses ? JSON.parse(rawClasses) : [];
+    const allSections: any[] = rawSections ? JSON.parse(rawSections) : [];
+    allClasses.forEach((c: any) => classNameToId.set(c.name.trim().toLowerCase(), c.id));
+    allSections.forEach((s: any) => sectionNameToId.set(`${s.class_id}|${s.name.trim().toLowerCase()}`, s.id));
+  }
+
+  // Prepare payload objects with resolved class_id and section_id
+  const rowsPayload = validRows.map((r) => {
+    const d = r.data;
+    const cId = classNameToId.get((d.class_name || "").trim().toLowerCase()) || null;
+    const sId = cId && d.section_name
+      ? sectionNameToId.get(`${cId}|${d.section_name.trim().toLowerCase()}`) || null
+      : null;
+
+    return {
+      first_name: d.first_name,
+      middle_name: d.middle_name || null,
+      last_name: d.last_name,
+      dob: d.dob,
+      gender: d.gender,
+      category: d.category || "general",
+      is_rte: d.is_rte || false,
+      admission_no: d.admission_no || null,
+      sr_no: d.sr_no || null,
+      apaar_id: d.apaar_id || null,
+      admission_date: d.admission_date || null,
+      class_id: cId,
+      section_id: sId,
+      roll_no: d.roll_no || null,
+      parent_name: d.parent_name,
+      parent_phone: d.parent_phone,
+      parent_relation: d.parent_relation || "father",
+      address_line1: d.address_line1 || null,
+      city: d.city || null,
+      state: d.state || null,
+      pin: d.pin || null,
+    };
   });
 
+  // 5. Atomic Server-Side RPC Execution (Supabase)
+  if (isSupabaseConfigured) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("commit_student_import_batch", {
+        p_school_id: schoolId,
+        p_actor_id: isUuid(resolvedActorId) ? resolvedActorId : null,
+        p_file_name: fileName,
+        p_academic_year_id: isUuid(resolvedAyId) ? resolvedAyId : null,
+        p_rows: rowsPayload,
+      });
+
+      if (rpcErr) {
+        console.error("Critical: commit_student_import_batch RPC error:", rpcErr);
+        throw new Error(`Failed to commit import batch: ${rpcErr.message}`);
+      }
+
+      if (rpcRes) {
+        await audit(schoolId, {
+          actor_id: resolvedActorId || actorId,
+          actor_role: "admin",
+          entity_type: "import_batch",
+          entity_id: rpcRes.batch_id,
+          action: "import_committed",
+          after: { total_rows: rpcRes.total_rows, created_students: rpcRes.created_rows },
+          reason: `Committed bulk import of ${rpcRes.created_rows} students from ${fileName} via atomic RPC`,
+        });
+
+        return {
+          batch_id: rpcRes.batch_id,
+          total_rows: rpcRes.total_rows,
+          created_rows: rpcRes.created_rows,
+          skipped_rows: rpcRes.skipped_rows || 0,
+          status: rpcRes.status || "committed",
+          created_student_ids: rpcRes.created_student_ids || [],
+        };
+      }
+    } catch (err: any) {
+      console.warn("Notice: Atomic RPC execution failed, attempting fallback:", err.message);
+      throw err;
+    }
+  }
+
+  // 6. Local Storage Fallback (Offline / Test Mode)
+  const batchId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
+  const currentYear = new Date().getFullYear();
+
+  // Reserve sequence block in one shot
+  const { startValue: counterStart } = await reserveCounters(schoolId, "admission_no", validRows.length);
+  let counterOffset = 0;
+
+  const createdStudentIds: string[] = [];
   const studentsToInsert: Student[] = [];
   const enrollmentsToInsert: StudentEnrollment[] = [];
   const parentsToInsert: Parent[] = [];
   const studentParentsToInsert: any[] = [];
   const addressesToInsert: any[] = [];
 
-  const currentYear = new Date().getFullYear();
+  const pKey = getParentsCacheKey(schoolId);
+  const rawParents = typeof localStorage !== "undefined" ? localStorage.getItem(pKey) : null;
+  const existingParents: Parent[] = rawParents ? JSON.parse(rawParents) : [];
+  const parentPhoneMap = new Map<string, Parent>();
+  existingParents.forEach((p) => {
+    if (p.phone) parentPhoneMap.set(p.phone.replace(/\D/g, ""), p);
+  });
 
   for (let i = 0; i < validRows.length; i++) {
     const r = validRows[i].data;
     const studentId = crypto.randomUUID();
     createdStudentIds.push(studentId);
 
-    // Admission number counter
-    const counterRes = await getNextCounter(schoolId, "student_admission_no");
-    const seq = counterRes.value || i + 1;
-    const admissionNo = `ADM-${currentYear}-${String(seq).padStart(4, "0")}`;
+    const admissionNo = r.admission_no || `ADM/${currentYear}/${String(counterStart + counterOffset).padStart(4, "0")}`;
+    if (!r.admission_no) counterOffset++;
 
-    const studentRecord: Student = {
+    const classIdResolved = classNameToId.get((r.class_name || "").trim().toLowerCase()) || null;
+    const sectionIdResolved = classIdResolved && r.section_name
+      ? sectionNameToId.get(`${classIdResolved}|${r.section_name.trim().toLowerCase()}`) || null
+      : null;
+
+    studentsToInsert.push({
       id: studentId,
       school_id: schoolId,
       admission_no: admissionNo,
+      sr_no: r.sr_no || null,
+      apaar_id: r.apaar_id || null,
       first_name: r.first_name!,
       middle_name: r.middle_name || null,
       last_name: r.last_name!,
@@ -563,17 +975,15 @@ export async function commitImportBatch(
       nationality: "Indian",
       category: r.category || "general",
       is_rte: r.is_rte || false,
-      admission_date: new Date().toISOString().split("T")[0],
+      admission_date: r.admission_date || new Date().toISOString().split("T")[0],
       admission_type: "new",
+      admission_class_id: classIdResolved,
       status: "enrolled",
       import_batch_id: batchId,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      created_by: actorId,
-    };
-    studentsToInsert.push(studentRecord);
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
 
-    // Parent matching (links sibling if phone matches)
     const phone = r.parent_phone!;
     let parent = parentPhoneMap.get(phone);
     if (!parent) {
@@ -582,8 +992,8 @@ export async function commitImportBatch(
         school_id: schoolId,
         full_name: r.parent_name || "Parent",
         phone: phone,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: nowIso,
+        updated_at: nowIso,
       };
       parentsToInsert.push(parent);
       parentPhoneMap.set(phone, parent);
@@ -600,106 +1010,88 @@ export async function commitImportBatch(
       is_emergency_contact: true,
       can_pickup: true,
       lives_with: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: nowIso,
+      updated_at: nowIso,
     });
 
-    // Enrollment
-    enrollmentsToInsert.push({
-      id: crypto.randomUUID(),
-      school_id: schoolId,
-      student_id: studentId,
-      academic_year_id: "ay-current",
-      class_id: r.class_name || "class-1",
-      section_id: r.section_name || null,
-      roll_no: r.roll_no || null,
-      status: "active",
-      enrolled_on: new Date().toISOString().split("T")[0],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
+    if (classIdResolved && isUuid(resolvedAyId)) {
+      enrollmentsToInsert.push({
+        id: crypto.randomUUID(),
+        school_id: schoolId,
+        student_id: studentId,
+        academic_year_id: resolvedAyId,
+        class_id: classIdResolved,
+        section_id: sectionIdResolved,
+        roll_no: r.roll_no || null,
+        status: "active",
+        enrolled_on: r.admission_date || new Date().toISOString().split("T")[0],
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+    }
 
-    // Address
     if (r.address_line1 || r.city) {
       addressesToInsert.push({
         id: crypto.randomUUID(),
         school_id: schoolId,
         student_id: studentId,
         kind: "current",
-        line1: r.address_line1 || "",
-        city: r.city || "",
-        state: r.state || "",
-        pin: r.pin || "",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        line1: r.address_line1 || r.city || "Not Specified",
+        city: r.city || "City",
+        district: r.district || r.city || "District",
+        state: r.state || "State",
+        pin: (r.pin || "000000").replace(/\D/g, "").padStart(6, "0").slice(0, 6),
+        created_at: nowIso,
+        updated_at: nowIso,
       });
     }
   }
 
-  // Persistence (Supabase or In-Memory / LocalStorage)
-  if (isSupabaseConfigured) {
-    await supabase.from("import_batches").insert(importBatch);
-    if (parentsToInsert.length > 0) await supabase.from("parents").insert(parentsToInsert);
-    if (studentsToInsert.length > 0) await supabase.from("students").insert(studentsToInsert);
-    if (studentParentsToInsert.length > 0) await supabase.from("student_parents").insert(studentParentsToInsert);
-    if (enrollmentsToInsert.length > 0) await supabase.from("student_enrollments").insert(enrollmentsToInsert);
-    if (addressesToInsert.length > 0) await supabase.from("student_addresses").insert(addressesToInsert);
-  } else if (typeof localStorage !== "undefined") {
-    // Import batches
+  if (typeof localStorage !== "undefined") {
     const ibKey = getImportBatchesCacheKey(schoolId);
     const prevBatches = localStorage.getItem(ibKey);
     const batches: ImportBatch[] = prevBatches ? JSON.parse(prevBatches) : [];
-    batches.unshift(importBatch);
+    batches.unshift({
+      id: batchId,
+      school_id: schoolId,
+      created_by: actorId,
+      file_name: fileName,
+      total_rows: validRows.length,
+      created_rows: createdStudentIds.length,
+      skipped_rows: 0,
+      status: "committed",
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
     localStorage.setItem(ibKey, JSON.stringify(batches));
 
-    // Parents
-    const pKey = getParentsCacheKey(schoolId);
-    const curParents = localStorage.getItem(pKey);
-    const parents: Parent[] = curParents ? JSON.parse(curParents) : [];
-    parents.push(...parentsToInsert);
-    localStorage.setItem(pKey, JSON.stringify(parents));
+    existingParents.push(...parentsToInsert);
+    localStorage.setItem(pKey, JSON.stringify(existingParents));
 
-    // Students
     const sKey = getStudentsCacheKey(schoolId);
     const curStudents = localStorage.getItem(sKey);
     const students: Student[] = curStudents ? JSON.parse(curStudents) : [];
     students.push(...studentsToInsert);
     localStorage.setItem(sKey, JSON.stringify(students));
 
-    // Student parents
     const spKey = getStudentParentsCacheKey(schoolId);
     const curSP = localStorage.getItem(spKey);
     const spList = curSP ? JSON.parse(curSP) : [];
     spList.push(...studentParentsToInsert);
     localStorage.setItem(spKey, JSON.stringify(spList));
 
-    // Enrollments
     const seKey = getStudentEnrollmentsCacheKey(schoolId);
     const curSE = localStorage.getItem(seKey);
     const seList = curSE ? JSON.parse(curSE) : [];
     seList.push(...enrollmentsToInsert);
     localStorage.setItem(seKey, JSON.stringify(seList));
 
-    // Addresses
     const saKey = getStudentAddressesCacheKey(schoolId);
     const curSA = localStorage.getItem(saKey);
     const saList = curSA ? JSON.parse(curSA) : [];
     saList.push(...addressesToInsert);
     localStorage.setItem(saKey, JSON.stringify(saList));
   }
-
-  // Audit log for import batch
-  await audit(schoolId, {
-    actor_id: actorId,
-    actor_role: "admin",
-    entity_type: "import_batch",
-    entity_id: batchId,
-    action: "import_committed",
-    after: { total_rows: validRows.length, created_students: createdStudentIds.length },
-    reason: `Committed bulk import of ${createdStudentIds.length} students from ${fileName}`,
-  });
-
-  importBatch.created_rows = createdStudentIds.length;
 
   return {
     batch_id: batchId,
@@ -789,33 +1181,73 @@ export async function rollbackImportBatch(
 
   // 4. Soft-delete the students
   const nowStr = new Date().toISOString();
+  const isUuid = (str?: string | null): boolean =>
+    !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  const resolvedActorUuid = isUuid(actorId) ? actorId : null;
+
   if (isSupabaseConfigured) {
-    await supabase
+    const { error: sUpdateErr } = await supabase
       .from("students")
       .update({
         deleted_at: nowStr,
-        deleted_by: actorId,
+        deleted_by: resolvedActorUuid,
         delete_reason: "Import batch rollback",
       })
+      .eq("school_id", schoolId)
       .eq("import_batch_id", batchId);
 
-    await supabase
+    if (sUpdateErr) {
+      throw new Error(`Failed to rollback students: ${sUpdateErr.message}`);
+    }
+
+    // Clean up active enrollments for rolled back students
+    const studentIds = students.map((s) => s.id);
+    if (studentIds.length > 0) {
+      await supabase
+        .from("student_enrollments")
+        .update({ status: "left", updated_at: nowStr })
+        .in("student_id", studentIds)
+        .eq("school_id", schoolId);
+    }
+
+    const { error: bUpdateErr } = await supabase
       .from("import_batches")
       .update({ status: "rolled_back", updated_at: nowStr })
+      .eq("school_id", schoolId)
       .eq("id", batchId);
+
+    if (bUpdateErr) {
+      throw new Error(`Failed to update batch status: ${bUpdateErr.message}`);
+    }
   } else if (typeof localStorage !== "undefined") {
     // Update students in localStorage
     const sKey = getStudentsCacheKey(schoolId);
     const raw = localStorage.getItem(sKey);
     const allStudents: Student[] = raw ? JSON.parse(raw) : [];
+    const rolledBackIds: string[] = [];
     allStudents.forEach((s) => {
       if (s.import_batch_id === batchId) {
         s.deleted_at = nowStr;
         s.deleted_by = actorId;
         s.delete_reason = "Import batch rollback";
+        rolledBackIds.push(s.id);
       }
     });
     localStorage.setItem(sKey, JSON.stringify(allStudents));
+
+    // Update enrollments
+    if (rolledBackIds.length > 0) {
+      const seKey = getStudentEnrollmentsCacheKey(schoolId);
+      const rawSE = localStorage.getItem(seKey);
+      const allSE: StudentEnrollment[] = rawSE ? JSON.parse(rawSE) : [];
+      allSE.forEach((se) => {
+        if (rolledBackIds.includes(se.student_id)) {
+          se.status = "left";
+          se.updated_at = nowStr;
+        }
+      });
+      localStorage.setItem(seKey, JSON.stringify(allSE));
+    }
 
     // Update batch status
     const ibKey = getImportBatchesCacheKey(schoolId);
@@ -1217,7 +1649,7 @@ export async function undoPromotion(
   const nowStr = new Date().toISOString();
   if (isSupabaseConfigured) {
     // Delete newly created enrollments
-    await supabase.from("student_enrollments").delete().eq("promotion_batch_id", batchId);
+    await supabase.from("student_enrollments").delete().eq("promotion_batch_id", batchId).eq("school_id", schoolId);
 
     // Restore old enrollments to active
     for (const sId of studentIds) {
@@ -1296,9 +1728,9 @@ export async function changeStudentStatus(
     throw new Error("Reason is required when changing student status");
   }
 
-  // Handle transport termination if requested
-  if (input.end_transport) {
-    await transportService.endAssignment(studentId, input.effective_date, input.reason);
+  // Handle transport termination (Spec C7.8: automatic on withdrawn or transferred, or if requested)
+  if (input.end_transport || input.new_status === "withdrawn" || input.new_status === "transferred") {
+    await transportService.endAssignment(studentId, input.effective_date, input.reason, schoolId);
   }
 
   let updatedStudent: Student | null = null;
@@ -2492,5 +2924,266 @@ export async function getStudentIdCardData(
     };
   });
 }
+
+// -----------------------------------------------------------------------------
+// 10. Student Deletion & Data Purge (Single & Bulk)
+// -----------------------------------------------------------------------------
+
+/**
+ * Delete a student and all associated records across all modules.
+ * Supports permanent hard purge (completely removes student, enrollments, parents link, fees, transport, docs)
+ * or soft-delete (marks student as archived and frees up active seat).
+ */
+export async function deleteStudentAndData(
+  schoolId: string,
+  studentId: string,
+  options: DeleteStudentOptions = {}
+): Promise<DeleteStudentResult> {
+  if (!schoolId) throw new Error("school_id is required");
+  if (!studentId) throw new Error("student_id is required");
+
+  const permanent = options.permanent ?? true;
+  const reason = options.reason || (permanent ? "Student record and data permanently deleted" : "Student archived");
+  const cleanOrphanParents = options.cleanOrphanParents ?? true;
+
+  const isUuid = (str?: string | null): boolean =>
+    !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+  let admissionNo = "";
+
+  if (isSupabaseConfigured) {
+    // 1. Fetch student info
+    const { data: student, error: fetchErr } = await supabase
+      .from("students")
+      .select("id, admission_no, school_id, status")
+      .eq("id", studentId)
+      .eq("school_id", schoolId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      throw new Error(`Failed to query student: ${fetchErr.message}`);
+    }
+    if (!student) {
+      throw new Error(`Student ${studentId} not found in this school`);
+    }
+
+    admissionNo = student.admission_no;
+
+    if (permanent) {
+      // 2. Identify linked parent IDs before deleting relations
+      let parentIds: string[] = [];
+      if (cleanOrphanParents) {
+        const { data: spRecords } = await supabase
+          .from("student_parents")
+          .select("parent_id")
+          .eq("student_id", studentId);
+        if (spRecords) {
+          parentIds = spRecords.map((r: any) => r.parent_id).filter(Boolean);
+        }
+      }
+
+      // 3. Delete from child tables in dependency order
+      // Fee records
+      await supabase.from("fee_followups").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("fee_credits").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("fee_ledger").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_dues").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_fee_assignments").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_concessions").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("fee_receipts").delete().eq("school_id", schoolId).eq("student_id", studentId);
+
+      // Transport records
+      await supabase.from("transport_absences").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("transport_requests").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("transport_assignments").delete().eq("school_id", schoolId).eq("student_id", studentId);
+
+      // Student sub-records
+      await supabase.from("student_transfer_certificates").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_documents").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_medical").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_previous_schools").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_achievements").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_addresses").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_parents").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_enrollments").delete().eq("school_id", schoolId).eq("student_id", studentId);
+      await supabase.from("student_events").delete().eq("school_id", schoolId).eq("student_id", studentId);
+
+      // 4. Delete the student record itself
+      const { error: delErr } = await supabase
+        .from("students")
+        .delete()
+        .eq("school_id", schoolId)
+        .eq("id", studentId);
+
+      if (delErr) {
+        throw new Error(`Failed to delete student: ${delErr.message}`);
+      }
+
+      // 5. Clean up orphaned parents
+      if (cleanOrphanParents && parentIds.length > 0) {
+        for (const pId of parentIds) {
+          const { count } = await supabase
+            .from("student_parents")
+            .select("id", { count: "exact", head: true })
+            .eq("parent_id", pId);
+          if (count === 0) {
+            await supabase.from("parents").delete().eq("school_id", schoolId).eq("id", pId);
+          }
+        }
+      }
+    } else {
+      // Soft delete / archive
+      const nowIso = new Date().toISOString();
+      const resolvedActor = isUuid(options.actorId) ? options.actorId : null;
+
+      const { error: updErr } = await supabase
+        .from("students")
+        .update({
+          status: "archived",
+          deleted_at: nowIso,
+          deleted_by: resolvedActor,
+          delete_reason: reason,
+          updated_at: nowIso,
+        })
+        .eq("school_id", schoolId)
+        .eq("id", studentId);
+
+      if (updErr) {
+        throw new Error(`Failed to archive student: ${updErr.message}`);
+      }
+
+      // End transport assignment if active
+      try {
+        await transportService.endAssignment(studentId, nowIso.split("T")[0], reason, schoolId);
+      } catch {}
+    }
+  } else if (typeof localStorage !== "undefined") {
+    // LocalStorage Fallback Mode
+    const sKey = getStudentsCacheKey(schoolId);
+    const raw = localStorage.getItem(sKey);
+    let students: Student[] = raw ? JSON.parse(raw) : [];
+    const student = students.find((s) => s.id === studentId);
+
+    if (!student) {
+      throw new Error(`Student ${studentId} not found`);
+    }
+
+    admissionNo = student.admission_no;
+
+    if (permanent) {
+      // Remove student from array
+      students = students.filter((s) => s.id !== studentId);
+      localStorage.setItem(sKey, JSON.stringify(students));
+
+      // Filter out records from child cache keys
+      const removeByStudentId = (key: string) => {
+        const dataStr = localStorage.getItem(key);
+        if (!dataStr) return;
+        try {
+          const arr = JSON.parse(dataStr);
+          if (Array.isArray(arr)) {
+            const filtered = arr.filter((item: any) => item.student_id !== studentId && item.id !== studentId);
+            localStorage.setItem(key, JSON.stringify(filtered));
+          }
+        } catch {}
+      };
+
+      removeByStudentId(getStudentEnrollmentsCacheKey(schoolId));
+      removeByStudentId(getStudentParentsCacheKey(schoolId));
+      removeByStudentId(getStudentAddressesCacheKey(schoolId));
+      removeByStudentId(`myzkool_student_documents_${schoolId}`);
+      removeByStudentId(`myzkool_student_medical_${schoolId}`);
+      removeByStudentId(`${STUDENT_EVENTS_CACHE_PREFIX}${schoolId}`);
+      removeByStudentId(`${TRANSFER_CERTIFICATES_CACHE_PREFIX}${schoolId}`);
+      removeByStudentId(`myzkool_transport_assignments_${schoolId}`);
+      removeByStudentId(`myzkool_transport_requests_${schoolId}`);
+      removeByStudentId(`myzkool_student_dues_${schoolId}`);
+      removeByStudentId(`myzkool_fee_receipts_${schoolId}`);
+      removeByStudentId(`myzkool_student_concessions_${schoolId}`);
+
+      // Orphan parent cleanup in localStorage
+      if (cleanOrphanParents) {
+        try {
+          const spStr = localStorage.getItem(getStudentParentsCacheKey(schoolId));
+          const pStr = localStorage.getItem(getParentsCacheKey(schoolId));
+          if (spStr && pStr) {
+            const allSp = JSON.parse(spStr);
+            const allP = JSON.parse(pStr);
+            const activeParentIds = new Set(allSp.map((sp: any) => sp.parent_id));
+            const survivingParents = allP.filter((p: any) => activeParentIds.has(p.id));
+            localStorage.setItem(getParentsCacheKey(schoolId), JSON.stringify(survivingParents));
+          }
+        } catch {}
+      }
+    } else {
+      // Soft-delete
+      student.status = "archived" as any;
+      student.deleted_at = new Date().toISOString();
+      student.delete_reason = reason;
+      student.deleted_by = options.actorId || "admin";
+      localStorage.setItem(sKey, JSON.stringify(students));
+
+      try {
+        await transportService.endAssignment(studentId, new Date().toISOString().split("T")[0], reason, schoolId);
+      } catch {}
+    }
+  }
+
+  // Audit log
+  await audit(schoolId, {
+    actor_id: options.actorId || "admin",
+    actor_role: options.actorRole || "admin",
+    entity_type: "student",
+    entity_id: studentId,
+    action: permanent ? "student.purged" : "student.archived",
+    before: { student_id: studentId, admission_no: admissionNo },
+    reason,
+  });
+
+  return {
+    success: true,
+    studentId,
+    admissionNo,
+    mode: permanent ? "purged" : "soft_deleted",
+    message: permanent
+      ? `Student (${admissionNo}) and all associated data have been permanently deleted.`
+      : `Student (${admissionNo}) has been archived and removed from active roster.`,
+  };
+}
+
+/**
+ * Bulk delete multiple students and their data in batch
+ */
+export async function bulkDeleteStudentsAndData(
+  schoolId: string,
+  studentIds: string[],
+  options: DeleteStudentOptions = {}
+): Promise<BulkDeleteStudentsResult> {
+  if (!schoolId) throw new Error("school_id is required");
+  if (!studentIds || studentIds.length === 0) {
+    throw new Error("No student IDs provided for deletion");
+  }
+
+  const errors: string[] = [];
+  let deletedCount = 0;
+
+  for (const sId of studentIds) {
+    try {
+      await deleteStudentAndData(schoolId, sId, options);
+      deletedCount++;
+    } catch (err: any) {
+      errors.push(`Student ${sId}: ${err.message || String(err)}`);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    totalRequested: studentIds.length,
+    deletedCount,
+    mode: options.permanent ?? true ? "purged" : "soft_deleted",
+    errors,
+  };
+}
+
 
 

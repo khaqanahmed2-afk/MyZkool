@@ -99,7 +99,22 @@ export interface FeeTerm {
   due_date: string;
   late_grace_days: number;
   sort_order: number;
+  applicable_fee_head_ids?: string[];
   created_at: string;
+  updated_at: string;
+}
+
+export type FeeCycleFrequency = 'monthly' | 'quarterly' | 'three_term' | 'half_yearly' | 'yearly' | 'custom';
+
+export type StructureTargetType = 'all_classes' | 'specific_classes' | 'specific_sections' | 'specific_students';
+
+export type FeeHeadFrequency = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'one_time' | 'custom';
+
+export interface FeeCycleSchedule {
+  academic_year_id: string;
+  frequency: FeeCycleFrequency;
+  terms: FeeTerm[];
+  head_mapping: Record<string, string[]>; // head_id -> term_ids[]
   updated_at: string;
 }
 
@@ -107,11 +122,17 @@ export interface FeeStructure {
   id: string;
   school_id: string;
   academic_year_id: string;
-  class_id: string;
+  class_id?: string | null;
   name: string;
   applies_to: StructureAppliesTo;
+  target_type?: StructureTargetType;
+  class_ids?: string[];
+  section_ids?: string[];
+  student_ids?: string[];
+  description?: string;
   version: number;
   status: StructureStatus;
+  metadata?: Record<string, any>;
   created_at: string;
   updated_at: string;
 }
@@ -122,12 +143,29 @@ export interface FeeStructureItem {
   structure_id: string;
   fee_head_id: string;
   pattern: FillPattern;
+  frequency?: FeeHeadFrequency;
+  is_mandatory?: boolean;
+  proration_rule?: 'full' | 'prorated' | 'none';
+  start_date?: string | null;
+  end_date?: string | null;
+  amount_paise?: number;
 }
 
 export interface FeeStructureItemTerm {
   item_id: string;
   term_id: string;
   amount_paise: number;
+}
+
+export interface FeeStructureConfigItem {
+  fee_head_id: string;
+  frequency: FeeHeadFrequency;
+  base_amount_rupees: number;
+  is_mandatory: boolean;
+  proration_rule: 'full' | 'prorated' | 'none';
+  start_date?: string | null;
+  end_date?: string | null;
+  term_amounts: Record<string, number>; // term_id -> amount_rupees
 }
 
 export interface StudentFeeAssignment {
@@ -292,22 +330,33 @@ export interface FeeHeadInput {
   is_refundable?: boolean;
   rte_waivable?: boolean;
   display_order?: number;
+  is_active?: boolean;
 }
 
 export interface FeeTermInput {
+  id?: string;
   name: string;
-  period_start?: string;
-  period_end?: string;
+  period_start?: string | null;
+  period_end?: string | null;
   due_date: string;
   late_grace_days?: number;
   sort_order?: number;
+  applicable_fee_head_ids?: string[];
 }
 
 export interface FeeStructureInput {
-  class_id: string;
   name: string;
-  applies_to: StructureAppliesTo;
   academic_year_id: string;
+  class_id?: string | null;
+  applies_to?: StructureAppliesTo;
+  target_type?: StructureTargetType;
+  class_ids?: string[];
+  section_ids?: string[];
+  student_ids?: string[];
+  description?: string;
+  status?: StructureStatus;
+  version?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface StructureGridUpdate {
@@ -315,6 +364,12 @@ export interface StructureGridUpdate {
   fee_head_id: string;
   terms: { term_id: string; amount_paise: number }[];
   pattern: FillPattern;
+  frequency?: FeeHeadFrequency;
+  is_mandatory?: boolean;
+  proration_rule?: 'full' | 'prorated' | 'none';
+  start_date?: string | null;
+  end_date?: string | null;
+  amount_paise?: number;
 }
 
 export interface ManualDueInput {

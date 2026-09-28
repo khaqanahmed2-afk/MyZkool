@@ -17,6 +17,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { getOutstandingReport, exportToCSV } from "../../../services/feeReportsService";
 import { addFollowup, runReminderJob } from "../../../services/reminderJob";
 import { formatPaise } from "../../../lib/amountInWords";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 import type { OutstandingReportRow } from "../../../types/feeOperations";
 
 function fmt(paise: number): string {
@@ -145,39 +146,28 @@ export default function DefaultersPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees")}
-            className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 font-display">Defaulters & Dues Report</h1>
-            <p className="text-xs text-slate-500">Aging breakdown, follow-ups, and automated reminder broadcasts</p>
+      <FeeNavHeader
+        title="Defaulters & Fee Reminders"
+        subtitle="Aging breakdown, overdue balances, follow-ups, and reminder broadcasts."
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowReminderModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition-colors cursor-pointer shadow-xs"
+            >
+              <Bell className="w-3.5 h-3.5" /> Send reminders ({selectedStudentIds.size > 0 ? selectedStudentIds.size : filteredRows.length})
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setShowReminderModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition-colors cursor-pointer shadow-xs"
-          >
-            <Bell className="w-3.5 h-3.5" /> Send reminders ({selectedStudentIds.size > 0 ? selectedStudentIds.size : filteredRows.length})
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Aging Filter Chips (Spec B5.6) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">

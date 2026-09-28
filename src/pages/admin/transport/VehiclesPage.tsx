@@ -504,3 +504,4 @@ export function VehiclesPage() {
   );
 }
 export default VehiclesPage;
+

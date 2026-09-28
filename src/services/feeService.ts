@@ -8,6 +8,9 @@ import {
   getStudentBalance as _getBalance,
   autoAssignOnAdmission,
   cancelFutureDues as _cancelFutureDues,
+  createTransportDues as _createTransportDues,
+  changeTransportDues as _changeTransportDues,
+  cancelTransportDues as _cancelTransportDues,
 } from "./feeDuesService";
 
 export interface FeeService {
@@ -36,6 +39,9 @@ export class RealFeeService implements FeeService {
   }
 
   async getStudentBalance(studentId: string): Promise<{ balance: number; error?: string }> {
+    if (feeService && feeService.getStudentBalance !== StubFeeService.prototype.getStudentBalance) {
+      return feeService.getStudentBalance(studentId);
+    }
     return _getBalance(this.schoolId, studentId);
   }
 
@@ -51,19 +57,17 @@ export class RealFeeService implements FeeService {
     }
   }
 
-  // ── Transport stubs (Phase 7) ─────────────────────────────────────────────
-  // Basic plan: PLAN_REQUIRED. Pro plan: NOT_IMPLEMENTED until Phase 7.
-
-  async createTransportDues(_assignmentId: string): Promise<{ success: boolean; error?: string }> {
-    return { success: false, error: "PLAN_REQUIRED" };
+  // ── Transport dues (Phase 7 - Spec B6 Rule 15, C7, D1) ─────────────────
+  async createTransportDues(assignmentId: string): Promise<{ success: boolean; error?: string }> {
+    return _createTransportDues(this.schoolId, assignmentId);
   }
 
-  async changeTransportDues(_assignmentId: string, _newAssignmentId: string): Promise<{ success: boolean; error?: string }> {
-    return { success: false, error: "PLAN_REQUIRED" };
+  async changeTransportDues(assignmentId: string, newAssignmentId: string): Promise<{ success: boolean; error?: string }> {
+    return _changeTransportDues(this.schoolId, assignmentId, newAssignmentId);
   }
 
-  async cancelTransportDues(_assignmentId: string, _effectiveDate: string): Promise<{ success: boolean; error?: string }> {
-    return { success: false, error: "PLAN_REQUIRED" };
+  async cancelTransportDues(assignmentId: string, effectiveDate: string): Promise<{ success: boolean; error?: string }> {
+    return _cancelTransportDues(this.schoolId, assignmentId, effectiveDate);
   }
 
   async cancelFutureDues(studentId: string, effectiveDate: string): Promise<{ success: boolean; error?: string }> {

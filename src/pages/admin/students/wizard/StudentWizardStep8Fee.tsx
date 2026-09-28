@@ -1,8 +1,13 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { CreditCard, CheckCircle2, AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 import { AdmissionWizardPayload } from "../../../../types/students";
+import { getFeeStructures } from "../../../../services/feeSetupService";
+import type { FeeStructure } from "../../../../types/fees";
 
 interface Step8Props {
+  schoolId?: string;
+  academicYearId?: string;
   fee?: AdmissionWizardPayload["step8_fee"];
   isRte?: boolean;
   className?: string;
@@ -10,11 +15,42 @@ interface Step8Props {
 }
 
 export const StudentWizardStep8Fee: React.FC<Step8Props> = ({
-  fee = { fee_structure_id: "standard-2026", discount_concession: "none" },
+  schoolId,
+  academicYearId,
+  fee = { fee_structure_id: "", discount_concession: "none" },
   isRte,
   className,
   onChange,
 }) => {
+  const [structures, setStructures] = useState<FeeStructure[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    let mounted = true;
+    setLoading(true);
+    getFeeStructures(schoolId, academicYearId || undefined)
+      .then((res) => {
+        if (mounted) {
+          const list = res.structures || [];
+          setStructures(list);
+          if (list.length > 0 && !fee.fee_structure_id) {
+            onChange({ fee_structure_id: list[0].id });
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load fee structures:", err);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [schoolId, academicYearId]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -34,78 +70,63 @@ export const StudentWizardStep8Fee: React.FC<Step8Props> = ({
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Fee Structure Plan</label>
-            <select
-              value={fee.fee_structure_id || "standard-2026"}
-              onChange={(e) => onChange({ fee_structure_id: e.target.value })}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
-            >
-              <option value="standard-2026">Standard 2026-27 (₹38,400 / year)</option>
-              <option value="installment-quarterly">Quarterly Plan (₹9,600 x 4)</option>
-              <option value="installment-monthly">Monthly Plan (₹3,200 x 12)</option>
-            </select>
+        {loading ? (
+          <div className="p-4 text-center text-xs text-slate-500">
+            Loading fee structures...
           </div>
+        ) : structures.length === 0 ? (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">No fee structures configured yet</p>
+              <p className="mt-0.5">
+                No active fee structures found for this academic year. You can{" "}
+                <Link
+                  to="/admin/fees/structures"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 underline font-medium"
+                >
+                  configure fee structures here
+                </Link>{" "}
+                or assign fees later from the Student Profile / Fee Collection page.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Fee Structure Plan</label>
+              <select
+                value={fee.fee_structure_id || structures[0]?.id || ""}
+                onChange={(e) => onChange({ fee_structure_id: e.target.value })}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+              >
+                {structures.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Discount / Concession</label>
-            <select
-              value={fee.discount_concession || "none"}
-              onChange={(e) => onChange({ discount_concession: e.target.value })}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
-            >
-              <option value="none">No concession</option>
-              <option value="sibling_10">Sibling Concession (10% on Tuition)</option>
-              <option value="staff_25">Staff Child Concession (25%)</option>
-              <option value="merit_scholarship">Merit Scholarship</option>
-            </select>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Discount / Concession</label>
+              <select
+                value={fee.discount_concession || "none"}
+                onChange={(e) => onChange({ discount_concession: e.target.value })}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+              >
+                <option value="none">No concession</option>
+                <option value="sibling_10">Sibling Concession (10% on Tuition)</option>
+                <option value="staff_25">Staff Child Concession (25%)</option>
+                <option value="merit_scholarship">Merit Scholarship</option>
+              </select>
+            </div>
           </div>
-        </div>
-
-        {/* Breakdown Estimate Table */}
-        <div className="pt-3 border-t border-slate-100">
-          <h4 className="text-xs font-semibold text-slate-800 mb-2">Estimated Fee Installments:</h4>
-          <div className="border border-slate-200 rounded-lg overflow-hidden text-xs">
-            <table className="w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50 text-slate-600 font-semibold">
-                <tr>
-                  <th className="px-3 py-2 text-left">Installment</th>
-                  <th className="px-3 py-2 text-left">Due Date</th>
-                  <th className="px-3 py-2 text-right">Tuition</th>
-                  <th className="px-3 py-2 text-right">Total Payable</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-mono">
-                <tr>
-                  <td className="px-3 py-2 text-slate-800 font-sans">Q1 (Admission & Term 1)</td>
-                  <td className="px-3 py-2 text-slate-600">On Admission</td>
-                  <td className="px-3 py-2 text-right">{isRte ? "₹0" : "₹9,600"}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{isRte ? "₹0" : "₹9,600"}</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2 text-slate-800 font-sans">Q2 (Term 2)</td>
-                  <td className="px-3 py-2 text-slate-600">10 Jul 2026</td>
-                  <td className="px-3 py-2 text-right">{isRte ? "₹0" : "₹9,600"}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{isRte ? "₹0" : "₹9,600"}</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2 text-slate-800 font-sans">Q3 (Term 3)</td>
-                  <td className="px-3 py-2 text-slate-600">10 Oct 2026</td>
-                  <td className="px-3 py-2 text-right">{isRte ? "₹0" : "₹9,600"}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{isRte ? "₹0" : "₹9,600"}</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2 text-slate-800 font-sans">Q4 (Term 4)</td>
-                  <td className="px-3 py-2 text-slate-600">10 Jan 2027</td>
-                  <td className="px-3 py-2 text-right">{isRte ? "₹0" : "₹9,600"}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{isRte ? "₹0" : "₹9,600"}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 };
+

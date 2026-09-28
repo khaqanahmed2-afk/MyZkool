@@ -17,6 +17,14 @@ import {
   Shield,
   Bus,
   Lock,
+  ChevronDown,
+  ChevronRight,
+  PlusCircle,
+  CreditCard,
+  Receipt,
+  Bell,
+  Layers,
+  FileCheck2,
 } from "lucide-react";
 import { MyZkoolLogo } from "../MyZkoolLogo";
 import type { School } from "../../types/school";
@@ -50,6 +58,13 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   const { profile } = useAuth();
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [hasTransport, setHasTransport] = useState<boolean>(true);
+  const [feesExpanded, setFeesExpanded] = useState<boolean>(() => location.pathname.startsWith("/admin/fees"));
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin/fees")) {
+      setFeesExpanded(true);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!school?.id) return;
@@ -134,37 +149,229 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
             const Icon = item.icon;
             const badge = (item as any).badgeKey === "approvals" && pendingApprovals > 0
               ? pendingApprovals : 0;
+            const isFeeItem = item.href === "/admin/fees";
+
             return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-[#2158E0] text-white shadow-sm"
-                    : "text-[#5B6478] hover:bg-[#F0F5FE] hover:text-[#2158E0]"
-                }`}
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    onClose();
-                  }
-                }}
-              >
-                <Icon
-                  className={`w-4 h-4 ${isActive ? "text-white" : "text-[#5B6478]"}`}
-                />
-                <span className="flex-1">{item.label}</span>
-                {(item as any).featureKey === "transport" && !hasTransport && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-1 shrink-0">
-                    <Lock className="w-2.5 h-2.5" />
-                    PRO
-                  </span>
+              <React.Fragment key={item.href}>
+                <div className="flex items-center">
+                  <Link
+                    to={item.href}
+                    className={`flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-[#2158E0] text-white shadow-sm"
+                        : "text-[#5B6478] hover:bg-[#F0F5FE] hover:text-[#2158E0]"
+                    }`}
+                    onClick={() => {
+                      if (isFeeItem) {
+                        setFeesExpanded(true);
+                      }
+                      if (window.innerWidth < 768) {
+                        onClose();
+                      }
+                    }}
+                  >
+                    <Icon
+                      className={`w-4 h-4 ${isActive ? "text-white" : "text-[#5B6478]"}`}
+                    />
+                    <span className="flex-1">{item.label}</span>
+                    {(item as any).featureKey === "transport" && !hasTransport && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-1 shrink-0">
+                        <Lock className="w-2.5 h-2.5" />
+                        PRO
+                      </span>
+                    )}
+                    {badge > 0 && (
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
+                  </Link>
+                  {isFeeItem && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setFeesExpanded(!feesExpanded);
+                      }}
+                      className={`p-2 rounded-lg text-xs ml-1 transition-colors ${
+                        isActive
+                          ? "text-[#2158E0] hover:bg-[#F0F5FE]"
+                          : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                      }`}
+                      title={feesExpanded ? "Collapse sub-menu" : "Expand sub-menu"}
+                    >
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                          feesExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {/* Submenu for Fees */}
+                {isFeeItem && feesExpanded && (
+                  <div className="ml-5 pl-2.5 my-1 border-l-2 border-blue-100 space-y-0.5 animate-in fade-in-50 duration-150">
+                    <Link
+                      to="/admin/fees"
+                      onClick={() => window.innerWidth < 768 && onClose()}
+                      className={`block px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        location.pathname === "/admin/fees" || location.pathname === "/admin/fees/dashboard"
+                          ? "bg-blue-50 text-[#2158E0] font-semibold"
+                          : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                      }`}
+                    >
+                      Overview Dashboard
+                    </Link>
+
+                    {/* Setup Header & Sub-links */}
+                    <div className="pt-1">
+                      <Link
+                        to="/admin/fees/setup"
+                        onClick={() => window.innerWidth < 768 && onClose()}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                          location.pathname === "/admin/fees/setup"
+                            ? "bg-blue-50 text-[#2158E0] font-semibold"
+                            : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                        }`}
+                      >
+                        <span>Fee Setup Hub</span>
+                        <span className="text-[10px] px-1.5 py-0.2 bg-blue-100/70 text-blue-700 rounded font-semibold">Start</span>
+                      </Link>
+
+                      <div className="ml-2 pl-2 border-l border-slate-200 space-y-0.5 mt-0.5">
+                        <Link
+                          to="/admin/fees/setup/heads"
+                          onClick={() => window.innerWidth < 768 && onClose()}
+                          className={`block px-2 py-1 rounded text-[11px] transition-colors ${
+                            location.pathname === "/admin/fees/setup/heads"
+                              ? "text-[#2158E0] font-bold bg-blue-50/50"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          • Categories (Heads)
+                        </Link>
+                        <Link
+                          to="/admin/fees/setup/terms"
+                          onClick={() => window.innerWidth < 768 && onClose()}
+                          className={`block px-2 py-1 rounded text-[11px] transition-colors ${
+                            location.pathname === "/admin/fees/setup/terms"
+                              ? "text-[#2158E0] font-bold bg-blue-50/50"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          • Billing Cycles (Terms)
+                        </Link>
+                        <Link
+                          to="/admin/fees/setup/structures"
+                          onClick={() => window.innerWidth < 768 && onClose()}
+                          className={`block px-2 py-1 rounded text-[11px] transition-colors ${
+                            location.pathname === "/admin/fees/setup/structures"
+                              ? "text-[#2158E0] font-bold bg-blue-50/50"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          • Fee Structures
+                        </Link>
+                        <Link
+                          to="/admin/fees/setup/concessions"
+                          onClick={() => window.innerWidth < 768 && onClose()}
+                          className={`block px-2 py-1 rounded text-[11px] transition-colors ${
+                            location.pathname === "/admin/fees/setup/concessions"
+                              ? "text-[#2158E0] font-bold bg-blue-50/50"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          • Discounts
+                        </Link>
+                        <Link
+                          to="/admin/fees/setup/late-fees"
+                          onClick={() => window.innerWidth < 768 && onClose()}
+                          className={`block px-2 py-1 rounded text-[11px] transition-colors ${
+                            location.pathname === "/admin/fees/setup/late-fees"
+                              ? "text-[#2158E0] font-bold bg-blue-50/50"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          • Late Fees
+                        </Link>
+                        <Link
+                          to="/admin/fees/setup/settings"
+                          onClick={() => window.innerWidth < 768 && onClose()}
+                          className={`block px-2 py-1 rounded text-[11px] transition-colors ${
+                            location.pathname === "/admin/fees/setup/settings"
+                              ? "text-[#2158E0] font-bold bg-blue-50/50"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          • Receipt & Settings
+                        </Link>
+                      </div>
+                    </div>
+
+                    <Link
+                      to="/admin/fees/dues"
+                      onClick={() => window.innerWidth < 768 && onClose()}
+                      className={`block px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        location.pathname === "/admin/fees/dues" || location.pathname === "/admin/fees/assign" || location.pathname === "/admin/fees/invoices"
+                          ? "bg-blue-50 text-[#2158E0] font-semibold"
+                          : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                      }`}
+                    >
+                      Assign & Invoices
+                    </Link>
+
+                    <Link
+                      to="/admin/fees/collect"
+                      onClick={() => window.innerWidth < 768 && onClose()}
+                      className={`block px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        location.pathname === "/admin/fees/collect"
+                          ? "bg-blue-50 text-[#2158E0] font-semibold"
+                          : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                      }`}
+                    >
+                      Collect Fee
+                    </Link>
+
+                    <Link
+                      to="/admin/fees/receipts"
+                      onClick={() => window.innerWidth < 768 && onClose()}
+                      className={`block px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        location.pathname === "/admin/fees/receipts"
+                          ? "bg-blue-50 text-[#2158E0] font-semibold"
+                          : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                      }`}
+                    >
+                      Receipts Register
+                    </Link>
+
+                    <Link
+                      to="/admin/fees/defaulters"
+                      onClick={() => window.innerWidth < 768 && onClose()}
+                      className={`block px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        location.pathname === "/admin/fees/defaulters" || location.pathname === "/admin/fees/dues-report"
+                          ? "bg-blue-50 text-[#2158E0] font-semibold"
+                          : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                      }`}
+                    >
+                      Reminders & Defaulters
+                    </Link>
+
+                    <Link
+                      to="/admin/fees/reports"
+                      onClick={() => window.innerWidth < 768 && onClose()}
+                      className={`block px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        location.pathname === "/admin/fees/reports"
+                          ? "bg-blue-50 text-[#2158E0] font-semibold"
+                          : "text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50"
+                      }`}
+                    >
+                      Fee Reports
+                    </Link>
+                  </div>
                 )}
-                {badge > 0 && (
-                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>
-                    {badge > 99 ? "99+" : badge}
-                  </span>
-                )}
-              </Link>
+              </React.Fragment>
             );
           })}
 

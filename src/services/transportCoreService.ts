@@ -273,7 +273,7 @@ export async function updateVehicle(
   };
 
   if (isSupabaseConfigured) {
-    await supabase.from("transport_vehicles").update(updated).eq("id", vehicleId);
+    await supabase.from("transport_vehicles").update(updated).eq("id", vehicleId).eq("school_id", schoolId);
   }
 
   allVehicles[idx] = updated;
@@ -311,7 +311,8 @@ export async function deleteVehicle(
     await supabase
       .from("transport_vehicles")
       .update({ deleted_at: nowISO(), status: "retired" })
-      .eq("id", vehicleId);
+      .eq("id", vehicleId)
+      .eq("school_id", schoolId);
   }
 
   return { success: true };
@@ -376,7 +377,7 @@ export async function deleteVehicleDocument(
     lsSet(`myzkool_vehicle_docs_${schoolId}`, allDocs);
   }
   if (isSupabaseConfigured) {
-    await supabase.from("vehicle_documents").update({ deleted_at: nowISO() }).eq("id", docId);
+    await supabase.from("vehicle_documents").update({ deleted_at: nowISO() }).eq("id", docId).eq("school_id", schoolId);
   }
   return { success: true };
 }
@@ -522,7 +523,7 @@ export async function updateTransportStaff(
   };
 
   if (isSupabaseConfigured) {
-    await supabase.from("transport_staff").update(updated).eq("id", staffId);
+    await supabase.from("transport_staff").update(updated).eq("id", staffId).eq("school_id", schoolId);
   }
 
   allStaff[idx] = updated;
@@ -561,7 +562,8 @@ export async function deleteTransportStaff(
     await supabase
       .from("transport_staff")
       .update({ deleted_at: nowISO(), status: "inactive" })
-      .eq("id", staffId);
+      .eq("id", staffId)
+      .eq("school_id", schoolId);
   }
 
   return { success: true };
@@ -633,6 +635,14 @@ export async function getRoutes(schoolId: string): Promise<EnrichedRoute[]> {
       stops,
     };
   });
+}
+
+export async function getRouteById(
+  schoolId: string,
+  routeId: string
+): Promise<EnrichedRoute | null> {
+  const routes = await getRoutes(schoolId);
+  return routes.find((r) => r.id === routeId) || null;
 }
 
 // C10.2 & C10.3 Schedule overlap validation
@@ -773,7 +783,7 @@ export async function updateRoute(
   };
 
   if (isSupabaseConfigured) {
-    await supabase.from("transport_routes").update(updated).eq("id", routeId);
+    await supabase.from("transport_routes").update(updated).eq("id", routeId).eq("school_id", schoolId);
   }
 
   allRoutes[idx] = updated;
@@ -810,7 +820,8 @@ export async function deleteRoute(
     await supabase
       .from("transport_routes")
       .update({ deleted_at: nowISO(), status: "inactive" })
-      .eq("id", routeId);
+      .eq("id", routeId)
+      .eq("school_id", schoolId);
   }
 
   return { success: true };
@@ -891,7 +902,7 @@ export async function saveRouteStops(
   lsSet(`myzkool_route_stops_${schoolId}`, [...allStops, ...createdStops]);
 
   if (isSupabaseConfigured) {
-    await supabase.from("route_stops").delete().eq("route_id", routeId);
+    await supabase.from("route_stops").delete().eq("route_id", routeId).eq("school_id", schoolId);
     await supabase.from("route_stops").insert(createdStops);
   }
 
@@ -959,7 +970,7 @@ export async function updateFeeZone(
   };
 
   if (isSupabaseConfigured) {
-    await supabase.from("transport_fee_zones").update(updated).eq("id", zoneId);
+    await supabase.from("transport_fee_zones").update(updated).eq("id", zoneId).eq("school_id", schoolId);
   }
 
   allZones[idx] = updated;
@@ -989,7 +1000,7 @@ export async function deleteFeeZone(
   }
 
   if (isSupabaseConfigured) {
-    await supabase.from("transport_fee_zones").update({ deleted_at: nowISO() }).eq("id", zoneId);
+    await supabase.from("transport_fee_zones").update({ deleted_at: nowISO() }).eq("id", zoneId).eq("school_id", schoolId);
   }
 
   return { success: true };

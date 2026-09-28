@@ -59,6 +59,19 @@ export default function ClassesSettings() {
 
   const [activeTab, setActiveTab] = useState<"classes" | "parent_merge">("classes");
 
+  // Add Class Modal State
+  const [showAddClassModal, setShowAddClassModal] = useState(false);
+  const [newClassName, setNewClassName] = useState("");
+  const [newClassDisplayName, setNewClassDisplayName] = useState("");
+  const [newClassSections, setNewClassSections] = useState("A, B");
+  const [isSubmittingClass, setIsSubmittingClass] = useState(false);
+
+  // Add Section Modal State
+  const [showAddSectionModal, setShowAddSectionModal] = useState(false);
+  const [newSectionName, setNewSectionName] = useState("");
+  const [newSectionDisplayName, setNewSectionDisplayName] = useState("");
+  const [isSubmittingSection, setIsSubmittingSection] = useState(false);
+
   // Section Capacity Management
   const [sectionCapacities, setSectionCapacities] = useState<Record<string, number>>({});
   const [copySuccessMsg, setCopySuccessMsg] = useState<string | null>(null);
@@ -87,21 +100,97 @@ export default function ClassesSettings() {
           const activeAy = ayRes.academicYears.find((y) => y.is_current) || ayRes.academicYears[0];
           setSelectedYearId(activeAy.id);
           await loadClasses(sId, activeAy.id);
+        } else {
+          // Fallback if no academic years configured
+          setSelectedYearId("");
+          await loadClasses(sId, "");
         }
       } catch (err: any) {
         setErrorMsg(err.message || "Failed to load classes settings");
       }
     }
     loadData();
-  }, []);
+  }, [profile?.school_id]);
 
-  const loadClasses = async (sId: string, ayId: string) => {
-    const classRes = await getClassesWithSections(sId, ayId);
+  const loadClasses = async (sId: string, ayId?: string) => {
+    const classRes = await getClassesWithSections(sId, ayId || undefined);
     if (classRes.classes) {
       setClasses(classRes.classes);
-      if (classRes.classes.length > 0 && !selectedClassId) {
-        setSelectedClassId(classRes.classes[0].id);
+      if (classRes.classes.length > 0) {
+        setSelectedClassId((prev) => (classRes.classes.some((c) => c.id === prev) ? prev : classRes.classes[0].id));
       }
+    }
+  };
+
+  const handleCreateClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClassName.trim()) return;
+    setIsSubmittingClass(true);
+    setErrorMsg(null);
+
+    const sectionsList = newClassSections
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    try {
+      const res = await createClass({
+        schoolId,
+        academicYearId: selectedYearId || "ay-default",
+        userId: user?.id,
+        input: {
+          name: newClassName.trim(),
+          display_name: newClassDisplayName.trim() || undefined,
+          initial_sections: sectionsList.length > 0 ? sectionsList : ["A"],
+        },
+      });
+
+      if (res.success && res.classRecord) {
+        setNewClassName("");
+        setNewClassDisplayName("");
+        setNewClassSections("A, B");
+        setShowAddClassModal(false);
+        await loadClasses(schoolId, selectedYearId);
+        setSelectedClassId(res.classRecord.id);
+      } else {
+        setErrorMsg(res.error || "Failed to create class");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to create class");
+    } finally {
+      setIsSubmittingClass(false);
+    }
+  };
+
+  const handleCreateSection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSectionName.trim() || !selectedClassId) return;
+    setIsSubmittingSection(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await createSection({
+        schoolId,
+        academicYearId: selectedYearId || "ay-default",
+        classId: selectedClassId,
+        input: {
+          name: newSectionName.trim().toUpperCase(),
+          display_name: newSectionDisplayName.trim() || `Section ${newSectionName.trim().toUpperCase()}`,
+        },
+      });
+
+      if (res.success) {
+        setNewSectionName("");
+        setNewSectionDisplayName("");
+        setShowAddSectionModal(false);
+        await loadClasses(schoolId, selectedYearId);
+      } else {
+        setErrorMsg(res.error || "Failed to create section");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to create section");
+    } finally {
+      setIsSubmittingSection(false);
     }
   };
 
@@ -290,51 +379,65 @@ export default function ClassesSettings() {
           <div className="md:col-span-1 bg-white border rounded-xl p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between border-b pb-2">
               <h3 className="font-semibold text-gray-900 text-sm">Class Order ({classes.length})</h3>
-              <button
-                onClick={handleCopyFromPreviousYear}
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium"
-                title="Copy sections from last year"
-              >
-                <Copy className="w-3.5 h-3.5" /> Copy Last Year
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAddClassModal(true)}
+                  className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Class
+                </button>
+                <button
+                  onClick={handleCopyFromPreviousYear}
+                  className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1 font-medium"
+                  title="Copy sections from last year"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy Last Year
+                </button>
+              </div>
             </div>
 
             <div className="space-y-1 max-h-[500px] overflow-y-auto">
-              {classes.map((cls, idx) => (
-                <div
-                  key={cls.id}
-                  onClick={() => setSelectedClassId(cls.id)}
-                  className={`flex items-center justify-between p-2.5 rounded-lg text-sm cursor-pointer transition-colors ${
-                    selectedClassId === cls.id
-                      ? "bg-blue-50 border border-blue-200 text-blue-900 font-semibold"
-                      : "hover:bg-gray-50 text-gray-700 border border-transparent"
-                  }`}
-                >
-                  <span className="truncate">{cls.name}</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveClass(idx, "up");
-                      }}
-                      disabled={idx === 0}
-                      className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
-                    >
-                      <ChevronUp className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveClass(idx, "down");
-                      }}
-                      disabled={idx === classes.length - 1}
-                      className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  </div>
+              {classes.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-xs">
+                  No classes found. Click "+ Add Class" to create one.
                 </div>
-              ))}
+              ) : (
+                classes.map((cls, idx) => (
+                  <div
+                    key={cls.id}
+                    onClick={() => setSelectedClassId(cls.id)}
+                    className={`flex items-center justify-between p-2.5 rounded-lg text-sm cursor-pointer transition-colors ${
+                      selectedClassId === cls.id
+                        ? "bg-blue-50 border border-blue-200 text-blue-900 font-semibold"
+                        : "hover:bg-gray-50 text-gray-700 border border-transparent"
+                    }`}
+                  >
+                    <span className="truncate">{cls.name}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveClass(idx, "up");
+                        }}
+                        disabled={idx === 0}
+                        className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveClass(idx, "down");
+                        }}
+                        disabled={idx === classes.length - 1}
+                        className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -349,6 +452,12 @@ export default function ClassesSettings() {
                       Manage section capacities and class teachers. Soft capacity warnings apply.
                     </p>
                   </div>
+                  <button
+                    onClick={() => setShowAddSectionModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Section
+                  </button>
                 </div>
 
                 <div className="space-y-3">
@@ -535,6 +644,127 @@ export default function ClassesSettings() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Add Class Modal */}
+      {showAddClassModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">Add New Class</h3>
+            <form onSubmit={handleCreateClass} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Class Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Class 1, Grade 5, Nursery"
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg text-sm p-2 border"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Display Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Grade 1 - Primary"
+                  value={newClassDisplayName}
+                  onChange={(e) => setNewClassDisplayName(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg text-sm p-2 border"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Initial Sections (comma separated)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. A, B, C"
+                  value={newClassSections}
+                  onChange={(e) => setNewClassSections(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg text-sm p-2 border"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Initial sections will be created automatically.
+                </p>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddClassModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingClass || !newClassName.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold shadow disabled:bg-gray-300"
+                >
+                  {isSubmittingClass ? "Creating..." : "Create Class"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Section Modal */}
+      {showAddSectionModal && currentClass && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">
+              Add Section to {currentClass.name}
+            </h3>
+            <form onSubmit={handleCreateSection} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Section Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. A, B, Rose, Lotus"
+                  value={newSectionName}
+                  onChange={(e) => setNewSectionName(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg text-sm p-2 border"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Display Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Section C"
+                  value={newSectionDisplayName}
+                  onChange={(e) => setNewSectionDisplayName(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg text-sm p-2 border"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddSectionModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingSection || !newSectionName.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold shadow disabled:bg-gray-300"
+                >
+                  {isSubmittingSection ? "Adding..." : "Add Section"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -9,6 +9,8 @@ import React, {
 import type { User, Session, AuthError } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { UserRole, UserProfile, AuthActionResult } from "../types/auth";
+import type { School } from "../types/school";
+import { getSchoolForCurrentUser } from "../services/schoolService";
 
 interface AuthContextType {
   user: User | null;
@@ -16,6 +18,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   role: UserRole | null;
   schoolId: string | null;
+  school: School | null;
   loading: boolean;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<AuthActionResult>;
@@ -75,6 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [school, setSchool] = useState<School | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   /**
@@ -95,6 +99,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             .maybeSingle();
 
           if (!error && dbProfile) {
+            let resolvedSchoolId = dbProfile.school_id || null;
+            if (!resolvedSchoolId) {
+              const { data: createdSchool } = await supabase
+                .from("schools")
+                .select("id")
+                .eq("created_by", authUser.id)
+                .maybeSingle();
+              if (createdSchool?.id) {
+                resolvedSchoolId = createdSchool.id;
+                await supabase
+                  .from("profiles")
+                  .update({ school_id: resolvedSchoolId })
+                  .eq("id", dbProfile.id);
+              } else if (authUser.user_metadata?.school_id) {
+                resolvedSchoolId = authUser.user_metadata.school_id;
+              }
+            }
+
             return {
               id: dbProfile.id,
               auth_id: dbProfile.auth_id,
@@ -103,8 +125,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
                 dbProfile.full_name ||
                 authUser.user_metadata?.full_name ||
                 "School Administrator",
-              role: dbProfile.role as UserRole,
-              school_id: dbProfile.school_id || null,
+              role: (dbProfile.role || authUser.user_metadata?.role || "school_admin") as UserRole,
+              school_id: resolvedSchoolId,
               phone: dbProfile.phone,
               onboarding_completed: Boolean(dbProfile.onboarding_completed),
               current_onboarding_step:
@@ -125,6 +147,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         assignedRole = "school_admin";
       }
 
+      let fallbackSchoolId = authUser.user_metadata?.school_id || null;
+      if (!fallbackSchoolId && isSupabaseConfigured) {
+        try {
+          const { data: createdSchool } = await supabase
+            .from("schools")
+            .select("id")
+            .eq("created_by", authUser.id)
+            .maybeSingle();
+          if (createdSchool?.id) {
+            fallbackSchoolId = createdSchool.id;
+          }
+        } catch {}
+      }
+
+      // Ensure a corresponding row exists in profiles table for RLS checks
+      if (isSupabaseConfigured && authUser.email) {
+        try {
+          await supabase.from("profiles").upsert(
+            {
+              auth_id: authUser.id,
+              email: authUser.email,
+              full_name:
+                authUser.user_metadata?.full_name ||
+                authUser.email.split("@")[0] ||
+                "School Administrator",
+              role: assignedRole,
+              school_id: fallbackSchoolId,
+              onboarding_completed: Boolean(
+                authUser.user_metadata?.onboarding_completed,
+              ),
+              current_onboarding_step:
+                authUser.user_metadata?.current_onboarding_step ||
+                "/onboarding/school",
+            },
+            { onConflict: "auth_id" },
+          );
+        } catch {}
+      }
+
       return {
         id: authUser.id,
         auth_id: authUser.id,
@@ -134,7 +195,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           authUser.email?.split("@")[0] ||
           "School Administrator",
         role: assignedRole,
-        school_id: authUser.user_metadata?.school_id || null,
+        school_id: fallbackSchoolId,
         onboarding_completed: Boolean(
           authUser.user_metadata?.onboarding_completed,
         ),
@@ -170,11 +231,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             setSession(data.session);
             setUser(data.session.user);
             const userProfile = await resolveUserProfile(data.session.user);
-            if (isMounted) setProfile(userProfile);
+            if (isMounted) {
+              setProfile(userProfile);
+              const { school: userSchool } = await getSchoolForCurrentUser(
+                data.session.user.id,
+                userProfile.school_id,
+              );
+              if (isMounted) setSchool(userSchool);
+            }
           } else {
             setSession(null);
             setUser(null);
             setProfile(null);
+            setSchool(null);
           }
         }
       } catch (err) {
@@ -197,9 +266,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (newSession?.user) {
         const userProfile = await resolveUserProfile(newSession.user);
-        if (isMounted) setProfile(userProfile);
+        if (isMounted) {
+          setProfile(userProfile);
+          const { school: userSchool } = await getSchoolForCurrentUser(
+            newSession.user.id,
+            userProfile.school_id,
+          );
+          if (isMounted) setSchool(userSchool);
+        }
       } else {
         setProfile(null);
+        setSchool(null);
       }
 
       setLoading(false);
@@ -239,6 +316,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setSession(data.session);
         const resolved = await resolveUserProfile(data.user);
         setProfile(resolved);
+        const { school: userSchool } = await getSchoolForCurrentUser(
+          data.user.id,
+          resolved.school_id,
+        );
+        setSchool(userSchool);
       }
 
       return { success: true };
@@ -291,6 +373,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setSession(data.session);
         const resolved = await resolveUserProfile(data.user);
         setProfile(resolved);
+        const { school: userSchool } = await getSchoolForCurrentUser(
+          data.user.id,
+          resolved.school_id,
+        );
+        setSchool(userSchool);
       }
 
       return {
@@ -360,6 +447,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setUser(null);
     setSession(null);
     setProfile(null);
+    setSchool(null);
   };
 
   const resetPassword = async (email: string): Promise<AuthActionResult> => {
@@ -458,7 +546,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       session,
       profile,
       role: profile?.role ?? null,
-      schoolId: profile?.school_id ?? null,
+      schoolId: profile?.school_id ?? school?.id ?? null,
+      school,
       loading,
       isAuthenticated: Boolean(user && session),
       signIn,
@@ -470,7 +559,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       resendVerificationEmail,
       refreshSession,
     }),
-    [user, session, profile, loading],
+    [user, session, profile, school, loading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

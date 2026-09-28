@@ -5,6 +5,7 @@ import {
 } from "../../../services/feeSetupService";
 import type { ConcessionRule, ConcessionRuleInput, ConcessionBasis, ConcessionType } from "../../../types/fees";
 import { useAuth } from "../../../hooks/useAuth";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 const BASIS_LABELS: Record<ConcessionBasis, string> = {
   sibling: "Sibling",
@@ -23,7 +24,10 @@ const DEFAULT_RULES: Array<Partial<ConcessionRuleInput> & { note: string }> = [
 ];
 
 export default function ConcessionRulesPage() {
-  const { school } = useAuth() as any;
+  const { school: authSchool, schoolId: authSchoolId, loading: authLoading } = useAuth() as any;
+  const activeSchoolId = authSchool?.id || authSchoolId || null;
+  const school = authSchool || (activeSchoolId ? { id: activeSchoolId } : null);
+
   const [rules, setRules] = useState<ConcessionRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,13 +40,23 @@ export default function ConcessionRulesPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!school?.id) return;
+    if (authLoading) return;
+    if (!activeSchoolId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const { rules: r, error: e } = await getConcessionRules(school.id);
-    setRules(r);
-    setError(e ?? null);
-    setLoading(false);
-  }, [school?.id]);
+    setError(null);
+    try {
+      const { rules: r, error: e } = await getConcessionRules(activeSchoolId);
+      setRules(r || []);
+      setError(e ?? null);
+    } catch (err: any) {
+      setError(err.message || "Failed to load concession rules.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeSchoolId, authLoading]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,25 +98,31 @@ export default function ConcessionRulesPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#141A2E]">Concession Rules</h1>
-          <p className="text-[#5B6478] text-sm mt-0.5">Sibling, RTE, staff-ward and merit discounts.</p>
-        </div>
-        <div className="flex gap-2">
-          {rules.length === 0 && (
-            <button onClick={() => setShowDefaults(true)}
-              className="flex items-center gap-2 text-sm px-4 py-2 border border-[#E6EAF3] bg-white rounded-lg text-[#5B6478] hover:bg-gray-50">
-              <Tag className="w-4 h-4" /> Add defaults
+    <div className="max-w-5xl mx-auto py-6 px-4">
+      <FeeNavHeader
+        title="Discounts & Concessions"
+        subtitle="Sibling, RTE, staff-ward, merit, and category concessions."
+        action={
+          <div className="flex gap-2">
+            {rules.length === 0 && (
+              <button
+                onClick={() => setShowDefaults(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-[#E6EAF3] bg-white rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                <Tag className="w-3.5 h-3.5 text-blue-600" />
+                <span>Add Defaults</span>
+              </button>
+            )}
+            <button
+              onClick={openAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Rule</span>
             </button>
-          )}
-          <button onClick={openAdd}
-            className="flex items-center gap-2 text-sm px-4 py-2 bg-[#2158E0] text-white rounded-lg hover:bg-[#1a46b8]">
-            <Plus className="w-4 h-4" /> Add Rule
-          </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-[#5B6478]"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>

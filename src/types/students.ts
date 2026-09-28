@@ -847,6 +847,20 @@ export const STUDENT_PERMISSIONS: StudentPermissionKey[] = [
  * Default role permission sets for students module (from A2)
  */
 export const STUDENT_ROLE_PERMISSIONS: Record<string, StudentPermissionKey[]> = {
+  super_admin: [
+    'students.read',
+    'students.write',
+    'students.contacts.read',
+    'students.reveal_sensitive',
+    'students.medical.read',
+    'students.medical.write',
+    'students.documents.manage',
+    'students.status.manage',
+    'students.promote',
+    'students.import',
+    'students.export',
+    'students.archive',
+  ],
   owner: [
     'students.read',
     'students.write',
@@ -860,6 +874,16 @@ export const STUDENT_ROLE_PERMISSIONS: Record<string, StudentPermissionKey[]> = 
     'students.import',
     'students.export',
     'students.archive',
+  ],
+  school_admin: [
+    'students.read',
+    'students.write',
+    'students.contacts.read',
+    'students.documents.manage',
+    'students.status.manage', // prepare only, owner approves
+    'students.promote',
+    'students.import',
+    'students.export',
   ],
   admin: [
     'students.read',
@@ -906,6 +930,10 @@ export interface ImportRowData {
   class_name: string;
   section_name?: string;
   roll_no?: string;
+  admission_no?: string;
+  sr_no?: string;
+  apaar_id?: string;
+  admission_date?: string;
   parent_name: string;
   parent_phone: string;
   parent_relation?: ParentRelation;
@@ -918,6 +946,7 @@ export interface ImportRowData {
   blood_group?: string;
   address_line1?: string;
   city?: string;
+  district?: string;
   state?: string;
   pin?: string;
   is_rte?: boolean;
@@ -927,7 +956,9 @@ export interface ImportValidationRow {
   row_index: number;
   data: Partial<ImportRowData>;
   errors: string[];
+  warnings?: string[];
   is_valid: boolean;
+  is_duplicate_db?: boolean;
 }
 
 export interface ImportValidationResult {
@@ -935,9 +966,12 @@ export interface ImportValidationResult {
   total_rows: number;
   valid_rows_count: number;
   invalid_rows_count: number;
+  warning_rows_count?: number;
+  duplicate_rows_count?: number;
   rows: ImportValidationRow[];
   can_commit: boolean;
   column_mapping: Record<string, string>;
+  raw_headers?: string[];
 }
 
 export interface ImportCommitResult {
@@ -1057,3 +1091,30 @@ export interface ParentMergeResult {
   moved_links_count: number;
   transferred_consents_count: number;
 }
+
+// Student Deletion & Purge
+export interface DeleteStudentOptions {
+  permanent?: boolean; // true = permanent hard purge of student and ALL related data, false = soft-delete (status: archived)
+  reason?: string;
+  actorId?: string;
+  actorRole?: string;
+  cleanOrphanParents?: boolean;
+}
+
+export interface DeleteStudentResult {
+  success: boolean;
+  studentId: string;
+  admissionNo?: string;
+  mode: "purged" | "soft_deleted";
+  message: string;
+  error?: string;
+}
+
+export interface BulkDeleteStudentsResult {
+  success: boolean;
+  totalRequested: number;
+  deletedCount: number;
+  mode: "purged" | "soft_deleted";
+  errors: string[];
+}
+

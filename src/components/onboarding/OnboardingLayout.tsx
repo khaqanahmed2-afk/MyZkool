@@ -11,6 +11,8 @@ interface OnboardingLayoutProps {
   title: string;
   subtitle: string;
   children: React.ReactNode;
+  maxWidth?: string;
+  showCardWrapper?: boolean;
 }
 
 export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
@@ -19,6 +21,8 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
   title,
   subtitle,
   children,
+  maxWidth,
+  showCardWrapper = true,
 }) => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
@@ -55,7 +59,7 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
             <button
               onClick={handleSignOut}
               id="onboarding-signout-btn"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0]"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0] cursor-pointer"
               title="Save progress and log out"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -66,7 +70,7 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10">
+      <main className={`flex-1 ${maxWidth || (showCardWrapper ? "max-w-4xl" : "max-w-5xl")} w-full mx-auto px-4 sm:px-6 py-6 sm:py-8`}>
         {/* Onboarding Stepper Header */}
         <div className="mb-6">
           <OnboardingProgress
@@ -75,19 +79,38 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
           />
         </div>
 
-        {/* Form Card */}
-        <div className="bg-white rounded-2xl border border-[#E6EAF3] shadow-sm p-5 sm:p-8">
-          <div className="mb-6 border-b border-[#F1F5F9] pb-4">
-            <h1 className="text-xl sm:text-2xl font-bold font-heading text-[#141A2E]">
-              {title}
-            </h1>
-            <p className="text-sm text-[#5B6478] mt-1">
-              {subtitle}
-            </p>
-          </div>
+        {showCardWrapper ? (
+          /* Form Card Wrapper */
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] shadow-sm p-5 sm:p-8">
+            <div className="mb-6 border-b border-[#F1F5F9] pb-4">
+              <h1 className="text-xl sm:text-2xl font-bold font-heading text-[#141A2E]">
+                {title}
+              </h1>
+              <p className="text-sm text-[#5B6478] mt-1">
+                {subtitle}
+              </p>
+            </div>
 
-          {children}
-        </div>
+            {children}
+          </div>
+        ) : (
+          /* Custom Section Cards Layout */
+          <div>
+            {(title || subtitle) && (
+              <div className="mb-6">
+                <h1 className="text-xl sm:text-2xl font-bold font-heading text-[#141A2E]">
+                  {title}
+                </h1>
+                {subtitle && (
+                  <p className="text-sm text-[#5B6478] mt-1">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+            )}
+            {children}
+          </div>
+        )}
       </main>
 
       {/* Footer Support Notice */}

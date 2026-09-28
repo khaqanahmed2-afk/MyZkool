@@ -13,6 +13,7 @@ import { getReceipts, getReceiptById, cancelReceipt } from "../../../services/co
 import { amountInWords, formatPaise } from "../../../lib/amountInWords";
 import { generateReceiptHTML } from "../../../lib/receiptTemplate";
 import type { FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -313,14 +314,15 @@ export default function ReceiptsPage() {
   });
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-slate-900 font-display">Receipts</h1>
-            <p className="text-xs text-slate-500">{receipts.length} receipts</p>
-          </div>
+    <div className="flex flex-col h-full max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
+      <FeeNavHeader
+        title="Receipts Register"
+        subtitle={`${receipts.length} total receipts recorded • View, reprint (A5/80mm thermal), export or cancel`}
+      />
+
+      {/* Filters Bar */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex gap-2 flex-wrap">
             {["all", "active", "cancelled", "bounced"].map(s => (
               <button

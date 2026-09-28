@@ -180,6 +180,25 @@ async function getCurrentSchoolId(): Promise<string | null> {
 }
 
 /**
+ * Safely resolves student permissions for a role, handling canonical
+ * and database role aliases (e.g. school_admin <-> admin, super_admin <-> owner).
+ */
+export function getPermissionsForRole(role?: string | null): StudentPermissionKey[] {
+  if (!role) return [];
+  const normalized = role.toLowerCase().trim().replace(/[\s-]+/g, "_");
+  if (STUDENT_ROLE_PERMISSIONS[normalized]) {
+    return STUDENT_ROLE_PERMISSIONS[normalized];
+  }
+  if (normalized === "school_admin" || normalized === "admin") {
+    return STUDENT_ROLE_PERMISSIONS.school_admin || STUDENT_ROLE_PERMISSIONS.admin || [];
+  }
+  if (normalized === "super_admin" || normalized === "owner") {
+    return STUDENT_ROLE_PERMISSIONS.super_admin || STUDENT_ROLE_PERMISSIONS.owner || [];
+  }
+  return [];
+}
+
+/**
  * Check if current user has a specific permission
  */
 async function hasPermission(permission: StudentPermissionKey): Promise<boolean> {
@@ -205,11 +224,20 @@ async function hasPermission(permission: StudentPermissionKey): Promise<boolean>
       .from("profiles")
       .select("role, school_id")
       .eq("auth_id", user.id)
-      .single();
+      .maybeSingle();
     
-    if (!profile) return false;
+    if (!profile) {
+      try {
+        const storedRole = localStorage.getItem("myzkool_user_role") || user.user_metadata?.role;
+        if (storedRole) {
+          const rolePermissions = getPermissionsForRole(storedRole);
+          return rolePermissions.includes(permission);
+        }
+      } catch {}
+      return permission === "students.read";
+    }
     
-    const rolePermissions = STUDENT_ROLE_PERMISSIONS[profile.role] || [];
+    const rolePermissions = getPermissionsForRole(profile.role);
     return rolePermissions.includes(permission);
   } catch {
     return false;
@@ -226,14 +254,16 @@ export async function getNextCounter(schoolId: string, key: string): Promise<{ v
 
   if (isSupabaseConfigured) {
     try {
-      // Use a transaction-like approach with SELECT FOR UPDATE
       const { data, error } = await supabase.rpc("get_next_counter", {
         p_school_id: schoolId,
         p_key: key,
       });
       
       if (!error && data !== null) {
-        return { value: data };
+        return { value: Number(data) };
+      }
+      if (error) {
+        console.warn("Notice: get_next_counter RPC error, using fallback:", error.message);
       }
     } catch {
       // Fall through to local storage
@@ -253,6 +283,52 @@ export async function getNextCounter(schoolId: string, key: string): Promise<{ v
     return { value: 0, error: "Failed to get next counter value" };
   }
 }
+
+/**
+ * Reserve a consecutive block of counter values atomically
+ */
+export async function reserveCounters(
+  schoolId: string,
+  key: string,
+  count: number
+): Promise<{ startValue: number; error?: string }> {
+  if (!schoolId || !key || count <= 0) {
+    return { startValue: 0, error: "Invalid parameters for reserveCounters" };
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.rpc("reserve_counters", {
+        p_school_id: schoolId,
+        p_key: key,
+        p_count: count,
+      });
+
+      if (!error && data !== null) {
+        return { startValue: Number(data) };
+      }
+      if (error) {
+        console.warn("Notice: reserve_counters RPC error, using fallback:", error.message);
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // Local storage fallback
+  try {
+    const cacheKey = getCountersCacheKey(schoolId);
+    const cached = localStorage.getItem(cacheKey);
+    const counters: Record<string, number> = cached ? JSON.parse(cached) : {};
+    const startValue = counters[key] || 1;
+    counters[key] = startValue + count;
+    localStorage.setItem(cacheKey, JSON.stringify(counters));
+    return { startValue };
+  } catch {
+    return { startValue: 0, error: "Failed to reserve counter values" };
+  }
+}
+
 
 /**
  * Create a new student (used by admission wizard)
@@ -319,7 +395,13 @@ export async function createStudent(
 
         return { student: data as Student };
       }
-      return { error: error?.message || "Failed to create student" };
+      if (error) {
+        if (error.code === "23505" || error.message?.includes("admission_no") || error.message?.includes("unique")) {
+          return { error: `A student with admission number '${newStudent.admission_no}' already exists in this school.` };
+        }
+        return { error: error.message || "Failed to create student" };
+      }
+      return { error: "Failed to create student" };
     } catch (err) {
       return { error: String(err) };
     }
@@ -330,6 +412,10 @@ export async function createStudent(
     const cacheKey = getStudentsCacheKey(schoolId);
     const cached = localStorage.getItem(cacheKey);
     const students: Student[] = cached ? JSON.parse(cached) : [];
+    const duplicate = students.find((s) => s.admission_no === newStudent.admission_no && !s.deleted_at);
+    if (duplicate) {
+      return { error: `A student with admission number '${newStudent.admission_no}' already exists in this school.` };
+    }
     students.push(newStudent);
     localStorage.setItem(cacheKey, JSON.stringify(students));
     return { student: newStudent };
@@ -399,12 +485,6 @@ export async function listStudents(
     return { error: "school_id is required" };
   }
 
-  // Check permission
-  const canRead = await hasPermission("students.read");
-  if (!canRead) {
-    return { error: "Insufficient permissions to list students" };
-  }
-
   const {
     search,
     class_id,
@@ -426,19 +506,31 @@ export async function listStudents(
     parentStudentIds,
   } = params;
 
+  // Check permission
+  let canRead = true;
+  if (userRole) {
+    const rolePerms = getPermissionsForRole(userRole);
+    canRead = rolePerms.includes("students.read");
+  } else {
+    canRead = await hasPermission("students.read");
+  }
+  if (!canRead) {
+    return { error: "Insufficient permissions to list students" };
+  }
+
   if (isSupabaseConfigured) {
     try {
       let query = supabase
         .from("students")
         .select(`
           *,
-          student_enrollments!inner (
+          student_enrollments (
             class_id,
             section_id,
             class:classes(name),
             section:sections(name)
           ),
-          student_parents!inner (
+          student_parents (
             parent:parents(full_name, phone),
             is_primary_contact
           )
@@ -515,11 +607,30 @@ export async function listStudents(
           status: item.status,
         }));
 
+        // Fetch real total count via a separate COUNT query (not capped by page limit)
+        let totalCount = items.length;
+        try {
+          let countQuery = supabase
+            .from("students")
+            .select("id", { count: "exact", head: true })
+            .eq("school_id", schoolId)
+            .is("deleted_at", null);
+          if (status) countQuery = countQuery.eq("status", status);
+          if (gender) countQuery = countQuery.eq("gender", gender);
+          if (category) countQuery = countQuery.eq("category", category);
+          if (is_rte !== undefined) countQuery = countQuery.eq("is_rte", is_rte);
+          if (search) countQuery = (countQuery as any).or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,admission_no.ilike.%${search}%,sr_no.ilike.%${search}%`);
+          const { count } = await countQuery;
+          if (count !== null) totalCount = count;
+        } catch {
+          // Non-fatal: fall back to page-size estimate
+        }
+
         return {
           response: {
             data: mappedItems,
             next_cursor: hasMore ? items[items.length - 1].created_at : null,
-            total_estimate: items.length,
+            total_estimate: totalCount,
           },
         };
       }
@@ -597,6 +708,9 @@ export async function listStudents(
       return 0;
     });
 
+    // Record total matching students count before cursor pagination
+    const totalMatchingCount = students.length;
+
     // Cursor pagination
     if (cursor) {
       const cursorDate = new Date(cursor);
@@ -652,7 +766,7 @@ export async function listStudents(
       response: {
         data: mappedItems,
         next_cursor: hasMore ? items[items.length - 1].created_at : null,
-        total_estimate: students.length,
+        total_estimate: totalMatchingCount,
       },
     };
   } catch {
@@ -1551,8 +1665,9 @@ export async function revealStudentAadhaar(
   }
 
   // Check permission
+  const roleLower = (actorRole || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
   const canReveal = callerPermissions
-    ? (callerPermissions.includes("students.reveal_sensitive") || actorRole === "owner")
+    ? (callerPermissions.includes("students.reveal_sensitive") || roleLower === "owner" || roleLower === "super_admin")
     : await hasPermission("students.reveal_sensitive");
   if (!canReveal) {
     return { error: "FORBIDDEN: Missing students.reveal_sensitive permission", statusCode: 403 };
@@ -2434,11 +2549,13 @@ export async function admitStudentTransactional(
 
   try {
     // Check permission
-    const roleLower = (actorRole || "admin").toLowerCase();
-    const rolePermissions = STUDENT_ROLE_PERMISSIONS[roleLower as keyof typeof STUDENT_ROLE_PERMISSIONS] || [];
+    const roleLower = (actorRole || "admin").toLowerCase().trim().replace(/[\s-]+/g, "_");
+    const rolePermissions = getPermissionsForRole(roleLower);
     const canWrite =
       roleLower === "owner" ||
       roleLower === "admin" ||
+      roleLower === "school_admin" ||
+      roleLower === "super_admin" ||
       rolePermissions.includes("students.write") ||
       await hasPermission("students.write");
 
@@ -2526,24 +2643,32 @@ export async function admitStudentTransactional(
       status: "enrolled",
       created_at: timestamp,
       updated_at: timestamp,
-      created_by: actorId,
-      updated_by: actorId,
+      created_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actorId) ? actorId : null,
+      updated_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actorId) ? actorId : null,
     };
 
     if (isSupabaseConfigured) {
       const { error: insErr } = await supabase.from("students").insert(studentRecord);
-      if (insErr) throw new Error(`Failed to insert student: ${insErr.message}`);
+      if (insErr) {
+        if (insErr.code === "23505" || insErr.message?.includes("admission_no") || insErr.message?.includes("unique")) {
+          throw new Error(`A student with admission number '${admissionNo}' already exists in this school.`);
+        }
+        throw new Error(`Failed to insert student: ${insErr.message}`);
+      }
     } else {
       const cacheKey = getStudentsCacheKey(schoolId);
       const cached = localStorage.getItem(cacheKey);
       const students: Student[] = cached ? JSON.parse(cached) : [];
+      if (students.some((s) => s.admission_no === admissionNo && !s.deleted_at)) {
+        throw new Error(`A student with admission number '${admissionNo}' already exists in this school.`);
+      }
       students.push(studentRecord);
       localStorage.setItem(cacheKey, JSON.stringify(students));
     }
 
     rollbackStack.push(async () => {
       if (isSupabaseConfigured) {
-        await supabase.from("students").delete().eq("id", studentId);
+        await supabase.from("students").delete().eq("id", studentId).eq("school_id", schoolId);
       } else {
         const cacheKey = getStudentsCacheKey(schoolId);
         const cached = localStorage.getItem(cacheKey);

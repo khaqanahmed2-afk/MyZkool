@@ -61,6 +61,8 @@ import VehiclesPage from "./pages/admin/transport/VehiclesPage";
 import TransportStaffPage from "./pages/admin/transport/TransportStaffPage";
 import RouteBuilderPage from "./pages/admin/transport/RouteBuilderPage";
 import FeeZonesPage from "./pages/admin/transport/FeeZonesPage";
+import { BulkAssignPage } from "./pages/admin/transport/BulkAssignPage";
+import { YearRenewalPage } from "./pages/admin/transport/YearRenewalPage";
 
 
 
@@ -114,10 +116,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/onboarding/subjects"
-            element={<Navigate to="/onboarding/subscription" replace />}
-          />
+
           <Route
             path="/onboarding/subscription"
             element={
@@ -140,10 +139,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/onboarding/staff"
-            element={<Navigate to="/onboarding/complete" replace />}
-          />
+
           <Route
             path="/onboarding/complete"
             element={
@@ -187,6 +183,8 @@ export default function App() {
             <Route path="fees/setup/late-fees" element={<LateFeeRulesPage />} />
             <Route path="fees/setup/settings" element={<FeeSettingsPage />} />
             <Route path="fees/dues" element={<DuesGenerationPage />} />
+            <Route path="fees/invoices" element={<DuesGenerationPage />} />
+            <Route path="fees/assign" element={<DuesGenerationPage />} />
             <Route path="fees/collect" element={<FeeCollectPage />} />
             <Route path="fees/receipts" element={<ReceiptsPage />} />
             <Route path="fees/students/:id" element={<StudentLedgerPage />} />
@@ -204,6 +202,8 @@ export default function App() {
             <Route path="transport/staff" element={<TransportStaffPage />} />
             <Route path="transport/routes" element={<RouteBuilderPage />} />
             <Route path="transport/fees" element={<FeeZonesPage />} />
+            <Route path="transport/assign" element={<BulkAssignPage />} />
+            <Route path="transport/renewal" element={<YearRenewalPage />} />
 
 
             <Route path="staff" element={<ModulePlaceholder />} />

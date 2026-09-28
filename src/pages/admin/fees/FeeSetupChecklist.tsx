@@ -15,6 +15,7 @@ import {
 import { getFeeHeads } from "../../../services/feeSetupService";
 import { getFeeTerms } from "../../../services/feeSetupService";
 import { useAuth } from "../../../hooks/useAuth";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 interface ChecklistItem {
   id: string;
@@ -78,65 +79,56 @@ const CHECKLIST: ChecklistItem[] = [
 
 export default function FeeSetupChecklist() {
   const navigate = useNavigate();
-  const { school } = useAuth() as any;
+  const { school: authSchool, schoolId: authSchoolId, loading: authLoading } = useAuth() as any;
   const [doneMask, setDoneMask] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
+  const activeSchoolId = authSchool?.id || authSchoolId || null;
+
   useEffect(() => {
-    if (!school?.id) return;
+    if (authLoading) return;
+    if (!activeSchoolId) {
+      setLoading(false);
+      return;
+    }
+
     async function check() {
       setLoading(true);
-      const mask: Record<string, boolean> = {};
-      const { heads } = await getFeeHeads(school.id);
-      mask["heads"] = heads.length > 0;
-      // terms check using a dummy year — just flag as done if any terms exist in localStorage
-      const allKeys = typeof localStorage !== "undefined"
-        ? Object.keys(localStorage).filter(k => k.startsWith(`myzkool_fee_terms_${school.id}_`))
-        : [];
-      mask["terms"] = allKeys.some(k => {
-        try { return JSON.parse(localStorage.getItem(k) || "[]").length > 0; } catch { return false; }
-      });
-      mask["structures"] = false; // simplified; real check needs year context
-      mask["concessions"] = false;
-      mask["late_fees"] = false;
-      mask["settings"] = false;
-      setDoneMask(mask);
-      setLoading(false);
+      try {
+        const mask: Record<string, boolean> = {};
+        const { heads } = await getFeeHeads(activeSchoolId!);
+        mask["heads"] = (heads || []).length > 0;
+        // terms check using dummy year — just flag as done if any terms exist in localStorage
+        const allKeys = typeof localStorage !== "undefined"
+          ? Object.keys(localStorage).filter(k => k.startsWith(`myzkool_fee_terms_${activeSchoolId}_`))
+          : [];
+        mask["terms"] = allKeys.some(k => {
+          try { return JSON.parse(localStorage.getItem(k) || "[]").length > 0; } catch { return false; }
+        });
+        mask["structures"] = false;
+        mask["concessions"] = false;
+        mask["late_fees"] = false;
+        mask["settings"] = false;
+        setDoneMask(mask);
+      } catch (err) {
+        console.warn("Checklist load error:", err);
+      } finally {
+        setLoading(false);
+      }
     }
     check();
-  }, [school?.id]);
+  }, [activeSchoolId, authLoading]);
 
   const doneCount = Object.values(doneMask).filter(Boolean).length;
   const requiredDone = CHECKLIST.filter(c => c.required).every(c => doneMask[c.id]);
   const progress = Math.round((doneCount / CHECKLIST.length) * 100);
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4">
-      {/* Header */}
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-[#141A2E] mb-1">Fee Setup</h1>
-          <p className="text-[#5B6478] text-sm">
-            Complete these steps once to start generating and collecting fees.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees/collect")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1A46B8] transition-colors cursor-pointer shadow-xs"
-          >
-            <IndianRupee className="w-3.5 h-3.5" /> Collect fee
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees/receipts")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            Receipts
-          </button>
-        </div>
-      </div>
+    <div className="max-w-5xl mx-auto py-6 px-4">
+      <FeeNavHeader
+        title="Fee Setup Hub"
+        subtitle="Complete these setup steps once to start generating and collecting fees."
+      />
 
 
       {/* Progress bar */}

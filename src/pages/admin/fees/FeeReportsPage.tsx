@@ -21,6 +21,7 @@ import {
 } from "../../../services/feeReportsService";
 import { getReceipts } from "../../../services/collectionService";
 import { formatPaise } from "../../../lib/amountInWords";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 import type { DayBookReportRow, OutstandingReportRow } from "../../../types/feeOperations";
 import type { FeeReceipt } from "../../../types/collection";
 
@@ -102,49 +103,36 @@ export default function FeeReportsPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees")}
-            className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 font-display">Fee Reports Register</h1>
-            <p className="text-xs text-slate-500">Day book, outstanding statements, and cancelled receipts audits</p>
+      <FeeNavHeader
+        title="Fee Reports"
+        subtitle="Day book, outstanding statements, collection summaries, and cancelled receipts audits."
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            {activeTab === "day_book" && (
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                className="text-xs border border-[#E6EAF3] bg-white rounded-xl px-3 py-1.5 font-medium focus:outline-none focus:border-[#2158E0]"
+              />
+            )}
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" /> Print
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {activeTab === "day_book" && (
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="text-xs border border-[#E6EAF3] bg-white rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-[#2158E0]"
-            />
-          )}
-
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
-
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" /> Print
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Tabs */}
       <div className="flex border-b border-[#E6EAF3] bg-white rounded-t-2xl px-4 pt-2">

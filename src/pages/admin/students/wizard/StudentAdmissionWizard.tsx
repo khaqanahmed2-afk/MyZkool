@@ -15,6 +15,7 @@ import {
   admitStudentTransactional,
   getCurrentAcademicYear,
 } from "../../../../services/studentService";
+import { getClassesWithSections } from "../../../../services/classSectionService";
 import { useAuth } from "../../../../context/AuthContext";
 import { StudentWizardLiveSummary } from "./StudentWizardLiveSummary";
 import { StudentWizardStep1Basic } from "./StudentWizardStep1Basic";
@@ -56,7 +57,7 @@ const INITIAL_PAYLOAD: AdmissionWizardPayload = {
     same_as_current: true,
   },
   step3_academic: {
-    academic_year_id: "ay-2026-27",
+    academic_year_id: "",
     admission_date: new Date().toISOString().split("T")[0],
     class_id: "",
     admission_type: "new",
@@ -67,7 +68,7 @@ const INITIAL_PAYLOAD: AdmissionWizardPayload = {
   step5_sensitive: {},
   step6_medical: {},
   step7_transport: { opt_in: false, pickup: true, dropoff: true },
-  step8_fee: { fee_structure_id: "standard-2026", discount_concession: "none" },
+  step8_fee: { fee_structure_id: "", discount_concession: "none" },
 };
 
 const STEP_TITLES = [
@@ -84,9 +85,7 @@ const STEP_TITLES = [
 
 export const StudentAdmissionWizard: React.FC = () => {
   const navigate = useNavigate();
-  const { schoolId, user } = useAuth();
-  const currentSchoolId = schoolId || "demo-school";
-  const currentUserId = user?.id || "admin-user";
+  const { schoolId, user, role } = useAuth();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [payload, setPayload] = useState<AdmissionWizardPayload>(INITIAL_PAYLOAD);
@@ -97,32 +96,68 @@ export const StudentAdmissionWizard: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [admittedStudent, setAdmittedStudent] = useState<Student | null>(null);
 
-  // Mock classes and sections
-  const mockClasses = [
-    { id: "cls-nursery", name: "Nursery" },
-    { id: "cls-kg", name: "Kindergarten" },
-    { id: "cls-1", name: "Class 1" },
-    { id: "cls-2", name: "Class 2" },
-    { id: "cls-3", name: "Class 3" },
-    { id: "cls-4", name: "Class 4" },
-    { id: "cls-5", name: "Class 5" },
-  ];
-  const mockSections = [
-    { id: "sec-1a", class_id: "cls-1", name: "A" },
-    { id: "sec-1b", class_id: "cls-1", name: "B" },
-    { id: "sec-4a", class_id: "cls-4", name: "A" },
-  ];
+  // Classes and sections state populated from database
+  const [classes, setClasses] = useState<Array<{ id: string; name: string }>>([]);
+  const [sections, setSections] = useState<Array<{ id: string; class_id: string; name: string }>>([]);
+
+  // Load current academic year on mount
+  useEffect(() => {
+    if (!schoolId) return;
+    getCurrentAcademicYear(schoolId).then((res) => {
+      const activeAyId = (res as any).year?.id || (res as any).academicYear?.id;
+      if (activeAyId) {
+        setPayload((prev) => ({
+          ...prev,
+          step3_academic: {
+            ...prev.step3_academic,
+            academic_year_id: prev.step3_academic.academic_year_id || activeAyId,
+          },
+        }));
+      }
+    }).catch((err) => {
+      console.warn("Failed to load academic year:", err);
+    });
+  }, [schoolId]);
+
+  // Load real classes and sections from database
+  useEffect(() => {
+    if (!schoolId) return;
+    async function loadSchoolClasses() {
+      try {
+        const res = await getClassesWithSections(
+          schoolId!,
+          payload.step3_academic.academic_year_id || undefined
+        );
+        if (res.classes && res.classes.length > 0) {
+          setClasses(res.classes.map((c) => ({ id: c.id, name: c.name })));
+          const allSecs: Array<{ id: string; class_id: string; name: string }> = [];
+          res.classes.forEach((c) => {
+            if (c.sections) {
+              c.sections.forEach((s) => {
+                allSecs.push({ id: s.id, class_id: s.class_id, name: s.name });
+              });
+            }
+          });
+          setSections(allSecs);
+        }
+      } catch (err) {
+        console.warn("Failed to load school classes for admission wizard:", err);
+      }
+    }
+    loadSchoolClasses();
+  }, [schoolId, payload.step3_academic.academic_year_id]);
 
   // 1. Check for saved draft on mount
   useEffect(() => {
+    if (!schoolId || !user?.id) return;
     async function loadDraft() {
-      const { draft } = await getStudentDraft(currentSchoolId, currentUserId);
+      const { draft } = await getStudentDraft(schoolId!, user!.id);
       if (draft && draft.payload) {
         setDraftNotice(draft);
       }
     }
     loadDraft();
-  }, [currentSchoolId, currentUserId]);
+  }, [schoolId, user?.id]);
 
   const handleResumeDraft = () => {
     if (draftNotice?.payload) {
@@ -133,30 +168,34 @@ export const StudentAdmissionWizard: React.FC = () => {
   };
 
   const handleDiscardDraft = async () => {
-    await deleteStudentDraft(currentSchoolId, currentUserId);
+    if (schoolId && user?.id) {
+      await deleteStudentDraft(schoolId, user.id);
+    }
     setDraftNotice(null);
   };
 
   // 2. Autosave draft on step change
   const autosave = useCallback(
     async (step: number, currentPayload: AdmissionWizardPayload) => {
-      await saveStudentDraft(currentSchoolId, currentUserId, {
+      if (!schoolId || !user?.id) return;
+      await saveStudentDraft(schoolId, user.id, {
         step,
         payload: currentPayload as unknown as Record<string, unknown>,
       });
     },
-    [currentSchoolId, currentUserId]
+    [schoolId, user?.id]
   );
 
   // 3. Duplicate check trigger
   useEffect(() => {
     if (
+      schoolId &&
       payload.step1_basic.first_name &&
       (payload.step1_basic.dob || payload.step2_guardian.father?.phone || payload.step5_sensitive?.aadhaar_number) &&
       !duplicateBypassed
     ) {
       const timer = setTimeout(async () => {
-        const res = await checkStudentDuplicate(currentSchoolId, {
+        const res = await checkStudentDuplicate(schoolId, {
           first_name: payload.step1_basic.first_name,
           last_name: payload.step1_basic.last_name,
           dob: payload.step1_basic.dob,
@@ -180,7 +219,7 @@ export const StudentAdmissionWizard: React.FC = () => {
     payload.step2_guardian.mother?.phone,
     payload.step2_guardian.mother?.full_name,
     payload.step5_sensitive?.aadhaar_number,
-    currentSchoolId,
+    schoolId,
     duplicateBypassed,
   ]);
 
@@ -203,13 +242,29 @@ export const StudentAdmissionWizard: React.FC = () => {
     }
 
     if (step === 2) {
-      const hasFather = Boolean(payload.step2_guardian.father?.phone);
-      const hasMother = Boolean(payload.step2_guardian.mother?.phone);
-      const hasGuardian = Boolean(payload.step2_guardian.guardian?.phone);
+      const fatherPhone = payload.step2_guardian.father?.phone?.trim() || "";
+      const motherPhone = payload.step2_guardian.mother?.phone?.trim() || "";
+      const guardianPhone = payload.step2_guardian.guardian?.phone?.trim() || "";
+
+      const hasFather = Boolean(fatherPhone);
+      const hasMother = Boolean(motherPhone);
+      const hasGuardian = Boolean(guardianPhone);
 
       if (!hasFather && !hasMother && !hasGuardian) {
         errs.guardian = "At least one parent or guardian phone number is required";
       }
+
+      const phoneRegex = /^\d{10}$/;
+      if (fatherPhone && !phoneRegex.test(fatherPhone)) {
+        errs.guardian = "Father's mobile number must be exactly 10 digits";
+      }
+      if (motherPhone && !phoneRegex.test(motherPhone)) {
+        errs.guardian = "Mother's mobile number must be exactly 10 digits";
+      }
+      if (guardianPhone && !phoneRegex.test(guardianPhone)) {
+        errs.guardian = "Guardian's mobile number must be exactly 10 digits";
+      }
+
       if (!payload.step2_guardian.current_address.line1?.trim()) {
         errs.address = "Address Line 1 is required";
       }
@@ -243,18 +298,22 @@ export const StudentAdmissionWizard: React.FC = () => {
   };
 
   const handleSaveAdmission = async () => {
+    if (!schoolId || !user?.id) {
+      alert("Authentication session expired. Please re-login.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await admitStudentTransactional(
-        currentSchoolId,
+        schoolId,
         payload,
-        currentUserId,
-        "admin"
+        user.id,
+        role || "school_admin"
       );
 
       if (res.student) {
         setAdmittedStudent(res.student);
-        await deleteStudentDraft(currentSchoolId, currentUserId);
+        await deleteStudentDraft(schoolId, user.id);
       } else {
         alert(res.error || "Failed to admit student");
       }
@@ -283,9 +342,31 @@ export const StudentAdmissionWizard: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentStep, payload, navigate]);
 
+  if (!schoolId || !user?.id) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 max-w-md w-full text-center space-y-4 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">Authentication Required</h2>
+          <p className="text-sm text-slate-600">
+            You must be signed in with an active school account to admit students.
+          </p>
+          <button
+            onClick={() => navigate("/login")}
+            className="w-full py-2.5 px-4 bg-[#2158E0] hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors shadow-sm"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (admittedStudent) {
-    const assignedClass = mockClasses.find((c) => c.id === payload.step3_academic.class_id);
-    const assignedSec = mockSections.find((s) => s.id === payload.step3_academic.section_id);
+    const assignedClass = classes.find((c) => c.id === payload.step3_academic.class_id);
+    const assignedSec = sections.find((s) => s.id === payload.step3_academic.section_id);
 
     return (
       <div className="p-6 max-w-5xl mx-auto">
@@ -315,8 +396,8 @@ export const StudentAdmissionWizard: React.FC = () => {
     );
   }
 
-  const selectedClass = mockClasses.find((c) => c.id === payload.step3_academic.class_id);
-  const selectedSection = mockSections.find((s) => s.id === payload.step3_academic.section_id);
+  const selectedClass = classes.find((c) => c.id === payload.step3_academic.class_id);
+  const selectedSection = sections.find((s) => s.id === payload.step3_academic.section_id);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col pb-24">
@@ -438,7 +519,7 @@ export const StudentAdmissionWizard: React.FC = () => {
           )}
           {currentStep === 2 && (
             <StudentWizardStep2Guardian
-              schoolId={currentSchoolId}
+              schoolId={schoolId}
               data={payload.step2_guardian}
               onChange={(f) => setPayload((p) => ({ ...p, step2_guardian: { ...p.step2_guardian, ...f } }))}
               errors={stepErrors}
@@ -447,8 +528,8 @@ export const StudentAdmissionWizard: React.FC = () => {
           {currentStep === 3 && (
             <StudentWizardStep3Academic
               data={payload.step3_academic}
-              classes={mockClasses}
-              sections={mockSections}
+              classes={classes}
+              sections={sections}
               onChange={(f) => setPayload((p) => ({ ...p, step3_academic: { ...p.step3_academic, ...f } }))}
               errors={stepErrors}
             />
@@ -476,12 +557,15 @@ export const StudentAdmissionWizard: React.FC = () => {
           )}
           {currentStep === 7 && (
             <StudentWizardStep7Transport
+              schoolId={schoolId}
               transport={payload.step7_transport}
               onChange={(f) => setPayload((p) => ({ ...p, step7_transport: { ...p.step7_transport!, ...f } }))}
             />
           )}
           {currentStep === 8 && (
             <StudentWizardStep8Fee
+              schoolId={schoolId}
+              academicYearId={payload.step3_academic.academic_year_id}
               fee={payload.step8_fee}
               isRte={payload.step3_academic.is_rte}
               className={selectedClass?.name}

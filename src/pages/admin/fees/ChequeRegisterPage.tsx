@@ -15,6 +15,7 @@ import {
 import { useAuth } from "../../../context/AuthContext";
 import { getCheques, updateChequeStatus, bounceCheque } from "../../../services/chequeService";
 import type { ChequeItem } from "../../../types/feeOperations";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 function fmt(paise: number): string {
   return "₹" + (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -107,30 +108,20 @@ export default function ChequeRegisterPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <FeeNavHeader
+        title="Cheque Register"
+        subtitle="Track cheques from receipt to bank clearance or bounce reversal."
+        action={
           <button
             type="button"
-            onClick={() => navigate("/admin/fees")}
-            className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
+            onClick={loadCheques}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Refresh</span>
           </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 font-display">Cheque Register</h1>
-            <p className="text-xs text-slate-500">Track cheques from receipt to bank clearance or bounce reversal</p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={loadCheques}
-          className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </div>
+        }
+      />
 
       {/* Tabs */}
       <div className="flex border-b border-[#E6EAF3] bg-white rounded-t-2xl px-4 pt-2">

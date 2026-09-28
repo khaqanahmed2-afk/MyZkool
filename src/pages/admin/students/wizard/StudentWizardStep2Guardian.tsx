@@ -133,7 +133,11 @@ export const StudentWizardStep2Guardian: React.FC<Step2Props> = ({
             <input
               type="tel"
               value={pData.phone || ""}
-              onChange={(e) => updateParent(type, { phone: e.target.value })}
+              maxLength={10}
+              onChange={(e) => {
+                const numericOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                updateParent(type, { phone: numericOnly });
+              }}
               onBlur={() => handlePhoneBlur(type, pData.phone)}
               placeholder="10-digit mobile"
               className="w-full pl-10 pr-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"

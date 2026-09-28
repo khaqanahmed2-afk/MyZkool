@@ -28,6 +28,7 @@ import {
   UserPlus, AlertTriangle, Wifi, WifiOff, ChevronDown, Users, Info, Shield, KeyRound, Check
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 import {
   collectFees, getCollectContext, searchStudentsForCounter,
 } from "../../../services/collectionService";
@@ -620,25 +621,12 @@ export default function FeeCollectPage() {
         </div>
       )}
 
-      {/* Page header */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#2158E0]/10 flex items-center justify-center">
-            <CreditCard className="w-4 h-4 text-[#2158E0]" />
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-slate-900 font-display">Collect fee</h1>
-            <p className="text-xs text-slate-500">Press <kbd className="px-1 py-0.5 bg-slate-100 rounded text-xs font-mono">/</kbd> to search</p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => navigate("/admin/fees/receipts")}
-          className="text-xs font-semibold text-[#2158E0] hover:underline"
-        >
-          View all receipts
-        </button>
+      {/* Persistent Fee Module Nav Header */}
+      <div className="px-4 sm:px-6 pt-4 bg-white border-b border-slate-200">
+        <FeeNavHeader
+          title="Collect Fee"
+          subtitle="Point-of-sale counter for collecting student fees, splitting modes & printing receipts."
+        />
       </div>
 
       {/* Search bar */}

@@ -238,6 +238,17 @@ export async function getCurrentSchoolSubscription(
             sort_order: data.plan.sort_order || 0,
           } : undefined,
         };
+
+        // Cache in localStorage for high-performance retrieval
+        try {
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem(
+              `${SUBSCRIPTION_CACHE_KEY_PREFIX}${schoolId}`,
+              JSON.stringify(sub)
+            );
+          }
+        } catch {}
+
         return { subscription: sub };
       }
     } catch {
@@ -247,15 +258,55 @@ export async function getCurrentSchoolSubscription(
 
   // Fallback to localStorage
   try {
-    const raw = localStorage.getItem(`${SUBSCRIPTION_CACHE_KEY_PREFIX}${schoolId}`);
-    if (raw) {
-      const parsed: SchoolSubscription = JSON.parse(raw);
-      // Ensure plan details are populated
-      if (!parsed.plan) {
-        const { plan } = await getPlanBySlug(parsed.plan_id);
-        if (plan) parsed.plan = plan;
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(`${SUBSCRIPTION_CACHE_KEY_PREFIX}${schoolId}`);
+      if (raw) {
+        const parsed: SchoolSubscription = JSON.parse(raw);
+        // Ensure plan details are populated
+        if (!parsed.plan) {
+          const { plan } = await getPlanBySlug(parsed.plan_id || (parsed as any).metadata?.plan_slug || "pro");
+          if (plan) parsed.plan = plan;
+        }
+        return { subscription: parsed };
       }
-      return { subscription: parsed };
+
+      // Secondary fallback: check school plans cache
+      const rawSchoolPlan = localStorage.getItem(`myzkool_school_plans_${schoolId}`);
+      if (rawSchoolPlan) {
+        const parsedPlan = JSON.parse(rawSchoolPlan);
+        const planSlug = parsedPlan.plan_slug || parsedPlan.plan_key || "pro";
+        const { plan } = await getPlanBySlug(planSlug);
+        if (plan) {
+          const now = new Date();
+          const trialDays = plan.trial_days || 14;
+          const trialEnds = parsedPlan.valid_until || new Date(now.getTime() + trialDays * 86400000).toISOString();
+          const synthesized: SchoolSubscription = {
+            id: `sub-${schoolId}`,
+            school_id: schoolId,
+            plan_id: plan.id,
+            billing_cycle: "monthly",
+            status: parsedPlan.billing_status || "trialing",
+            trial_starts_at: now.toISOString(),
+            trial_ends_at: trialEnds,
+            current_period_starts_at: now.toISOString(),
+            current_period_ends_at: trialEnds,
+            amount: plan.price_monthly || 1799,
+            currency: "INR",
+            gst_rate: 18,
+            gst_amount: Math.round((plan.price_monthly || 1799) * 0.18),
+            total_amount: Math.round((plan.price_monthly || 1799) * 1.18),
+            payment_method: "trial",
+            payment_status: "trial",
+            metadata: {
+              plan_slug: plan.slug,
+              plan_name: plan.name,
+              is_trial: true,
+            },
+            plan,
+          };
+          return { subscription: synthesized };
+        }
+      }
     }
   } catch {
     // Non-fatal
@@ -266,9 +317,81 @@ export async function getCurrentSchoolSubscription(
 
 export const getSchoolSubscription = getCurrentSchoolSubscription;
 
+export interface SchoolSubscriptionStatusInfo {
+  hasSubscription: boolean;
+  isTrial: boolean;
+  isTrialActive: boolean;
+  isPaidActive: boolean;
+  isActive: boolean;
+  isExpired: boolean;
+  planSlug: string;
+  planName: string;
+  daysRemainingInTrial: number;
+  trialEndsAt: string | null;
+  features: string[];
+}
+
+/**
+ * Returns comprehensive subscription and trial status for a school/tenant.
+ * Accurately differentiates active trials from expired or inactive states.
+ */
+export async function getSchoolSubscriptionStatus(
+  schoolId: string
+): Promise<SchoolSubscriptionStatusInfo> {
+  const { subscription } = await getCurrentSchoolSubscription(schoolId);
+  if (!subscription) {
+    return {
+      hasSubscription: false,
+      isTrial: false,
+      isTrialActive: false,
+      isPaidActive: false,
+      isActive: false,
+      isExpired: false,
+      planSlug: "basic",
+      planName: "Basic",
+      daysRemainingInTrial: 0,
+      trialEndsAt: null,
+      features: ["students", "fees", "attendance", "admissions", "website", "communication"],
+    };
+  }
+
+  const now = Date.now();
+  const isTrial = subscription.status === "trialing";
+  const trialEndMs = subscription.trial_ends_at ? new Date(subscription.trial_ends_at).getTime() : 0;
+  const isTrialActive = isTrial && trialEndMs > now;
+  const isPaidActive = subscription.status === "active" && (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > now);
+  const isActive = isTrialActive || isPaidActive;
+  const isExpired = isTrial ? trialEndMs <= now : (subscription.status === "cancelled" || subscription.status === "past_due");
+
+  const planSlug = (subscription.plan?.slug || (subscription as any).metadata?.plan_slug || "pro").toLowerCase();
+  const planName = subscription.plan?.name || (planSlug === "pro" ? "Pro" : planSlug === "custom" ? "Custom" : "Basic");
+  const daysRemainingInTrial = isTrialActive ? Math.max(0, Math.ceil((trialEndMs - now) / (1000 * 60 * 60 * 24))) : 0;
+
+  const features = (planSlug === "pro" || planSlug === "custom") && isActive
+    ? ["students", "fees", "attendance", "admissions", "website", "communication", "transport", "exams", "timetable", "reports", "approvals"]
+    : ["students", "fees", "attendance", "admissions", "website", "communication"];
+
+  return {
+    hasSubscription: true,
+    isTrial,
+    isTrialActive,
+    isPaidActive,
+    isActive,
+    isExpired,
+    planSlug,
+    planName,
+    daysRemainingInTrial,
+    trialEndsAt: subscription.trial_ends_at,
+    features,
+  };
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Selects a plan, starts a 14-day free trial or confirms selection,
- * persists the subscription, and advances onboarding step from 5 to 6.
+ * persists the subscription in Supabase (school_subscriptions & school_plans),
+ * synchronizes local caches, and advances onboarding step from 5 to 6.
  */
 export async function selectSchoolPlan(
   input: SubscriptionSelectionInput
@@ -332,6 +455,9 @@ export async function selectSchoolPlan(
       notes: input.notes || "Configured during School Onboarding Step 5",
       is_trial: startTrial,
       trial_duration_days: trialDays,
+      features: plan.slug === "pro" || plan.slug === "custom"
+        ? ["students", "fees", "attendance", "admissions", "website", "communication", "transport", "exams", "timetable", "reports", "approvals"]
+        : ["students", "fees", "attendance", "admissions", "website", "communication"],
     },
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
@@ -341,44 +467,155 @@ export async function selectSchoolPlan(
   // 1. Persist to Supabase if configured
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase
+      // Resolve a valid DB UUID for subscription_plans to satisfy foreign key constraint
+      let dbPlanId = plan.id;
+      if (!UUID_REGEX.test(dbPlanId)) {
+        const { data: dbPlan } = await supabase
+          .from("subscription_plans")
+          .select("id")
+          .eq("slug", plan.slug)
+          .maybeSingle();
+
+        if (dbPlan?.id) {
+          dbPlanId = dbPlan.id;
+        } else {
+          // Attempt to insert plan row so foreign key is satisfied
+          const { data: insertedPlan } = await supabase
+            .from("subscription_plans")
+            .upsert({
+              slug: plan.slug,
+              name: plan.name,
+              description: plan.description,
+              price_monthly: plan.price_monthly,
+              price_six_months: plan.price_six_months,
+              price_yearly: plan.price_yearly,
+              currency: plan.currency || "INR",
+              student_capacity_label: plan.student_capacity_label,
+              max_students: plan.max_students,
+              max_staff: plan.max_staff,
+              trial_days: plan.trial_days || 14,
+              features: plan.features || [],
+              is_popular: plan.is_popular,
+              is_active: true,
+              sort_order: plan.sort_order,
+            }, { onConflict: "slug" })
+            .select("id")
+            .maybeSingle();
+
+          if (insertedPlan?.id) {
+            dbPlanId = insertedPlan.id;
+          }
+        }
+      }
+
+      const hasValidPlanId = UUID_REGEX.test(dbPlanId);
+
+      // Check if existing subscription row exists for this school
+      const { data: existingSub } = await supabase
         .from("school_subscriptions")
-        .insert({
-          id: subscriptionRecord.id,
-          school_id: schoolId,
-          plan_id: plan.id.startsWith("plan-") ? undefined : plan.id, // Only use DB UUID if not fallback ID
-          billing_cycle: billingCycle,
-          status: subscriptionRecord.status,
-          trial_starts_at: subscriptionRecord.trial_starts_at,
-          trial_ends_at: subscriptionRecord.trial_ends_at,
-          current_period_starts_at: subscriptionRecord.current_period_starts_at,
-          current_period_ends_at: subscriptionRecord.current_period_ends_at,
-          amount: subscriptionRecord.amount,
-          currency: subscriptionRecord.currency,
-          gst_rate: subscriptionRecord.gst_rate,
-          gst_amount: subscriptionRecord.gst_amount,
-          total_amount: subscriptionRecord.total_amount,
-          payment_method: subscriptionRecord.payment_method,
-          payment_status: subscriptionRecord.payment_status,
-          metadata: subscriptionRecord.metadata,
-        })
-        .select()
+        .select("id")
+        .eq("school_id", schoolId)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      if (!error && data) {
-        subscriptionRecord.id = data.id;
+      const subPayload: any = {
+        school_id: schoolId,
+        billing_cycle: billingCycle,
+        status: subscriptionRecord.status,
+        trial_starts_at: subscriptionRecord.trial_starts_at,
+        trial_ends_at: subscriptionRecord.trial_ends_at,
+        current_period_starts_at: subscriptionRecord.current_period_starts_at,
+        current_period_ends_at: subscriptionRecord.current_period_ends_at,
+        amount: subscriptionRecord.amount,
+        currency: subscriptionRecord.currency,
+        gst_rate: subscriptionRecord.gst_rate,
+        gst_amount: subscriptionRecord.gst_amount,
+        total_amount: subscriptionRecord.total_amount,
+        payment_method: subscriptionRecord.payment_method,
+        payment_status: subscriptionRecord.payment_status,
+        metadata: subscriptionRecord.metadata,
+        updated_at: now.toISOString(),
+      };
+
+      if (hasValidPlanId) {
+        subPayload.plan_id = dbPlanId;
+      }
+
+      if (existingSub?.id) {
+        const { data: updatedSub, error: updateErr } = await supabase
+          .from("school_subscriptions")
+          .update(subPayload)
+          .eq("id", existingSub.id)
+          .select()
+          .maybeSingle();
+
+        if (!updateErr && updatedSub) {
+          subscriptionRecord.id = updatedSub.id;
+        } else if (updateErr) {
+          console.warn("Supabase school_subscriptions update note:", updateErr);
+        }
+      } else if (hasValidPlanId) {
+        const { data: insertedSub, error: insertErr } = await supabase
+          .from("school_subscriptions")
+          .insert({
+            id: subscriptionRecord.id,
+            ...subPayload,
+          })
+          .select()
+          .maybeSingle();
+
+        if (!insertErr && insertedSub) {
+          subscriptionRecord.id = insertedSub.id;
+        } else if (insertErr) {
+          console.warn("Supabase school_subscriptions insert note:", insertErr);
+        }
+      }
+
+      // Also upsert to school_plans table if available in database
+      try {
+        await supabase
+          .from("school_plans")
+          .upsert({
+            school_id: schoolId,
+            plan_slug: plan.slug,
+            plan_key: plan.slug,
+            billing_status: subscriptionRecord.status,
+            valid_until: subscriptionRecord.trial_ends_at,
+            features: plan.slug === "pro" || plan.slug === "custom"
+              ? ["students", "fees", "attendance", "admissions", "website", "communication", "transport", "exams", "timetable", "reports", "approvals"]
+              : ["students", "fees", "attendance", "admissions", "website", "communication"],
+            updated_at: now.toISOString(),
+          }, { onConflict: "school_id" });
+      } catch (spErr) {
+        console.warn("Supabase school_plans sync note:", spErr);
       }
     } catch (err) {
-      console.warn("Supabase school_subscriptions insert note:", err);
+      console.warn("Supabase subscription persistence error:", err);
     }
   }
 
-  // 2. Persist to localStorage
+  // 2. Persist to localStorage for offline resilience & test suite compatibility
   try {
-    localStorage.setItem(
-      `${SUBSCRIPTION_CACHE_KEY_PREFIX}${schoolId}`,
-      JSON.stringify(subscriptionRecord)
-    );
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(
+        `${SUBSCRIPTION_CACHE_KEY_PREFIX}${schoolId}`,
+        JSON.stringify(subscriptionRecord)
+      );
+      localStorage.setItem(
+        `myzkool_school_plans_${schoolId}`,
+        JSON.stringify({
+          school_id: schoolId,
+          plan_slug: plan.slug,
+          plan_key: plan.slug,
+          billing_status: subscriptionRecord.status,
+          valid_until: subscriptionRecord.trial_ends_at,
+          features: plan.slug === "pro" || plan.slug === "custom"
+            ? ["students", "fees", "attendance", "admissions", "website", "communication", "transport", "exams", "timetable", "reports", "approvals"]
+            : ["students", "fees", "attendance", "admissions", "website", "communication"],
+        })
+      );
+    }
   } catch {
     // Non-fatal
   }

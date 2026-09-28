@@ -23,7 +23,7 @@ export default function StudentIdCards() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { schoolId: authSchoolId } = useAuth();
-  const schoolId = authSchoolId || "default-school";
+  const schoolId = authSchoolId || "";
 
   const targetStudentId = searchParams.get("studentId");
   const targetClassId = searchParams.get("classId");
@@ -36,6 +36,10 @@ export default function StudentIdCards() {
 
   useEffect(() => {
     async function loadData() {
+      if (!schoolId) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
         // Load classes for filter dropdown

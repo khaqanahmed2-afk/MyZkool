@@ -1,14 +1,16 @@
 import express, { Request, Response } from "express";
+import http from "http";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality } from "@google/genai";
 import dotenv from "dotenv";
 import { transportRouter } from "./src/routes/transportRoutes";
+import { getSchoolBySubdomain } from "./src/services/schoolService";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 app.use(express.json({ limit: "25mb" }));
 app.use("/api/transport", transportRouter);
@@ -48,6 +50,33 @@ const demoRequests: DemoRequest[] = [];
 // API: Health check
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// API: Public school resolution by subdomain (Server-side lookup, never trusts client-supplied school_id)
+app.get("/api/public/school/:subdomain", async (req: Request, res: Response) => {
+  try {
+    const { subdomain } = req.params;
+    const result = await getSchoolBySubdomain(subdomain);
+    if (!result.school) {
+      res.status(404).json({ error: result.error || "School not found." });
+      return;
+    }
+    const s = result.school;
+    res.json({
+      id: s.id,
+      name: s.name,
+      subdomain: s.subdomain,
+      school_type: s.school_type,
+      affiliation_board: s.affiliation_board,
+      city: s.city,
+      state: s.state,
+      logo_url: s.logo_url,
+      contact_phone: s.contact_phone,
+      official_email: s.official_email,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // API: Book a demo
@@ -239,9 +268,14 @@ app.post("/api/analyze-image", async (req: Request, res: Response) => {
 
 // Vite middleware & Static serving
 async function startServer() {
+  const server = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : { server },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -253,8 +287,16 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`MyZkool Server running on http://0.0.0.0:${PORT}`);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`MyZkool Server running on http://localhost:${PORT}`);
+  });
+
+  server.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`Port ${PORT} is already in use. A dev server may already be running.`);
+    } else {
+      console.error("Server error:", err);
+    }
   });
 }
 

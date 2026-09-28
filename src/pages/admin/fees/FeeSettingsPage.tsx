@@ -3,9 +3,13 @@ import { Save, Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { getFeeSettings, updateFeeSettings } from "../../../services/feeSetupService";
 import type { FeeSettings, FeeSettingsInput } from "../../../types/fees";
 import { useAuth } from "../../../hooks/useAuth";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 export default function FeeSettingsPage() {
-  const { school } = useAuth() as any;
+  const { school: authSchool, schoolId: authSchoolId, loading: authLoading } = useAuth() as any;
+  const activeSchoolId = authSchool?.id || authSchoolId || null;
+  const school = authSchool || (activeSchoolId ? { id: activeSchoolId } : null);
+
   const [settings, setSettings] = useState<FeeSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,30 +22,39 @@ export default function FeeSettingsPage() {
   const [pinError, setPinError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!school?.id) return;
+    if (authLoading) return;
+    if (!activeSchoolId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const { settings: s } = await getFeeSettings(school.id);
-    setSettings(s);
-    setForm({
-      receipt_prefix: s.receipt_prefix,
-      receipt_paper: s.receipt_paper,
-      receipt_language: s.receipt_language,
-      allow_partial: s.allow_partial,
-      min_partial_paise: s.min_partial_paise,
-      allow_advance: s.allow_advance,
-      allocation_mode: s.allocation_mode,
-      round_to_rupee: s.round_to_rupee,
-      backdate_days_limit: s.backdate_days_limit,
-      discount_approval_threshold_percent: s.discount_approval_threshold_percent,
-      auto_assign_fee_on_admission: s.auto_assign_fee_on_admission,
-      auto_late_fee: s.auto_late_fee,
-      cheque_receipt_timing: s.cheque_receipt_timing,
-      parent_pay_enabled: s.parent_pay_enabled,
-      gateway_fee_bearer: s.gateway_fee_bearer,
-      auto_print_receipt: s.auto_print_receipt,
-    });
-    setLoading(false);
-  }, [school?.id]);
+    try {
+      const { settings: s } = await getFeeSettings(activeSchoolId);
+      setSettings(s);
+      setForm({
+        receipt_prefix: s.receipt_prefix,
+        receipt_paper: s.receipt_paper,
+        receipt_language: s.receipt_language,
+        allow_partial: s.allow_partial,
+        min_partial_paise: s.min_partial_paise,
+        allow_advance: s.allow_advance,
+        allocation_mode: s.allocation_mode,
+        round_to_rupee: s.round_to_rupee,
+        backdate_days_limit: s.backdate_days_limit,
+        discount_approval_threshold_percent: s.discount_approval_threshold_percent,
+        auto_assign_fee_on_admission: s.auto_assign_fee_on_admission,
+        auto_late_fee: s.auto_late_fee,
+        cheque_receipt_timing: s.cheque_receipt_timing,
+        parent_pay_enabled: s.parent_pay_enabled,
+        gateway_fee_bearer: s.gateway_fee_bearer,
+        auto_print_receipt: s.auto_print_receipt,
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to load fee settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeSchoolId, authLoading]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -71,18 +84,21 @@ export default function FeeSettingsPage() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#141A2E]">Receipt & Settings</h1>
-          <p className="text-[#5B6478] text-sm mt-0.5">Configure receipt format, payment options, and owner PIN.</p>
-        </div>
-        <button onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 text-sm px-4 py-2 bg-[#2158E0] text-white rounded-lg hover:bg-[#1a46b8] disabled:opacity-60">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Settings
-        </button>
-      </div>
+    <div className="max-w-4xl mx-auto py-6 px-4">
+      <FeeNavHeader
+        title="Fee & Receipt Settings"
+        subtitle="Configure receipt format, payment options, partial payments, and owner PIN."
+        action={
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>Save Settings</span>
+          </button>
+        }
+      />
 
       {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm flex gap-2"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{error}</div>}
       {success && <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm">✓ Settings saved successfully.</div>}

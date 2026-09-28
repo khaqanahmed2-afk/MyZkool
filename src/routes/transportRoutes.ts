@@ -5,7 +5,8 @@
  */
 
 import { Router, Request, Response } from "express";
-import { requireFeature } from "../middleware/features";
+import { requireSchoolContext } from "../middleware/auth";
+import { requireFeature, requireTransportPermission } from "../middleware/features";
 import {
   getTransportSettings,
   saveTransportSettings,
@@ -33,18 +34,39 @@ import {
   getTransportDashboardData,
 } from "../services/transportCoreService";
 import { runDocumentExpiryJob } from "../services/transportExpiryJob";
+import {
+  getStudentTransportDetails,
+  createAssignment,
+  bulkAssignStudents,
+  changeAssignment,
+  stopAssignment,
+  listTransportRequests,
+  createTransportRequest,
+  updateTransportRequestStatus,
+  recordAbsence,
+  listAbsences,
+  getRenewalPreview,
+  commitRenewal,
+  getRouteRosterReport,
+  getRidersByRouteAndStopReport,
+  getVehicleUtilisationReport,
+  getUnassignedAndRequestsReport,
+  getTransportFeeReport,
+  getAssignmentHistoryReport,
+} from "../services/transportAssignmentService";
 
 export const transportRouter = Router();
 
-// ENFORCE PLAN GATING ON EVERY /api/transport ROUTE
+// ENFORCE AUTHENTICATED TENANT ISOLATION & PLAN GATING ON EVERY /api/transport ROUTE
+transportRouter.use(requireSchoolContext);
 transportRouter.use(requireFeature("transport"));
 
 function getSchoolId(req: Request): string {
-  return (
-    (req as any).schoolId ||
-    (req.headers["x-school-id"] as string) ||
-    "default-school"
-  );
+  const schoolId = (req as any).schoolId || (req as any).user?.school_id;
+  if (!schoolId) {
+    throw new Error("UNAUTHORIZED: Missing authenticated school context");
+  }
+  return schoolId;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -58,7 +80,7 @@ transportRouter.get("/settings", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.put("/settings", async (req: Request, res: Response) => {
+transportRouter.put("/settings", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const updated = await saveTransportSettings(schoolId, req.body);
@@ -79,7 +101,7 @@ transportRouter.get("/vehicles", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.post("/vehicles", async (req: Request, res: Response) => {
+transportRouter.post("/vehicles", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await createVehicle(schoolId, req.body);
@@ -93,7 +115,7 @@ transportRouter.post("/vehicles", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.put("/vehicles/:id", async (req: Request, res: Response) => {
+transportRouter.put("/vehicles/:id", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await updateVehicle(schoolId, req.params.id, req.body);
@@ -107,7 +129,7 @@ transportRouter.put("/vehicles/:id", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.delete("/vehicles/:id", async (req: Request, res: Response) => {
+transportRouter.delete("/vehicles/:id", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await deleteVehicle(schoolId, req.params.id);
@@ -132,7 +154,7 @@ transportRouter.get("/vehicles/:id/documents", async (req: Request, res: Respons
   }
 });
 
-transportRouter.post("/vehicles/:id/documents", async (req: Request, res: Response) => {
+transportRouter.post("/vehicles/:id/documents", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await addVehicleDocument(schoolId, {
@@ -149,7 +171,7 @@ transportRouter.post("/vehicles/:id/documents", async (req: Request, res: Respon
   }
 });
 
-transportRouter.delete("/vehicles/:id/documents/:docId", async (req: Request, res: Response) => {
+transportRouter.delete("/vehicles/:id/documents/:docId", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     await deleteVehicleDocument(schoolId, req.params.docId);
@@ -171,7 +193,7 @@ transportRouter.get("/staff", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.post("/staff", async (req: Request, res: Response) => {
+transportRouter.post("/staff", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await createTransportStaff(schoolId, req.body);
@@ -185,7 +207,7 @@ transportRouter.post("/staff", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.put("/staff/:id", async (req: Request, res: Response) => {
+transportRouter.put("/staff/:id", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await updateTransportStaff(schoolId, req.params.id, req.body);
@@ -199,7 +221,7 @@ transportRouter.put("/staff/:id", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.delete("/staff/:id", async (req: Request, res: Response) => {
+transportRouter.delete("/staff/:id", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await deleteTransportStaff(schoolId, req.params.id);
@@ -241,7 +263,7 @@ transportRouter.get("/routes", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.post("/routes", async (req: Request, res: Response) => {
+transportRouter.post("/routes", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await createRoute(schoolId, req.body);
@@ -255,7 +277,7 @@ transportRouter.post("/routes", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.put("/routes/:id", async (req: Request, res: Response) => {
+transportRouter.put("/routes/:id", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await updateRoute(schoolId, req.params.id, req.body);
@@ -269,7 +291,7 @@ transportRouter.put("/routes/:id", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.delete("/routes/:id", async (req: Request, res: Response) => {
+transportRouter.delete("/routes/:id", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await deleteRoute(schoolId, req.params.id);
@@ -283,7 +305,7 @@ transportRouter.delete("/routes/:id", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.post("/routes/:id/stops", async (req: Request, res: Response) => {
+transportRouter.post("/routes/:id/stops", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await saveRouteStops(schoolId, req.params.id, req.body.stops);
@@ -292,6 +314,20 @@ transportRouter.post("/routes/:id/stops", async (req: Request, res: Response) =>
       return;
     }
     res.json(result.stops);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.get("/routes/:id/sheet", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const data = await getRouteRosterReport(schoolId, req.params.id);
+    if (!data) {
+      res.status(404).json({ error: "Route not found" });
+      return;
+    }
+    res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -308,7 +344,7 @@ transportRouter.get("/fees", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.post("/fees", async (req: Request, res: Response) => {
+transportRouter.post("/fees", requireTransportPermission('transport.fees.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await createFeeZone(schoolId, req.body);
@@ -322,7 +358,7 @@ transportRouter.post("/fees", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.put("/fees/:id", async (req: Request, res: Response) => {
+transportRouter.put("/fees/:id", requireTransportPermission('transport.fees.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await updateFeeZone(schoolId, req.params.id, req.body);
@@ -336,7 +372,7 @@ transportRouter.put("/fees/:id", async (req: Request, res: Response) => {
   }
 });
 
-transportRouter.delete("/fees/:id", async (req: Request, res: Response) => {
+transportRouter.delete("/fees/:id", requireTransportPermission('transport.fees.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
     const result = await deleteFeeZone(schoolId, req.params.id);
@@ -345,6 +381,31 @@ transportRouter.delete("/fees/:id", async (req: Request, res: Response) => {
       return;
     }
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Apply zone fee change to existing assignments (Spec C4.5)
+transportRouter.post("/fees/:id/apply-to-existing", requireTransportPermission('transport.fees.manage'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const zoneId = req.params.id;
+    const { effective_term_id, preview_only } = req.body;
+    // Get zone and active assignments using that zone
+    const zones = await getFeeZones(schoolId);
+    const zone = zones.find((z: any) => z.id === zoneId);
+    if (!zone) {
+      res.status(404).json({ error: "Fee zone not found" });
+      return;
+    }
+    // Return preview data; actual update is an owner-approved operation
+    res.json({
+      zone_id: zoneId,
+      preview_only: preview_only ?? true,
+      effective_term_id: effective_term_id ?? null,
+      message: "Apply-to-existing preview. Confirm with preview_only=false to create an approval request.",
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -370,3 +431,236 @@ transportRouter.post("/expiry-check", async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ─── Student Transport Lifecycle (Spec C5, C7, C13) ─────────────────────────
+
+transportRouter.get("/students/:id/transport", async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const data = await getStudentTransportDetails(schoolId, req.params.id);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.post("/assignments", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await createAssignment(schoolId, req.body);
+    if (!result.success) {
+      const statusCode = result.error === "PLAN_REQUIRED" ? 402 : 400;
+      res.status(statusCode).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.assignment);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.post("/assignments/bulk", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await bulkAssignStudents(schoolId, req.body);
+    if (!result.success) {
+      const statusCode = result.error === "PLAN_REQUIRED" ? 402 : 400;
+      res.status(statusCode).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.post("/assignments/:id/change", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await changeAssignment(schoolId, req.params.id, req.body);
+    if (!result.success) {
+      const statusCode = result.error === "PLAN_REQUIRED" ? 402 : 400;
+      res.status(statusCode).json({ error: result.error });
+      return;
+    }
+    res.json(result.assignment);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.post("/assignments/:id/stop", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await stopAssignment(schoolId, req.params.id, req.body);
+    if (!result.success) {
+      const statusCode = result.error === "PLAN_REQUIRED" ? 402 : 400;
+      res.status(statusCode).json({ error: result.error });
+      return;
+    }
+    res.json(result.assignment);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Requests ───────────────────────────────────────────────────────────────
+
+transportRouter.get("/requests", async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const requests = await listTransportRequests(schoolId, req.query.status as any);
+    res.json(requests);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.post("/requests", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await createTransportRequest(schoolId, req.body);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.request);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.patch("/requests/:id", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await updateTransportRequestStatus(
+      schoolId,
+      req.params.id,
+      req.body.status,
+      req.body.decided_by
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Absences ───────────────────────────────────────────────────────────────
+
+transportRouter.post("/absences", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await recordAbsence(schoolId, req.body);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.absence);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.get("/absences", async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const list = await listAbsences(schoolId, req.query.student_id as string);
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Year Renewal ───────────────────────────────────────────────────────────
+
+transportRouter.get("/renewal/preview", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const oldYearId = req.query.old_year_id as string;
+    const newYearId = req.query.new_year_id as string;
+    if (!oldYearId || !newYearId) {
+      res.status(400).json({ error: "old_year_id and new_year_id required" });
+      return;
+    }
+    const preview = await getRenewalPreview(schoolId, oldYearId, newYearId);
+    res.json(preview);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.post("/renewal/commit", requireTransportPermission('transport.assign'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const result = await commitRenewal(schoolId, req.body);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Reports (Spec C9) ───────────────────────────────────────────────────────
+
+transportRouter.get("/reports/:key", async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const key = req.params.key;
+
+    switch (key) {
+      case "roster": {
+        const routeId = req.query.route_id as string;
+        if (!routeId) {
+          res.status(400).json({ error: "route_id required for roster" });
+          return;
+        }
+        const data = await getRouteRosterReport(schoolId, routeId);
+        res.json(data);
+        break;
+      }
+      case "riders": {
+        const data = await getRidersByRouteAndStopReport(schoolId);
+        res.json(data);
+        break;
+      }
+      case "utilisation": {
+        const data = await getVehicleUtilisationReport(schoolId);
+        res.json(data);
+        break;
+      }
+      case "unassigned": {
+        const data = await getUnassignedAndRequestsReport(schoolId);
+        res.json(data);
+        break;
+      }
+      case "fee": {
+        const data = await getTransportFeeReport(schoolId);
+        res.json(data);
+        break;
+      }
+      case "document_expiry": {
+        const report = await runDocumentExpiryJob(schoolId);
+        res.json(report);
+        break;
+      }
+      case "assignment_history": {
+        const studentId = req.query.student_id as string | undefined;
+        const data = await getAssignmentHistoryReport(schoolId, studentId);
+        res.json(data);
+        break;
+      }
+      default:
+        res.status(404).json({ error: `Unknown report: ${key}` });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+

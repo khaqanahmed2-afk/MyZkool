@@ -20,6 +20,7 @@ import { useAuth } from "../../../context/AuthContext";
 import {
   getDaySummary, closeDay, reopenDay, calculateDenominationTotal
 } from "../../../services/dayCloseService";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 import type { DaySummary } from "../../../services/dayCloseService";
 import type { DenominationCount } from "../../../types/feeOperations";
 
@@ -126,38 +127,27 @@ export default function DayClosePage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees")}
-            className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 font-display">Day Closing & Cash Balance</h1>
-            <p className="text-xs text-slate-500">Lock business day, count physical cash denominations, reconcile day book</p>
+      <FeeNavHeader
+        title="Day Closing & Cash Balance"
+        subtitle="Lock business day, count physical cash denominations, and reconcile day book."
+        action={
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateStr}
+              onChange={e => setDateStr(e.target.value)}
+              className="text-xs border border-[#E6EAF3] bg-white rounded-xl px-3 py-1.5 font-medium focus:outline-none focus:border-[#2158E0]"
+            />
+            <button
+              type="button"
+              onClick={handlePrintDayBook}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" /> Print Day Book
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={dateStr}
-            onChange={e => setDateStr(e.target.value)}
-            className="text-xs border border-[#E6EAF3] bg-white rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-[#2158E0]"
-          />
-          <button
-            type="button"
-            onClick={handlePrintDayBook}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" /> Print day book
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Lock status banner */}
       {summary?.is_closed ? (

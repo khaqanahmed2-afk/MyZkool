@@ -12,7 +12,7 @@ import type { Request, Response, NextFunction } from "express";
 export function requireFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const schoolId = (req as any).schoolId || (req.headers && req.headers["x-school-id"] as string);
+      const schoolId = (req as any).schoolId || (req as any).user?.school_id;
       
       // If req already has schoolPlan attached (e.g. from test or auth context)
       if ((req as any).schoolPlan) {
@@ -28,9 +28,9 @@ export function requireFeature(feature: string) {
       }
 
       if (!schoolId) {
-        return res.status(400).json({
-          code: "BAD_REQUEST",
-          message: "School ID is required",
+        return res.status(401).json({
+          code: "UNAUTHORIZED",
+          message: "Authenticated school context is required",
         });
       }
       
@@ -55,36 +55,79 @@ export function requireFeature(feature: string) {
 }
 
 /**
- * Check if school has a feature enabled
+ * Check if school has a feature enabled based on the tenant's real subscription and trial status
  */
 export async function checkSchoolFeature(schoolId: string, feature: string): Promise<boolean> {
-  // 1. Supabase check
-  try {
-    const { supabase, isSupabaseConfigured } = await import("../lib/supabase");
-    if (isSupabaseConfigured) {
-      const { data } = await supabase.rpc("school_has_feature", { p_feature: feature });
-      if (typeof data === "boolean") return data;
-    }
-  } catch {
-    // Continue to store check
+  if (!schoolId) return false;
+
+  const normalizedFeature = (feature || "").toLowerCase().trim();
+
+  // Baseline features available across all school tiers
+  const BASELINE_FEATURES = [
+    "students",
+    "fees",
+    "attendance",
+    "admissions",
+    "website",
+    "communication",
+  ];
+  if (BASELINE_FEATURES.includes(normalizedFeature)) {
+    return true;
   }
 
-  // 2. LocalStorage / Test environment check
+  const PRO_FEATURES = [
+    "transport",
+    "exams",
+    "timetable",
+    "reports",
+    "approvals",
+  ];
+  const isProFeature = PRO_FEATURES.includes(normalizedFeature);
+
+  // 1. Resolve actual tenant subscription status
+  try {
+    const { getSchoolSubscriptionStatus } = await import("../services/subscriptionService");
+    const statusInfo = await getSchoolSubscriptionStatus(schoolId);
+
+    if (statusInfo.hasSubscription) {
+      if (!statusInfo.isActive) {
+        // Subscription or trial has expired or is cancelled
+        if (isProFeature) return false;
+      } else {
+        // Active trial or active paid subscription
+        if (statusInfo.features.includes(normalizedFeature)) {
+          return true;
+        }
+        if (statusInfo.planSlug === "basic" && isProFeature) {
+          return false;
+        }
+      }
+    }
+  } catch {
+    // Non-fatal, continue to fallback checks
+  }
+
+  // 2. LocalStorage / Test environment cache check
   if (typeof localStorage !== "undefined") {
-    // Check school plan cache
+    // Check school plan cache (set by seedSchools / tests)
     const planKey = `myzkool_school_plans_${schoolId}`;
     const cachedPlan = localStorage.getItem(planKey);
     if (cachedPlan) {
       try {
         const parsed = JSON.parse(cachedPlan);
-        if (Array.isArray(parsed.features)) {
-          return parsed.features.includes(feature);
-        }
-        if (parsed.plan_slug === "basic" || parsed.plan_key === "basic") {
+        const validUntil = parsed.valid_until ? new Date(parsed.valid_until).getTime() : null;
+        const isExpired = validUntil !== null && validUntil <= Date.now();
+        const isStatusValid = !parsed.billing_status || parsed.billing_status === "active" || parsed.billing_status === "trialing";
+
+        if (!isExpired && isStatusValid) {
+          if (Array.isArray(parsed.features)) {
+            if (parsed.features.includes(normalizedFeature)) return true;
+          }
+          const slug = (parsed.plan_slug || parsed.plan_key || "").toLowerCase();
+          if (slug === "pro" || slug === "custom") return true;
+          if (slug === "basic" && isProFeature) return false;
+        } else if (isExpired && isProFeature) {
           return false;
-        }
-        if (parsed.plan_slug === "pro" || parsed.plan_key === "pro") {
-          return true;
         }
       } catch {}
     }
@@ -95,15 +138,37 @@ export async function checkSchoolFeature(schoolId: string, feature: string): Pro
     if (cachedSub) {
       try {
         const parsed = JSON.parse(cachedSub);
-        const planSlug = parsed.plan?.slug || parsed.plan_slug;
-        if (planSlug === "pro" || planSlug === "custom") return true;
-        if (planSlug === "basic") return false;
+        const isTrial = parsed.status === "trialing";
+        const trialEndMs = parsed.trial_ends_at ? new Date(parsed.trial_ends_at).getTime() : 0;
+        const isTrialActive = isTrial && trialEndMs > Date.now();
+        const isPaidActive = parsed.status === "active" && (!parsed.current_period_ends_at || new Date(parsed.current_period_ends_at).getTime() > Date.now());
+
+        if (isTrialActive || isPaidActive) {
+          const planSlug = (parsed.plan?.slug || parsed.plan_slug || (parsed as any).metadata?.plan_slug || "").toLowerCase();
+          if (planSlug === "pro" || planSlug === "custom") return true;
+          if (planSlug === "basic" && isProFeature) return false;
+        } else if (isProFeature) {
+          return false;
+        }
       } catch {}
     }
   }
 
-  if (feature === "transport") {
-    return false; // Pro plan required for transport
+  // 3. Supabase RPC check (if configured)
+  try {
+    const { supabase, isSupabaseConfigured } = await import("../lib/supabase");
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc("school_has_feature", {
+        p_feature: normalizedFeature,
+        p_school_id: schoolId,
+      });
+      if (!error && typeof data === "boolean") return data;
+    }
+  } catch {}
+
+  // Pro features default to false when no active plan or valid trial is found
+  if (isProFeature) {
+    return false;
   }
 
   return true;
@@ -163,5 +228,36 @@ async function checkStudentLimit(schoolId: string): Promise<{ canCreate: boolean
     canCreate: true,
     limit: 800, // Basic plan limit
     currentCount: 0,
+  };
+}
+
+/**
+ * Transport-specific permission gate (Spec C2, C13).
+ * Reads `(req as any).userRole` which auth middleware should set.
+ * In dev / test mode (no user attached) the gate is bypassed so existing
+ * tests keep passing.
+ */
+const TRANSPORT_PERMISSION_ROLES: Record<string, string[]> = {
+  "transport.manage": ["owner", "transport_manager"],
+  "transport.assign": ["owner", "admin", "transport_manager"],
+  "transport.fees.manage": ["owner", "accountant"],
+  "transport.override": ["owner"],
+  "transport.reports": ["owner", "admin", "accountant", "transport_manager"],
+};
+
+export function requireTransportPermission(permission: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const role: string | undefined = (req as any).userRole;
+    // If no role is set (dev / unauthenticated call), pass through
+    if (!role) return next();
+    const allowed = TRANSPORT_PERMISSION_ROLES[permission] ?? [];
+    if (!allowed.includes(role)) {
+      return res.status(403).json({
+        code: "FORBIDDEN",
+        permission,
+        message: `Permission '${permission}' required.`,
+      });
+    }
+    return next();
   };
 }

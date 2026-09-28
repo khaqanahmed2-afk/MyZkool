@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -9,11 +9,14 @@ import {
   Calendar,
   CreditCard,
   Bus,
+  Users,
+  Clock,
   Shield,
   FileText,
   Activity,
   History,
   AlertCircle,
+  AlertTriangle,
   Save,
   X,
   Eye,
@@ -50,13 +53,22 @@ import {
   replaceStudentDocument,
   deleteStudentDocument,
   STUDENT_ROLE_PERMISSIONS,
+  getPermissionsForRole,
 } from "../../../services/studentService";
 import {
   reAdmitStudent,
   exportStudentData,
 } from "../../../services/studentOperationsService";
 import TransferCertificateModal from "./TransferCertificateModal";
+import { DeleteStudentModal } from "./DeleteStudentModal";
 import StudentLedgerTab from "../fees/StudentLedgerTab";
+import { AssignTransportDrawer } from "../transport/AssignTransportDrawer";
+import {
+  getStudentTransportDetails,
+  stopAssignment,
+  recordAbsence,
+} from "../../../services/transportAssignmentService";
+import type { EnrichedStudentTransport, TransportAssignment } from "../../../types/transport";
 
 
 
@@ -72,6 +84,7 @@ export default function StudentProfileView() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Inline editing state for Personal tab
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
@@ -119,12 +132,12 @@ export default function StudentProfileView() {
   // Timeline events
   const [timelineEvents, setTimelineEvents] = useState<StudentEvent[]>([]);
 
-  const schoolId = authSchoolId || "default-school";
-  const userRole = (currentUserProfile?.role || "admin").toLowerCase();
-  const userPermissions: StudentPermissionKey[] =
-    STUDENT_ROLE_PERMISSIONS[userRole as keyof typeof STUDENT_ROLE_PERMISSIONS] || [];
-  const canReadMedical = userRole === "owner" || userPermissions.includes("students.medical.read");
-  const canWriteMedical = userRole === "owner" || userPermissions.includes("students.medical.write");
+  const schoolId = authSchoolId || "";
+  const rawRole = (currentUserProfile?.role || "admin").toLowerCase().trim().replace(/[\s-]+/g, "_");
+  const userRole = rawRole;
+  const userPermissions: StudentPermissionKey[] = getPermissionsForRole(userRole);
+  const canReadMedical = userRole === "owner" || userRole === "super_admin" || userPermissions.includes("students.medical.read");
+  const canWriteMedical = userRole === "owner" || userRole === "super_admin" || userPermissions.includes("students.medical.write");
 
   // Re-admission state
   const [isReAdmitModalOpen, setIsReAdmitModalOpen] = useState(false);
@@ -141,6 +154,40 @@ export default function StudentProfileView() {
 
   // Export state
   const [isExportingData, setIsExportingData] = useState(false);
+
+  // Transport state
+  const [transportInfo, setTransportInfo] = useState<EnrichedStudentTransport | null>(null);
+  const [transportLoading, setTransportLoading] = useState(false);
+  const [showAssignDrawer, setShowAssignDrawer] = useState(false);
+  const [isEditingTransport, setIsEditingTransport] = useState(false);
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [stopReason, setStopReason] = useState("");
+  const [stopEffectiveDate, setStopEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+  const [absenceFrom, setAbsenceFrom] = useState(new Date().toISOString().split("T")[0]);
+  const [absenceTo, setAbsenceTo] = useState(new Date().toISOString().split("T")[0]);
+  const [absenceReason, setAbsenceReason] = useState("");
+  const [transportOpLoading, setTransportOpLoading] = useState(false);
+  const [transportOpError, setTransportOpError] = useState<string | null>(null);
+
+  const loadTransport = useCallback(async () => {
+    if (!id || !schoolId) return;
+    setTransportLoading(true);
+    try {
+      const data = await getStudentTransportDetails(schoolId, id);
+      setTransportInfo(data);
+    } catch (e) {
+      console.error("Failed to load transport details", e);
+    } finally {
+      setTransportLoading(false);
+    }
+  }, [schoolId, id]);
+
+  useEffect(() => {
+    if (activeTab === "transport") {
+      loadTransport();
+    }
+  }, [activeTab, loadTransport]);
 
   const handleExecuteReAdmission = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -452,7 +499,7 @@ export default function StudentProfileView() {
     }
   };
 
-  if (loading) {
+  if (loading || (!schoolId && !error)) {
     return (
       <div className="p-8 max-w-6xl mx-auto space-y-6">
         <div className="animate-pulse flex items-center gap-4 bg-white p-6 rounded-2xl border border-[#E6EAF3]">
@@ -614,6 +661,14 @@ export default function StudentProfileView() {
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
             >
               <Download className="w-3.5 h-3.5" /> {isExportingData ? "Exporting..." : "Export Data"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors cursor-pointer"
+              title="Delete student and all associated data"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" /> Delete
             </button>
           </div>
         </div>
@@ -1584,21 +1639,471 @@ export default function StudentProfileView() {
         </div>
       )}
 
-      {/* 9. TRANSPORT TAB (Placeholder) */}
+      {/* 9. TRANSPORT TAB (Spec C5.1, C5.3, C7) */}
       {activeTab === "transport" && (
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-12 text-center space-y-3 shadow-2xs">
-          <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
-            <Activity className="w-6 h-6" />
+        <div className="space-y-6">
+          {/* Header Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-[#E6EAF3] rounded-2xl p-5 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                <Bus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 font-display">
+                  Transport & Bus Route
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {transportInfo?.assignment
+                    ? `Assigned to ${transportInfo.assignment.route_name}`
+                    : "No active transport assignment"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {transportInfo?.assignment ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingTransport(true);
+                      setShowAssignDrawer(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Change route or stop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAbsenceModal(true)}
+                    className="px-3 py-1.5 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Mark not travelling
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowStopModal(true)}
+                    className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold hover:bg-rose-100 transition-colors cursor-pointer"
+                  >
+                    Stop transport
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingTransport(false);
+                    setShowAssignDrawer(true);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-blue-700 transition-colors cursor-pointer shadow-xs"
+                >
+                  Add transport
+                </button>
+              )}
+            </div>
           </div>
-          <h3 className="text-base font-bold text-slate-900 font-display capitalize">
-            {activeTab} module placeholder
-          </h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            This tab will integrate with Part B and Pro modules according to spec boundaries.
-          </p>
+
+          {transportLoading ? (
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl p-12 text-center text-slate-400 text-xs shadow-2xs">
+              Loading transport details...
+            </div>
+          ) : transportInfo?.assignment ? (
+            <div className="space-y-6">
+              {/* Sibling Chip */}
+              {transportInfo.siblings_on_route && transportInfo.siblings_on_route.length > 0 && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl text-xs text-blue-900 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>
+                      Sibling <strong>{transportInfo.siblings_on_route[0].student_name}</strong> ({transportInfo.siblings_on_route[0].class_name}) also travels on this route!
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-blue-700">Shares stop</span>
+                </div>
+              )}
+
+              {/* Active Assignment Card */}
+              <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs space-y-5">
+                <div className="flex items-center justify-between border-b border-[#E6EAF3] pb-4">
+                  <div>
+                    <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+                      Current Route
+                    </span>
+                    <h4 className="text-lg font-bold text-slate-900 font-display">
+                      {transportInfo.assignment.route_name}
+                    </h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+                      Monthly Fee
+                    </span>
+                    <div className="text-base font-bold text-emerald-700 font-mono">
+                      ₹{(transportInfo.assignment.monthly_fee_paise / 100).toLocaleString("en-IN")}/mo
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Pickup */}
+                  <div className="p-4 rounded-xl bg-slate-50 border border-[#E6EAF3] space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Pickup Stop
+                    </span>
+                    <div className="font-bold text-slate-900 text-sm">
+                      {transportInfo.assignment.pickup_stop_name || "Assigned Stop"}
+                    </div>
+                    <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      {transportInfo.assignment.pickup_time || "Morning"}
+                    </div>
+                  </div>
+
+                  {/* Drop */}
+                  <div className="p-4 rounded-xl bg-slate-50 border border-[#E6EAF3] space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Drop Stop
+                    </span>
+                    <div className="font-bold text-slate-900 text-sm">
+                      {transportInfo.assignment.drop_stop_name || transportInfo.assignment.pickup_stop_name || "Assigned Stop"}
+                    </div>
+                    <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      {transportInfo.assignment.drop_time || "Afternoon"}
+                    </div>
+                  </div>
+
+                  {/* Settings */}
+                  <div className="p-4 rounded-xl bg-slate-50 border border-[#E6EAF3] space-y-2 text-xs">
+                    <div>
+                      <span className="text-slate-500">Service: </span>
+                      <span className="font-semibold text-slate-800 capitalize">
+                        {transportInfo.assignment.service_type.replace("_", " ")}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Effective: </span>
+                      <span className="font-semibold text-slate-800">
+                        {transportInfo.assignment.effective_from}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Handover: </span>
+                      <span className="font-semibold text-slate-800">
+                        {transportInfo.assignment.requires_guardian_handover
+                          ? "Required at drop"
+                          : "Standard release"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Absences / Not Travelling */}
+              {transportInfo.absences && transportInfo.absences.length > 0 && (
+                <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs space-y-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Scheduled Absences (Not Travelling)
+                  </h4>
+                  <div className="divide-y divide-[#E6EAF3]">
+                    {transportInfo.absences.map((ab) => (
+                      <div key={ab.id} className="py-2.5 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          <span className="font-semibold text-slate-800">
+                            {ab.date_from} to {ab.date_to}
+                          </span>
+                          {ab.reason && <span className="text-slate-500">— {ab.reason}</span>}
+                        </div>
+                        <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">
+                          Driver Notified
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Assignment History */}
+              {transportInfo.history && transportInfo.history.length > 1 && (
+                <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs space-y-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Assignment History
+                  </h4>
+                  <div className="divide-y divide-[#E6EAF3] text-xs">
+                    {transportInfo.history
+                      .filter((h) => h.id !== transportInfo.assignment?.id)
+                      .map((h) => (
+                        <div key={h.id} className="py-3 flex items-center justify-between">
+                          <div>
+                            <div className="font-semibold text-slate-800">
+                              {h.route_name || "Route"}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {h.effective_from} to {h.effective_to || "Ended"} • Reason: {h.end_reason || "Changed"}
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
+                            Ended
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl p-12 text-center space-y-4 shadow-2xs">
+              <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <Bus className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-base font-bold text-slate-900 font-display">
+                  No Transport Assigned
+                </h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  This student does not have an active school bus or van route assignment.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditingTransport(false);
+                  setShowAssignDrawer(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-blue-700 transition-colors cursor-pointer shadow-xs"
+              >
+                Add transport
+              </button>
+            </div>
+          )}
+
+          {/* Stop Modal */}
+          {showStopModal && (
+            <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E6EAF3] space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 font-display">Stop Transport</h3>
+                    <p className="text-xs text-slate-500">
+                      Unpaid future dues will be cancelled. Paid future dues become credit for owner review.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowStopModal(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-slate-700">Effective Date</label>
+                    <input
+                      type="date"
+                      value={stopEffectiveDate}
+                      onChange={(e) => setStopEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-slate-700">Reason (Required)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Relocated closer to school / Parent opted out"
+                      value={stopReason}
+                      onChange={(e) => setStopReason(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[#E6EAF3] flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowStopModal(false)}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={transportOpLoading || !stopReason.trim()}
+                    onClick={async () => {
+                      if (!transportInfo?.assignment) return;
+                      setTransportOpLoading(true);
+                      try {
+                        const res = await stopAssignment(schoolId, transportInfo.assignment.id, {
+                          effective_date: stopEffectiveDate,
+                          reason: stopReason,
+                        });
+                        if (!res.success) {
+                          alert(res.error || "Failed to stop transport");
+                          return;
+                        }
+                        setShowStopModal(false);
+                        setStopReason("");
+                        loadTransport();
+                      } finally {
+                        setTransportOpLoading(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    {transportOpLoading ? "Stopping..." : "Confirm stop"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Absence Modal */}
+          {showAbsenceModal && (
+            <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E6EAF3] space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 font-display">Mark Not Travelling</h3>
+                    <p className="text-xs text-slate-500">
+                      Alerts driver and attendant app so they do not wait at the stop.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAbsenceModal(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="font-semibold text-slate-700">From Date</label>
+                      <input
+                        type="date"
+                        value={absenceFrom}
+                        onChange={(e) => setAbsenceFrom(e.target.value)}
+                        className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-semibold text-slate-700">To Date</label>
+                      <input
+                        type="date"
+                        value={absenceTo}
+                        onChange={(e) => setAbsenceTo(e.target.value)}
+                        className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-slate-700">Reason</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Out of station / Sick"
+                      value={absenceReason}
+                      onChange={(e) => setAbsenceReason(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[#E6EAF3] flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAbsenceModal(false)}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={transportOpLoading}
+                    onClick={async () => {
+                      if (!profile) return;
+                      setTransportOpLoading(true);
+                      try {
+                        const res = await recordAbsence(schoolId, {
+                          student_id: profile.id,
+                          date_from: absenceFrom,
+                          date_to: absenceTo,
+                          reason: absenceReason,
+                        });
+                        if (!res.success) {
+                          alert(res.error || "Failed to record absence");
+                          return;
+                        }
+                        setShowAbsenceModal(false);
+                        setAbsenceReason("");
+                        loadTransport();
+                      } finally {
+                        setTransportOpLoading(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-[#2158E0] text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    {transportOpLoading ? "Saving..." : "Save absence"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Assign / Change Drawer */}
+          {showAssignDrawer && profile && (
+            <AssignTransportDrawer
+              isOpen={showAssignDrawer}
+              onClose={() => setShowAssignDrawer(false)}
+              schoolId={schoolId}
+              studentId={profile.id}
+              studentName={`${profile.first_name} ${profile.last_name || ""}`.trim()}
+              className={profile.class_name}
+              isPrePrimary={profile.class_name?.toLowerCase().includes("kg") || profile.class_name?.toLowerCase().includes("nursery")}
+              academicYearId={profile.academic_year_id || "ay-2026-27"}
+              existingAssignment={isEditingTransport ? transportInfo?.assignment : null}
+              onSuccess={() => {
+                setShowAssignDrawer(false);
+                loadTransport();
+              }}
+            />
+          )}
         </div>
       )}
 
+      {/* DANGER ZONE: STUDENT & DATA DELETION */}
+      {profile && (
+        <div className="mt-8 bg-white border border-red-200 rounded-2xl p-6 shadow-xs">
+          <div className="flex items-center gap-2 pb-3 border-b border-red-100 text-red-700">
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Danger Zone</h3>
+              <p className="text-xs text-slate-500">Irreversible student record and data management</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="font-semibold text-sm text-slate-900">Delete Student & All Associated Data</div>
+              <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
+                Permanently purge {profile.first_name} {profile.last_name} ({profile.admission_no}) and all linked records:
+                academic enrollments, parent associations, documents, attendance, transport, and fee history.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Student & Data</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ================= MODALS ================= */}
 
@@ -1857,6 +2362,24 @@ export default function StudentProfileView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* DELETE STUDENT MODAL */}
+      {isDeleteModalOpen && profile && (
+        <DeleteStudentModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          schoolId={schoolId}
+          student={{
+            id: profile.id,
+            name: `${profile.first_name} ${profile.last_name}`,
+            admission_no: profile.admission_no,
+            class_name: profile.class_name || undefined,
+          }}
+          onSuccess={() => {
+            navigate("/admin/students");
+          }}
+        />
       )}
     </div>
   );

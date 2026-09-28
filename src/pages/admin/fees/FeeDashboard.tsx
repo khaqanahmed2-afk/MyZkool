@@ -15,9 +15,11 @@ import { useNavigate } from "react-router-dom";
 import {
   CreditCard, IndianRupee, Bell, AlertTriangle, CheckCircle2, Clock,
   Calendar, Users, ArrowUpRight, TrendingUp, BarChart3, CheckSquare,
-  ShieldAlert, Banknote, RefreshCw, FileText
+  ShieldAlert, Banknote, RefreshCw, FileText, Settings, Layers, Grid3X3,
+  PlusCircle, Sparkles, ArrowRight, ChevronRight, Percent, Sliders
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 import { getReceipts } from "../../../services/collectionService";
 import { getStudentDues } from "../../../services/feeDuesService";
 import { getOutstandingReport } from "../../../services/feeReportsService";
@@ -25,6 +27,7 @@ import { getCheques } from "../../../services/chequeService";
 import { getFollowups } from "../../../services/reminderJob";
 import { isBusinessDateClosed } from "../../../services/dayCloseService";
 import { getPendingCount } from "../../../services/approvalService";
+import { getFeeStructures } from "../../../services/feeSetupService";
 import { formatPaise } from "../../../lib/amountInWords";
 import type { FeeReceipt } from "../../../types/collection";
 import type { OutstandingReportRow } from "../../../types/feeOperations";
@@ -40,6 +43,8 @@ export default function FeeDashboard() {
   const [loading, setLoading] = useState(true);
   const [yearId, setYearId] = useState("");
   const [todayDate, setTodayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [structureCount, setStructureCount] = useState<number | null>(null);
+  const [forceShowDashboard, setForceShowDashboard] = useState(false);
 
   // Action counts
   const [pendingChequesCount, setPendingChequesCount] = useState(0);
@@ -76,6 +81,15 @@ export default function FeeDashboard() {
     setLoading(true);
 
     try {
+      // 0. Structures count for onboarding state check
+      try {
+        const { structures } = await getFeeStructures(schoolId, yearId || undefined);
+        setStructureCount(structures.length);
+      } catch (err) {
+        console.warn("Failed to check fee structures:", err);
+        setStructureCount(0);
+      }
+
       // 1. Actions
       const cheques = await getCheques(schoolId);
       setPendingChequesCount(cheques.filter(c => c.status === "received").length);
@@ -140,41 +154,286 @@ export default function FeeDashboard() {
     loadData();
   }, [schoolId, yearId]);
 
-  const yearProgressPercent = yearTotalDemandPaise > 0 
+  const yearProgressPercent = yearTotalDemandPaise > 0
     ? Math.min(100, Math.round((yearCollectedPaise / yearTotalDemandPaise) * 100))
     : 0;
 
+  const isUnconfigured = !loading && (structureCount === 0 || structureCount === null) && yearTotalDemandPaise === 0 && recentReceipts.length === 0 && !forceShowDashboard;
+
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-display">Fee Operations</h1>
-          <p className="text-xs text-slate-500">Live dashboard, collection metrics, and risk monitoring</p>
+      {/* Persistent Fee Module Nav Header */}
+      <FeeNavHeader
+        title="Fee Operations"
+        subtitle="Live dashboard, collection metrics, and risk monitoring"
+      />
+
+      {/* 0. First-Time School Setup Experience */}
+      {isUnconfigured ? (
+        <div className="bg-white border-2 border-blue-200/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 animate-in fade-in-50">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#2158E0] flex items-center justify-center shrink-0 border border-blue-100">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100/70 text-[#2158E0] mb-1">
+                  New School Setup
+                </div>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-display">
+                  Your fee system isn't configured yet
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                  Follow this 5-step roadmap to configure fee heads, set class amounts, generate dues, and start collecting fees.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setForceShowDashboard(true)}
+                className="text-xs text-slate-500 hover:text-slate-800 underline px-2 py-1 cursor-pointer"
+              >
+                View empty metrics
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/admin/fees/setup")}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2158E0] text-white text-xs font-bold hover:bg-[#1A46B8] transition-colors shadow-sm cursor-pointer"
+              >
+                <span>Start Fee Setup (Step 1)</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Step Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Step 1 */}
+            <div
+              onClick={() => navigate("/admin/fees/setup/heads")}
+              className="group bg-slate-50 hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-2xl p-4 transition-all cursor-pointer flex flex-col justify-between space-y-3"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">1</span>
+                  <Layers className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors">Fee Categories</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Define what you charge (Tuition, Exam, Transport, Lab).</p>
+              </div>
+              <span className="text-[11px] font-semibold text-blue-600 group-hover:underline flex items-center gap-1">
+                Configure <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+
+            {/* Step 2 */}
+            <div
+              onClick={() => navigate("/admin/fees/setup/terms")}
+              className="group bg-slate-50 hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-2xl p-4 transition-all cursor-pointer flex flex-col justify-between space-y-3"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">2</span>
+                  <Calendar className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors">Billing Cycles</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Set monthly, quarterly, or annual schedules and due dates.</p>
+              </div>
+              <span className="text-[11px] font-semibold text-blue-600 group-hover:underline flex items-center gap-1">
+                Configure <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+
+            {/* Step 3 */}
+            <div
+              onClick={() => navigate("/admin/fees/setup/structures")}
+              className="group bg-slate-50 hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-2xl p-4 transition-all cursor-pointer flex flex-col justify-between space-y-3"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">3</span>
+                  <Grid3X3 className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors">Fee Structures</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Set the amounts per category per term for each class.</p>
+              </div>
+              <span className="text-[11px] font-semibold text-blue-600 group-hover:underline flex items-center gap-1">
+                Configure <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+
+            {/* Step 4 */}
+            <div
+              onClick={() => navigate("/admin/fees/dues")}
+              className="group bg-slate-50 hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-2xl p-4 transition-all cursor-pointer flex flex-col justify-between space-y-3"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">4</span>
+                  <PlusCircle className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors">Assign & Invoices</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Bulk generate dues/invoices for students based on structures.</p>
+              </div>
+              <span className="text-[11px] font-semibold text-blue-600 group-hover:underline flex items-center gap-1">
+                Assign Dues <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+
+            {/* Step 5 */}
+            <div
+              onClick={() => navigate("/admin/fees/collect")}
+              className="group bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-2xl p-4 transition-all cursor-pointer flex flex-col justify-between space-y-3"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center">5</span>
+                  <CreditCard className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">Collect Payment</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Collect fees via Cash, UPI or Cheque and print receipts.</p>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-600 group-hover:underline flex items-center gap-1">
+                Collect <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Quick Actions: Setup vs Daily Operations */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Setup Workflow */}
+        <div className="bg-gradient-to-br from-blue-50/70 to-indigo-50/40 border border-blue-100/80 rounded-2xl p-5 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-[#2158E0] text-white">
+                <Settings className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Fee Setup Workflow</h3>
+                <p className="text-[11px] text-slate-500">Configure structures, heads, rules & settings</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate("/admin/fees/setup")}
+              className="text-xs text-[#2158E0] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              Setup Hub <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+            <button
+              onClick={() => navigate("/admin/fees/setup/heads")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-blue-100 hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">1. Categories</span>
+              <span className="text-[10px] text-slate-400">Tuition, exams, bus</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/setup/terms")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-blue-100 hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">2. Billing Cycles</span>
+              <span className="text-[10px] text-slate-400">Monthly, quarterly</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/setup/structures")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-blue-100 hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">3. Fee Structures</span>
+              <span className="text-[10px] text-slate-400">Class-wise amounts</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/setup/concessions")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-blue-100 hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">4. Discounts</span>
+              <span className="text-[10px] text-slate-400">Sibling, RTE, staff</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/setup/late-fees")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-blue-100 hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">5. Late Fees</span>
+              <span className="text-[10px] text-slate-400">Grace days & penalties</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/setup/settings")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-blue-100 hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">6. Settings</span>
+              <span className="text-[10px] text-slate-400">Prefix, PIN & paper</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees/collect")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1A46B8] transition-colors cursor-pointer shadow-xs"
-          >
-            <CreditCard className="w-3.5 h-3.5" /> Collect fee
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees/dues-report")}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            <Bell className="w-3.5 h-3.5 text-amber-600" /> Send reminders
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/admin/fees/reports")}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            <FileText className="w-3.5 h-3.5 text-slate-600" /> Reports
-          </button>
+        {/* Daily Operations */}
+        <div className="bg-gradient-to-br from-emerald-50/60 to-teal-50/40 border border-emerald-100/80 rounded-2xl p-5 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-600 text-white">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Daily Fee Operations</h3>
+                <p className="text-[11px] text-slate-500">Collect fees, assign dues, view receipts & reports</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate("/admin/fees/collect")}
+              className="text-xs text-emerald-700 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              Collect Now <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+            <button
+              onClick={() => navigate("/admin/fees/collect")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">Collect Fee</span>
+              <span className="text-[10px] text-slate-400">Search & receive pay</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/dues")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">Assign & Invoices</span>
+              <span className="text-[10px] text-slate-400">Generate class dues</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/receipts")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">Receipts Register</span>
+              <span className="text-[10px] text-slate-400">Print, PDF & WhatsApp</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/defaulters")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">Reminders</span>
+              <span className="text-[10px] text-slate-400">Defaulters follow-up</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/cheques")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">Cheque Register</span>
+              <span className="text-[10px] text-slate-400">Deposit & clearance</span>
+            </button>
+            <button
+              onClick={() => navigate("/admin/fees/reports")}
+              className="flex flex-col text-left p-2.5 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
+            >
+              <span className="text-[11px] font-semibold text-slate-800">Fee Reports</span>
+              <span className="text-[10px] text-slate-400">Day book & ledger</span>
+            </button>
+          </div>
         </div>
       </div>
 

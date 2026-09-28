@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { MessageSquare, Users, Download, Printer, FileCheck, X } from "lucide-react";
+import { MessageSquare, Users, Download, Printer, FileCheck, X, Trash2 } from "lucide-react";
 import { NOTIFICATION_TEMPLATES } from "../../../workers/notificationWorker";
 
 interface StudentBulkActionsProps {
@@ -10,6 +10,7 @@ interface StudentBulkActionsProps {
   onExportSelected: () => void;
   onPrintIdCards: () => void;
   onMarkDocumentsRequested: () => void;
+  onDeleteSelected?: () => void;
 }
 
 export function StudentBulkActions({
@@ -20,6 +21,7 @@ export function StudentBulkActions({
   onExportSelected,
   onPrintIdCards,
   onMarkDocumentsRequested,
+  onDeleteSelected,
 }: StudentBulkActionsProps) {
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
@@ -118,6 +120,18 @@ export function StudentBulkActions({
           <FileCheck className="w-3.5 h-3.5 text-slate-400" />
           <span>Request docs</span>
         </button>
+
+        {/* Delete selected students */}
+        {onDeleteSelected && (
+          <button
+            type="button"
+            onClick={onDeleteSelected}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold transition-colors cursor-pointer ml-1 shadow-xs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete ({selectedCount})</span>
+          </button>
+        )}
       </div>
     </div>
   );

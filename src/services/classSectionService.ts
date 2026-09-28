@@ -32,14 +32,14 @@ function getSectionsCacheKey(schoolId: string, academicYearId: string) {
 }
 
 /**
- * Retrieves all classes with their respective sections for a given school and academic year
+ * Retrieves all classes with their respective sections for a given school and optional academic year
  */
 export async function getClassesWithSections(
   schoolId: string,
-  academicYearId: string
+  academicYearId?: string
 ): Promise<{ classes: SchoolClass[]; error?: string }> {
-  if (!schoolId || !academicYearId) {
-    return { classes: [], error: "school_id and academic_year_id are required." };
+  if (!schoolId) {
+    return { classes: [], error: "school_id is required." };
   }
 
   let classes: SchoolClass[] = [];
@@ -48,22 +48,27 @@ export async function getClassesWithSections(
   // 1. Supabase Query
   if (isSupabaseConfigured) {
     try {
+      let classQuery = supabase
+        .from("classes")
+        .select("*")
+        .eq("school_id", schoolId);
+
+      let sectionQuery = supabase
+        .from("sections")
+        .select("*")
+        .eq("school_id", schoolId);
+
+      if (academicYearId) {
+        classQuery = classQuery.eq("academic_year_id", academicYearId);
+        sectionQuery = sectionQuery.eq("academic_year_id", academicYearId);
+      }
+
       const [classesRes, sectionsRes] = await Promise.all([
-        supabase
-          .from("classes")
-          .select("*")
-          .eq("school_id", schoolId)
-          .eq("academic_year_id", academicYearId)
-          .order("sort_order", { ascending: true }),
-        supabase
-          .from("sections")
-          .select("*")
-          .eq("school_id", schoolId)
-          .eq("academic_year_id", academicYearId)
-          .order("sort_order", { ascending: true }),
+        classQuery.order("sort_order", { ascending: true }),
+        sectionQuery.order("sort_order", { ascending: true }),
       ]);
 
-      if (!classesRes.error && classesRes.data) {
+      if (!classesRes.error && classesRes.data && classesRes.data.length > 0) {
         classes = classesRes.data.map((c) => ({
           id: c.id,
           school_id: c.school_id,
@@ -75,9 +80,30 @@ export async function getClassesWithSections(
           created_at: c.created_at,
           updated_at: c.updated_at,
         }));
+      } else if (academicYearId) {
+        // Fallback: Query all classes for this school if specific academic_year_id returned nothing
+        const fallbackRes = await supabase
+          .from("classes")
+          .select("*")
+          .eq("school_id", schoolId)
+          .order("sort_order", { ascending: true });
+
+        if (!fallbackRes.error && fallbackRes.data && fallbackRes.data.length > 0) {
+          classes = fallbackRes.data.map((c) => ({
+            id: c.id,
+            school_id: c.school_id,
+            academic_year_id: c.academic_year_id,
+            name: c.name,
+            display_name: c.display_name,
+            sort_order: c.sort_order,
+            status: c.status || "active",
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+          }));
+        }
       }
 
-      if (!sectionsRes.error && sectionsRes.data) {
+      if (!sectionsRes.error && sectionsRes.data && sectionsRes.data.length > 0) {
         sections = sectionsRes.data.map((s) => ({
           id: s.id,
           school_id: s.school_id,
@@ -90,26 +116,66 @@ export async function getClassesWithSections(
           created_at: s.created_at,
           updated_at: s.updated_at,
         }));
+      } else if (academicYearId) {
+        const fallbackSecRes = await supabase
+          .from("sections")
+          .select("*")
+          .eq("school_id", schoolId)
+          .order("sort_order", { ascending: true });
+
+        if (!fallbackSecRes.error && fallbackSecRes.data && fallbackSecRes.data.length > 0) {
+          sections = fallbackSecRes.data.map((s) => ({
+            id: s.id,
+            school_id: s.school_id,
+            academic_year_id: s.academic_year_id,
+            class_id: s.class_id,
+            name: s.name,
+            display_name: s.display_name,
+            sort_order: s.sort_order,
+            status: s.status || "active",
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+          }));
+        }
       }
-    } catch {
-      // Table may not yet be initialized in mock environments
+    } catch (err) {
+      console.warn("Supabase getClassesWithSections query failed:", err);
     }
   }
 
   // 2. Local storage fallback if database returned empty
   if (classes.length === 0) {
     try {
-      const cachedClasses = localStorage.getItem(
-        getClassesCacheKey(schoolId, academicYearId)
-      );
-      if (cachedClasses) {
-        classes = JSON.parse(cachedClasses);
+      const yearClassesRaw = academicYearId
+        ? localStorage.getItem(getClassesCacheKey(schoolId, academicYearId))
+        : null;
+
+      if (yearClassesRaw) {
+        classes = JSON.parse(yearClassesRaw);
+      } else {
+        const cachedFallback = localStorage.getItem(`${CLASSES_CACHE_PREFIX}${schoolId}`);
+        if (cachedFallback) {
+          const parsed: SchoolClass[] = JSON.parse(cachedFallback);
+          classes = academicYearId
+            ? parsed.filter((c) => !c.academic_year_id || c.academic_year_id === academicYearId)
+            : parsed;
+        }
       }
-      const cachedSections = localStorage.getItem(
-        getSectionsCacheKey(schoolId, academicYearId)
-      );
-      if (cachedSections) {
-        sections = JSON.parse(cachedSections);
+
+      const yearSectionsRaw = academicYearId
+        ? localStorage.getItem(getSectionsCacheKey(schoolId, academicYearId))
+        : null;
+
+      if (yearSectionsRaw) {
+        sections = JSON.parse(yearSectionsRaw);
+      } else {
+        const cachedFallbackSec = localStorage.getItem(`${SECTIONS_CACHE_PREFIX}${schoolId}`);
+        if (cachedFallbackSec) {
+          const parsed: SchoolSection[] = JSON.parse(cachedFallbackSec);
+          sections = academicYearId
+            ? parsed.filter((s) => !s.academic_year_id || s.academic_year_id === academicYearId)
+            : parsed;
+        }
       }
     } catch {
       // Storage access error
@@ -250,6 +316,10 @@ export async function createClass({
       getClassesCacheKey(schoolId, academicYearId),
       JSON.stringify(updatedClasses)
     );
+    localStorage.setItem(
+      `${CLASSES_CACHE_PREFIX}${schoolId}`,
+      JSON.stringify(updatedClasses)
+    );
 
     const existingSectionsRaw = localStorage.getItem(
       getSectionsCacheKey(schoolId, academicYearId)
@@ -260,6 +330,10 @@ export async function createClass({
     const updatedSections = [...existingSections, ...createdSections];
     localStorage.setItem(
       getSectionsCacheKey(schoolId, academicYearId),
+      JSON.stringify(updatedSections)
+    );
+    localStorage.setItem(
+      `${SECTIONS_CACHE_PREFIX}${schoolId}`,
       JSON.stringify(updatedSections)
     );
   } catch {

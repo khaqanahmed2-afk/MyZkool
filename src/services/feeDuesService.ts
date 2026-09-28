@@ -27,14 +27,19 @@ import type {
   ProrateOption,
   ManualDueInput,
   LedgerEntryType,
+  FeeCredit,
 } from "../types/fees";
 import {
   getFeeSettings,
   getStructureGrid,
   getFeeTerms,
   getFeeHeads,
+  getFeeStructures,
   computeConcession,
+  ensureSystemHeads,
 } from "./feeSetupService";
+import { checkSchoolFeature } from "../middleware/features";
+import { getTransportSettings } from "./transportCoreService";
 
 // ─── Cache keys ──────────────────────────────────────────────────────────────
 const DUES_KEY = (s: string) => `myzkool_student_dues_${s}`;
@@ -134,11 +139,47 @@ async function getActiveAssignments(
 }
 
 async function getStructuresForSchool(schoolId: string): Promise<FeeStructure[]> {
-  if (isSupabaseConfigured) {
-    const { data } = await supabase.from("fee_structures").select("*").eq("school_id", schoolId);
-    return (data || []) as FeeStructure[];
+  const { structures } = await getFeeStructures(schoolId);
+  return structures;
+}
+
+export function resolveStructureForStudent(
+  structures: FeeStructure[],
+  yearId: string,
+  student: { id: string; class_id?: string | null; section_id?: string | null }
+): FeeStructure | null {
+  const active = structures.filter(s => s.academic_year_id === yearId && s.status === "active");
+
+  // 1. Specific student override
+  const studentMatch = active.find(s => s.target_type === "specific_students" && s.student_ids?.includes(student.id));
+  if (studentMatch) return studentMatch;
+
+  // 2. Specific section override
+  if (student.section_id) {
+    const sectionMatch = active.find(s => s.target_type === "specific_sections" && s.section_ids?.includes(student.section_id!));
+    if (sectionMatch) return sectionMatch;
   }
-  return lsGet<FeeStructure>(STRUCTURES_KEY(schoolId));
+
+  // 3. Specific class match
+  if (student.class_id) {
+    const classMatch = active.find(s =>
+      (s.target_type === "specific_classes" && (s.class_ids?.includes(student.class_id!) || s.class_id === student.class_id)) ||
+      (!s.target_type && s.class_id === student.class_id)
+    );
+    if (classMatch) return classMatch;
+  }
+
+  // 4. All classes
+  const allMatch = active.find(s => s.target_type === "all_classes");
+  if (allMatch) return allMatch;
+
+  // 5. Fallback for legacy structures
+  if (student.class_id) {
+    const legacy = active.find(s => s.class_id === student.class_id || !s.class_id);
+    if (legacy) return legacy;
+  }
+
+  return null;
 }
 
 async function getAutoApplyConcessions(
@@ -305,16 +346,17 @@ export async function previewDuesGeneration(
   classIds?: string[]
 ): Promise<{ preview: DuesGenerationPreview; error?: string }> {
   // Fetch students for the given classes
-  let students: Array<{ id: string; first_name: string; last_name: string; admission_no: string; is_rte: boolean; class_id?: string | null }> = [];
+  let students: Array<{ id: string; first_name: string; last_name: string; admission_no: string; is_rte: boolean; class_id?: string | null; section_id?: string | null }> = [];
   if (isSupabaseConfigured) {
     let q = supabase.from("students").select(`
       id, first_name, last_name, admission_no, is_rte,
-      student_enrollments!inner(class_id, academic_year_id, status)
+      student_enrollments!inner(class_id, section_id, academic_year_id, status)
     `).eq("school_id", schoolId).is("deleted_at", null);
     const { data } = await q;
     students = (data || []).map((s: any) => ({
       ...s,
-      class_id: s.student_enrollments?.[0]?.class_id,
+      class_id: s.student_enrollments?.[0]?.class_id || s.class_id,
+      section_id: s.student_enrollments?.[0]?.section_id || s.section_id,
     })).filter((s: any) => {
       if (classIds?.length) return classIds.includes(s.class_id);
       return true;
@@ -333,16 +375,13 @@ export async function previewDuesGeneration(
   let alreadyGeneratedCount = 0;
 
   for (const student of students) {
-    const activeStructures = structures.filter(str =>
-      str.academic_year_id === yearId && str.status === "active" &&
-      (str.class_id === student.class_id || !student.class_id)
-    );
-    if (!activeStructures.length) {
+    const matchedStructure = resolveStructureForStudent(structures, yearId, student);
+    if (!matchedStructure) {
       exceptions.push({
         student_id: student.id,
         student_name: `${student.first_name} ${student.last_name}`,
         admission_no: student.admission_no,
-        reason: "No active fee structure for this class",
+        reason: "No active fee structure for this class/student",
       });
       continue;
     }
@@ -352,11 +391,9 @@ export async function previewDuesGeneration(
       continue;
     }
     // Count expected dues
-    for (const str of activeStructures) {
-      const { terms: itemTerms } = await getStructureGrid(schoolId, str.id);
-      dueLineCount += itemTerms.length;
-      totalDemandPaise += itemTerms.reduce((sum, it) => sum + it.amount_paise, 0);
-    }
+    const { terms: itemTerms } = await getStructureGrid(schoolId, matchedStructure.id);
+    dueLineCount += itemTerms.length;
+    totalDemandPaise += itemTerms.reduce((sum, it) => sum + it.amount_paise, 0);
   }
 
   return {
@@ -376,15 +413,16 @@ export async function generateDues(
   classIds?: string[],
   actorId?: string
 ): Promise<{ result: DuesGenerationResult; error?: string }> {
-  let students: Array<{ id: string; first_name: string; last_name: string; admission_no: string; is_rte: boolean; class_id?: string | null }> = [];
+  let students: Array<{ id: string; first_name: string; last_name: string; admission_no: string; is_rte: boolean; class_id?: string | null; section_id?: string | null }> = [];
   if (isSupabaseConfigured) {
     const { data } = await supabase.from("students").select(`
       id, first_name, last_name, admission_no, is_rte,
-      student_enrollments!inner(class_id, academic_year_id, status)
+      student_enrollments!inner(class_id, section_id, academic_year_id, status)
     `).eq("school_id", schoolId).is("deleted_at", null);
     students = (data || []).map((s: any) => ({
       ...s,
-      class_id: s.student_enrollments?.[0]?.class_id,
+      class_id: s.student_enrollments?.[0]?.class_id || s.class_id,
+      section_id: s.student_enrollments?.[0]?.section_id || s.section_id,
     })).filter((s: any) => {
       if (classIds?.length) return classIds.includes(s.class_id);
       return true;
@@ -403,27 +441,29 @@ export async function generateDues(
   const exceptions: DuesGenerationException[] = [];
 
   for (const student of students) {
-    const activeStructures = structures.filter(str =>
-      str.academic_year_id === yearId && str.status === "active" &&
-      str.class_id === student.class_id
-    );
-    if (!activeStructures.length) {
+    const matchedStructure = resolveStructureForStudent(structures, yearId, student);
+    if (!matchedStructure) {
       exceptions.push({
         student_id: student.id,
         student_name: `${student.first_name} ${student.last_name}`,
         admission_no: student.admission_no,
-        reason: "No active fee structure for this class",
+        reason: "No active fee structure for this class/student",
       });
       continue;
     }
 
     const existingDues = lsGet<StudentDue>(DUES_KEY(schoolId)).filter(d => d.student_id === student.id && d.academic_year_id === yearId);
-    const assignments: StudentFeeAssignment[] = activeStructures.map(str => ({
-      id: uuid(), school_id: schoolId, student_id: student.id,
-      academic_year_id: yearId, structure_id: str.id,
-      structure_version: str.version, assigned_at: now(),
-      assigned_by: actorId ?? null, status: "active",
-    }));
+    const assignments: StudentFeeAssignment[] = [{
+      id: uuid(),
+      school_id: schoolId,
+      student_id: student.id,
+      academic_year_id: yearId,
+      structure_id: matchedStructure.id,
+      structure_version: matchedStructure.version,
+      assigned_at: now(),
+      assigned_by: actorId ?? null,
+      status: "active",
+    }];
 
     const { created, skipped } = await generateDuesForStudent(
       schoolId, student.id, yearId, student.is_rte,
@@ -714,4 +754,358 @@ export async function getLedger(
   if (yearId) entries = entries.filter(e => e.academic_year_id === yearId);
   return { entries: entries.sort((a, b) => a.created_at.localeCompare(b.created_at)) };
 }
+
+// ─── Transport Dues (Spec B6 Rule 15, C7, D1) ────────────────────────────────
+
+export async function createTransportDues(
+  schoolId: string,
+  assignmentId: string
+): Promise<{ success: boolean; error?: string; count?: number }> {
+  // 1. Check feature gating
+  const hasTransport = await checkSchoolFeature(schoolId, "transport");
+  if (!hasTransport) {
+    return { success: false, error: "PLAN_REQUIRED" };
+  }
+
+  // 2. Fetch assignment
+  let assignment: any = null;
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("id", assignmentId)
+      .single();
+    if (error || !data) {
+      return { success: false, error: error?.message || "Assignment not found" };
+    }
+    assignment = data;
+  } else {
+    const all = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
+    assignment = all.find((a: any) => a.id === assignmentId);
+    if (!assignment) {
+      return { success: false, error: "Assignment not found" };
+    }
+  }
+
+  // 3. Fetch transport settings
+  const settings = await getTransportSettings(schoolId);
+  const billingMonths = settings.billing_months || [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+  const partialRule = settings.partial_month_rule || "full_month";
+
+  // 4. Ensure system heads exist and find "Transport Fee"
+  await ensureSystemHeads(schoolId);
+  const { heads } = await getFeeHeads(schoolId, true);
+  const transportHead = heads.find(
+    (h) => h.code === "transport_fee" || h.name.toLowerCase() === "transport fee"
+  );
+  if (!transportHead) {
+    return { success: false, error: "Transport Fee head not found" };
+  }
+
+  // 5. Calculate starting month for billing based on effective_from and partialRule
+  const effDate = new Date(assignment.effective_from);
+  const effYear = effDate.getFullYear();
+  const effMonth = effDate.getMonth() + 1;
+  const effDay = effDate.getDate();
+
+  let startYear = effYear;
+  let startMonth = effMonth;
+  if (partialRule === "from_next_month" && effDay > 1) {
+    startMonth += 1;
+    if (startMonth > 12) {
+      startMonth = 1;
+      startYear += 1;
+    }
+  }
+
+  // 6. Fetch terms for academic year
+  const { terms } = await getFeeTerms(schoolId, assignment.academic_year_id);
+  const monthlyFeePaise = Number(assignment.monthly_fee_paise) || 0;
+
+  if (monthlyFeePaise <= 0) {
+    return { success: true, count: 0 };
+  }
+
+  let createdCount = 0;
+
+  if (terms && terms.length > 0) {
+    for (let idx = 0; idx < terms.length; idx++) {
+      const term = terms[idx];
+      let termBillingMonths: { year: number; month: number }[] = [];
+
+      if (term.period_start && term.period_end) {
+        const pStart = new Date(term.period_start);
+        const pEnd = new Date(term.period_end);
+        let cur = new Date(pStart.getFullYear(), pStart.getMonth(), 1);
+        const end = new Date(pEnd.getFullYear(), pEnd.getMonth(), 1);
+        while (cur <= end) {
+          const m = cur.getMonth() + 1;
+          if (billingMonths.includes(m)) {
+            termBillingMonths.push({ year: cur.getFullYear(), month: m });
+          }
+          cur.setMonth(cur.getMonth() + 1);
+        }
+      } else {
+        const perTerm = Math.ceil(billingMonths.length / terms.length);
+        const slice = billingMonths.slice(idx * perTerm, (idx + 1) * perTerm);
+        const termYear = term.due_date ? new Date(term.due_date).getFullYear() : effYear;
+        termBillingMonths = slice.map((m) => ({
+          year: m < 4 ? termYear + 1 : termYear,
+          month: m,
+        }));
+      }
+
+      const activeMonths = termBillingMonths.filter(
+        (bm) => bm.year > startYear || (bm.year === startYear && bm.month >= startMonth)
+      );
+
+      if (activeMonths.length === 0) continue;
+
+      const grossPaise = monthlyFeePaise * activeMonths.length;
+
+      const due: StudentDue = {
+        id: crypto.randomUUID(),
+        school_id: schoolId,
+        student_id: assignment.student_id,
+        academic_year_id: assignment.academic_year_id,
+        fee_head_id: transportHead.id,
+        term_id: term.id,
+        source: "transport",
+        source_ref: assignment.id,
+        description: `Transport Fee - ${term.name}`,
+        gross_paise: grossPaise,
+        concession_paise: 0,
+        net_paise: grossPaise,
+        paid_paise: 0,
+        balance_paise: grossPaise,
+        due_date: term.due_date || assignment.effective_from,
+        status: "pending",
+        created_at: now(),
+        updated_at: now(),
+      };
+
+      if (isSupabaseConfigured) {
+        await supabase.from("student_dues").insert(due);
+      } else {
+        const allDues = lsGet<StudentDue>(DUES_KEY(schoolId));
+        lsSet(DUES_KEY(schoolId), [...allDues, due]);
+      }
+
+      await writeLedger(schoolId, {
+        school_id: schoolId,
+        student_id: assignment.student_id,
+        academic_year_id: assignment.academic_year_id,
+        due_id: due.id,
+        receipt_id: null,
+        entry_type: "due_created",
+        amount_paise: grossPaise,
+        note: `Due created: Transport Fee ${term.name}`,
+        created_by: assignment.created_by || null,
+      });
+
+      createdCount++;
+    }
+  } else {
+    // If no terms defined, create a single due for all active billing months
+    let totalMonths = 0;
+    for (const m of billingMonths) {
+      const year = m < 4 ? effYear + 1 : effYear;
+      if (year > startYear || (year === startYear && m >= startMonth)) {
+        totalMonths++;
+      }
+    }
+    if (totalMonths > 0) {
+      const grossPaise = monthlyFeePaise * totalMonths;
+      const due: StudentDue = {
+        id: crypto.randomUUID(),
+        school_id: schoolId,
+        student_id: assignment.student_id,
+        academic_year_id: assignment.academic_year_id,
+        fee_head_id: transportHead.id,
+        term_id: null,
+        source: "transport",
+        source_ref: assignment.id,
+        description: `Transport Fee (${totalMonths} mo)`,
+        gross_paise: grossPaise,
+        concession_paise: 0,
+        net_paise: grossPaise,
+        paid_paise: 0,
+        balance_paise: grossPaise,
+        due_date: assignment.effective_from,
+        status: "pending",
+        created_at: now(),
+        updated_at: now(),
+      };
+
+      if (isSupabaseConfigured) {
+        await supabase.from("student_dues").insert(due);
+      } else {
+        const allDues = lsGet<StudentDue>(DUES_KEY(schoolId));
+        lsSet(DUES_KEY(schoolId), [...allDues, due]);
+      }
+
+      await writeLedger(schoolId, {
+        school_id: schoolId,
+        student_id: assignment.student_id,
+        academic_year_id: assignment.academic_year_id,
+        due_id: due.id,
+        receipt_id: null,
+        entry_type: "due_created",
+        amount_paise: grossPaise,
+        note: `Due created: Transport Fee`,
+        created_by: assignment.created_by || null,
+      });
+      createdCount++;
+    }
+  }
+
+  return { success: true, count: createdCount };
+}
+
+export async function cancelTransportDues(
+  schoolId: string,
+  assignmentId: string,
+  effectiveDate: string,
+  actorId?: string
+): Promise<{ success: boolean; error?: string; cancelled?: number; creditCreated?: number }> {
+  const hasTransport = await checkSchoolFeature(schoolId, "transport");
+  if (!hasTransport) {
+    return { success: false, error: "PLAN_REQUIRED" };
+  }
+
+  let dues: StudentDue[] = [];
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("student_dues")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("source", "transport")
+      .eq("source_ref", assignmentId);
+    dues = (data || []) as StudentDue[];
+  } else {
+    const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+    dues = all.filter(
+      (d) => d.source === "transport" && d.source_ref === assignmentId
+    );
+  }
+
+  let cancelled = 0;
+  let totalCreditPaise = 0;
+
+  for (const due of dues) {
+    if (due.due_date >= effectiveDate || due.status === "pending") {
+      if (due.paid_paise === 0) {
+        if (isSupabaseConfigured) {
+          await supabase
+            .from("student_dues")
+            .update({ status: "cancelled", updated_at: now() })
+            .eq("id", due.id);
+        } else {
+          const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+          lsSet(
+            DUES_KEY(schoolId),
+            all.map((d) => (d.id === due.id ? { ...d, status: "cancelled" as const, updated_at: now() } : d))
+          );
+        }
+
+        await writeLedger(schoolId, {
+          school_id: schoolId,
+          student_id: due.student_id,
+          academic_year_id: due.academic_year_id,
+          due_id: due.id,
+          receipt_id: null,
+          entry_type: "cancel_due",
+          amount_paise: -due.balance_paise,
+          note: `Transport due cancelled (stop effective ${effectiveDate})`,
+          created_by: actorId ?? null,
+        });
+        cancelled++;
+      } else if (due.paid_paise > 0 && due.due_date >= effectiveDate) {
+        const creditPaise = due.paid_paise;
+        totalCreditPaise += creditPaise;
+
+        const creditRecord: FeeCredit = {
+          id: uuid(),
+          school_id: schoolId,
+          student_id: due.student_id,
+          academic_year_id: due.academic_year_id,
+          amount_paise: creditPaise,
+          remaining_paise: creditPaise,
+          created_at: now(),
+        };
+
+        if (isSupabaseConfigured) {
+          await supabase.from("fee_credits").insert(creditRecord);
+          await supabase
+            .from("student_dues")
+            .update({ status: "cancelled", balance_paise: 0, updated_at: now() })
+            .eq("id", due.id);
+        } else {
+          const credits = lsGet<FeeCredit>(`myzkool_fee_credits_${schoolId}`);
+          lsSet(`myzkool_fee_credits_${schoolId}`, [...credits, creditRecord]);
+
+          const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+          lsSet(
+            DUES_KEY(schoolId),
+            all.map((d) => (d.id === due.id ? { ...d, status: "cancelled" as const, balance_paise: 0, updated_at: now() } : d))
+          );
+        }
+
+        await writeLedger(schoolId, {
+          school_id: schoolId,
+          student_id: due.student_id,
+          academic_year_id: due.academic_year_id,
+          due_id: due.id,
+          receipt_id: null,
+          entry_type: "adjustment",
+          amount_paise: -due.balance_paise,
+          note: `Transport future paid amount converted to credit on stop (${effectiveDate})`,
+          created_by: actorId ?? null,
+        });
+        cancelled++;
+      }
+    }
+  }
+
+  return { success: true, cancelled, creditCreated: totalCreditPaise };
+}
+
+export async function changeTransportDues(
+  schoolId: string,
+  oldAssignmentId: string,
+  newAssignmentId: string,
+  actorId?: string
+): Promise<{ success: boolean; error?: string }> {
+  const hasTransport = await checkSchoolFeature(schoolId, "transport");
+  if (!hasTransport) {
+    return { success: false, error: "PLAN_REQUIRED" };
+  }
+
+  let newAssignment: any = null;
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("id", newAssignmentId)
+      .single();
+    newAssignment = data;
+  } else {
+    const all = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
+    newAssignment = all.find((a: any) => a.id === newAssignmentId);
+  }
+
+  if (!newAssignment) {
+    return { success: false, error: "New assignment not found" };
+  }
+
+  // Cancel unpaid transport dues from effective date of new assignment
+  const cancelRes = await cancelTransportDues(schoolId, oldAssignmentId, newAssignment.effective_from, actorId);
+  if (!cancelRes.success) return cancelRes;
+
+  const createRes = await createTransportDues(schoolId, newAssignmentId);
+  if (!createRes.success) return createRes;
+
+  return { success: true };
+}
+
 

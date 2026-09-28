@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../../../context/AuthContext";
 import { getRefunds, requestRefund, approveRefund, payRefund } from "../../../services/refundService";
 import type { FeeRefund } from "../../../types/feeOperations";
+import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
 
 function fmt(paise: number): string {
   return "₹" + (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -114,29 +115,19 @@ export default function RefundsPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <FeeNavHeader
+        title="Refunds & Caution Deposits"
+        subtitle="Manage caution deposit releases, excess credit refunds, and approvals."
+        action={
           <button
             type="button"
-            onClick={() => navigate("/admin/fees")}
-            className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
+            onClick={() => setShowRequestModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" /> Request Refund
           </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 font-display">Refunds & Adjustments</h1>
-            <p className="text-xs text-slate-500">Manage caution deposit releases, excess credit refunds, and approvals</p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setShowRequestModal(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1A46B8] transition-colors cursor-pointer shadow-xs"
-        >
-          <Plus className="w-3.5 h-3.5" /> Request refund
-        </button>
-      </div>
+        }
+      />
 
       {/* Tabs */}
       <div className="flex border-b border-[#E6EAF3] bg-white rounded-t-2xl px-4 pt-2">

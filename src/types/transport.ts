@@ -279,3 +279,144 @@ export interface ExpiryAlertItem {
   threshold_days: number;
   dedupe_key: string;
 }
+
+export type ServiceType = "both" | "pickup_only" | "drop_only";
+export type AssignmentStatus = "active" | "ended";
+export type RequestStatus = "pending" | "approved" | "rejected";
+
+export interface TransportAssignment {
+  id: string;
+  school_id: string;
+  student_id: string;
+  academic_year_id: string;
+  route_id: string;
+  pickup_stop_id: string;
+  drop_stop_id: string;
+  service_type: ServiceType;
+  effective_from: string; // YYYY-MM-DD
+  effective_to?: string | null;
+  monthly_fee_paise: number; // Snapshot at assignment
+  requires_guardian_handover: boolean;
+  status: AssignmentStatus;
+  end_reason?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined / enriched
+  student_name?: string;
+  student_admission_no?: string;
+  class_name?: string;
+  section_name?: string;
+  route_name?: string;
+  pickup_stop_name?: string;
+  drop_stop_name?: string;
+  pickup_time?: string;
+  drop_time?: string;
+  sibling_names?: string[];
+}
+
+export interface TransportRequest {
+  id: string;
+  school_id: string;
+  student_id: string;
+  requested_location: string;
+  note?: string | null;
+  status: RequestStatus;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  student_name?: string;
+  student_admission_no?: string;
+  class_name?: string;
+}
+
+export interface TransportAbsence {
+  id: string;
+  school_id: string;
+  student_id: string;
+  date_from: string; // YYYY-MM-DD
+  date_to: string; // YYYY-MM-DD
+  reason?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+}
+
+export interface AssignStudentInput {
+  student_id: string;
+  academic_year_id: string;
+  route_id: string;
+  pickup_stop_id: string;
+  drop_stop_id?: string;
+  service_type: ServiceType;
+  effective_from: string;
+  requires_guardian_handover?: boolean;
+  override_reason?: string;
+  actor_id?: string;
+  actor_role?: string;
+}
+
+export interface ChangeAssignmentInput {
+  new_route_id: string;
+  new_pickup_stop_id: string;
+  new_drop_stop_id?: string;
+  new_service_type: ServiceType;
+  effective_date: string;
+  requires_guardian_handover?: boolean;
+  override_reason?: string;
+  actor_id?: string;
+  actor_role?: string;
+}
+
+export interface StopAssignmentInput {
+  effective_date: string;
+  reason: string;
+  actor_id?: string;
+  actor_role?: string;
+}
+
+export interface RenewalPreviewItem {
+  student_id: string;
+  student_name: string;
+  admission_no: string;
+  old_class_name: string;
+  new_class_name: string;
+  route_id: string;
+  route_name: string;
+  pickup_stop_id: string;
+  pickup_stop_name: string;
+  drop_stop_id: string;
+  drop_stop_name: string;
+  service_type: ServiceType;
+  old_monthly_fee_paise: number;
+  new_monthly_fee_paise: number;
+  status: "eligible" | "left_school" | "already_assigned";
+  selected: boolean;
+}
+
+export interface CommitRenewalInput {
+  new_academic_year_id: string;
+  effective_from: string;
+  renewals: {
+    student_id: string;
+    route_id: string;
+    pickup_stop_id: string;
+    drop_stop_id: string;
+    service_type: ServiceType;
+  }[];
+  actor_id?: string;
+  actor_role?: string;
+}
+
+export interface EnrichedStudentTransport {
+  assignment: TransportAssignment | null;
+  history: TransportAssignment[];
+  absences: TransportAbsence[];
+  siblings_on_route: {
+    student_id: string;
+    student_name: string;
+    class_name: string;
+    route_name: string;
+  }[];
+}
+
