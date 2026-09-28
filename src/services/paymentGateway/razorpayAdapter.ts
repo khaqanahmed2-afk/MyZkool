@@ -16,21 +16,22 @@ import type {
 export async function computeHmacSha256(secret: string, message: string): Promise<string> {
   if (typeof globalThis.crypto?.subtle !== "undefined") {
     const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey(
+    const key = await globalThis.crypto.subtle.importKey(
       "raw",
       enc.encode(secret),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
-    const signature = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+    const signature = await globalThis.crypto.subtle.sign("HMAC", key, enc.encode(message));
     return Array.from(new Uint8Array(signature))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   }
-  // Node.js fallback
+  // Node.js fallback (keeps Node-only APIs out of client bundle)
   try {
-    const nodeCrypto = await import("crypto");
+    const nodeCryptoPkg = "crypto";
+    const nodeCrypto = await import(/* @vite-ignore */ nodeCryptoPkg);
     return nodeCrypto.createHmac("sha256", secret).update(message).digest("hex");
   } catch {
     throw new Error("Cryptographic runtime unavailable for HMAC.");

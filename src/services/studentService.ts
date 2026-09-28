@@ -75,6 +75,7 @@ import { encryptSensitive, decryptSensitive, hashAadhaar } from "../utils/sensit
 import { cleanAadhaar, maskAadhaar, validateAadhaar } from "../utils/aadhaarValidation";
 import { feeService } from "./feeService";
 import { transportService } from "./transportService";
+import { checkSchoolStudentLimit } from "./studentOperationsService";
 
 // Local storage fallbacks
 const STUDENTS_CACHE_PREFIX = "myzkool_students_";
@@ -2564,7 +2565,6 @@ export async function admitStudentTransactional(
     }
 
     // Plan limits check (Spec 1.5, A10)
-    const { checkSchoolStudentLimit } = await import("./studentOperationsService");
     const limitStatus = await checkSchoolStudentLimit(schoolId);
     if (limitStatus.is_blocked) {
       throw new Error(`LIMIT_REACHED: School active student limit of ${limitStatus.max_allowed} reached for plan ${limitStatus.plan_tier}`);

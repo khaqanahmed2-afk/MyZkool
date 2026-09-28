@@ -4,6 +4,8 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { getSchoolSubscriptionStatus } from "../services/subscriptionService";
 
 /**
  * Middleware to check if school has a specific feature enabled
@@ -86,7 +88,6 @@ export async function checkSchoolFeature(schoolId: string, feature: string): Pro
 
   // 1. Resolve actual tenant subscription status
   try {
-    const { getSchoolSubscriptionStatus } = await import("../services/subscriptionService");
     const statusInfo = await getSchoolSubscriptionStatus(schoolId);
 
     if (statusInfo.hasSubscription) {
@@ -156,7 +157,6 @@ export async function checkSchoolFeature(schoolId: string, feature: string): Pro
 
   // 3. Supabase RPC check (if configured)
   try {
-    const { supabase, isSupabaseConfigured } = await import("../lib/supabase");
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.rpc("school_has_feature", {
         p_feature: normalizedFeature,
