@@ -91,6 +91,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
       role="dialog"
       aria-modal="true"
       aria-labelledby="demo-modal-title"
+      onClick={resetAndClose}
     >
       <div 
         className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-[#E6EAF3] overflow-hidden relative max-h-[90vh] flex flex-col"
@@ -351,7 +352,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                 className="w-full mt-4 py-3.5 px-6 rounded-full bg-[#2158E0] hover:bg-[#1a4ec4] text-white font-bold text-sm shadow-md shadow-[#2158E0]/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {status === "submitting" ? (
-                  <span>Sending Demo Request to Web3Forms...</span>
+                  <span>Sending your demo request...</span>
                 ) : (
                   <>
                     <span>Book a Free Demo</span>

@@ -54,7 +54,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
                   <CheckCheck className="w-5 h-5" />
                 </div>
                 <span className="text-sm sm:text-base text-blue-50 font-medium">
-                  <strong>98.4% Open Rates:</strong> Urgent bus delay or weather notices seen immediately.
+                  <strong>Near-Instant Visibility:</strong> Bus delays, weather notices and urgent school alerts are seen by parents right away.
                 </span>
               </div>
             </div>

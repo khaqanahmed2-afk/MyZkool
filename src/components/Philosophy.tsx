@@ -126,7 +126,7 @@ export const Philosophy: React.FC = () => {
                       <span className="text-xs bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">✓✓</span>
                     </div>
                     <p className="text-[11px] text-[#5B6478] mt-2">
-                      98.7% open rate vs 12% on legacy parent apps.
+                      Parents read WhatsApp messages almost instantly, unlike email or school apps.
                     </p>
                   </div>
                 </div>

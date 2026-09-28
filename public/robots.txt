@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Disallow internal app routes from indexing
+Disallow: /admin
+Disallow: /admin/
+Disallow: /onboarding/
+Disallow: /verify
+Disallow: /reset-password
+Disallow: /pay/
+
+Sitemap: https://myzkool.in/sitemap.xml

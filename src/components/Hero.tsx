@@ -2,7 +2,6 @@ import React from "react";
 import { motion } from "motion/react";
 import { 
   ArrowRight, 
-  Sparkles, 
   Globe, 
   CreditCard, 
   UserCheck, 
@@ -10,11 +9,8 @@ import {
   MessageSquare, 
   CheckCheck, 
   TrendingUp, 
-  Calendar,
   Users,
-  Bell,
-  ChevronRight,
-  ShieldAlert
+  ChevronRight
 } from "lucide-react";
 
 interface HeroProps {

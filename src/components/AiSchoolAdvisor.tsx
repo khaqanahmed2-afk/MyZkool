@@ -142,8 +142,7 @@ export const AiSchoolAdvisor: React.FC = () => {
       } else {
         setIsPlayingAudio(false);
       }
-    } catch (err) {
-      console.error("TTS error:", err);
+    } catch {
       setIsPlayingAudio(false);
     }
   };

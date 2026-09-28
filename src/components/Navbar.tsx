@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Menu, X, ArrowRight, ShieldCheck, PhoneCall } from "lucide-react";
+import { Menu, X, ArrowRight } from "lucide-react";
 import { MyZkoolLogo } from "./MyZkoolLogo";
 
 interface NavbarProps {
@@ -16,9 +16,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           {/* Official Logo */}
-          <a href="#" className="flex items-center gap-2.5 group" id="navbar-logo">
+          <Link to="/" className="flex items-center gap-2.5 group" id="navbar-logo" onClick={() => setMobileMenuOpen(false)}>
             <MyZkoolLogo size={42} showText={true} />
-          </a>
+          </Link>
 
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-1 lg:gap-2">
@@ -50,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
               href="#faq"
               className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
             >
-              Contact
+              FAQ
             </a>
           </nav>
 
@@ -128,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
           >
-            Contact
+            FAQ
           </a>
           <div className="pt-3 border-t border-[#E6EAF3] flex flex-col gap-2.5">
             <Link
