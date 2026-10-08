@@ -27,7 +27,7 @@ export const Philosophy: React.FC = () => {
                   <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-[#141A2E]">One Account Manager on WhatsApp</h4>
+                  <h3 className="text-sm font-bold text-[#141A2E]">One Account Manager on WhatsApp</h3>
                   <p className="text-xs sm:text-sm text-[#5B6478]">
                     No complicated support tickets. Your school coordinator gets a dedicated helpline that answers questions in minutes.
                   </p>
@@ -39,7 +39,7 @@ export const Philosophy: React.FC = () => {
                   <Zap className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-[#141A2E]">Registers to Cloud in 48 Hours</h4>
+                  <h3 className="text-sm font-bold text-[#141A2E]">Registers to Cloud in 48 Hours</h3>
                   <p className="text-xs sm:text-sm text-[#5B6478]">
                     Send us your existing excel files, fee books or paper student registers. Our specialists format and load everything for you.
                   </p>
@@ -59,7 +59,7 @@ export const Philosophy: React.FC = () => {
                     <div>
                       <span className="text-xs font-semibold text-[#5B6478] uppercase tracking-wider">Fee Realization</span>
                       <div className="text-xl font-bold font-heading text-[#141A2E] flex items-center gap-2">
-                        ₹4,82,500 <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">+18% on-time</span>
+                        ₹4,82,500 <span className="text-xs text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">+18% on-time</span>
                       </div>
                     </div>
                     <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-[#2158E0]">

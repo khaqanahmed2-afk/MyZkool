@@ -251,33 +251,76 @@ export async function checkSchoolStudentLimit(schoolId: string): Promise<PlanLim
 export function generateImportTemplate(
   classes: { name: string; sections?: { name: string }[] }[]
 ): { csv: string; filename: string } {
-  const classesListStr = classes.map((c) => c.name).join(", ");
-  const headerComment = `# MyZkool Student Bulk Import Template\n# Available classes: ${classesListStr || "Class 1, Class 2, Class 3"}\n# Required columns: First Name, Last Name, Date of Birth, Gender, Class, Parent Name, Parent Phone\n# Optional: Admission No, SR No, Admission Date, Section, Roll No, Middle Name, Address Line 1, City, State, Pincode, Category, Is RTE\n`;
+  // Build a proper label/instruction row that Excel and Google Sheets can display
+  // without treating it as data. We use a dedicated "_instructions" first column
+  // and leave all other instruction columns empty so they don't pollute data columns.
+  // NOTE: We do NOT use # comment lines — those are NOT part of the CSV spec and
+  // are silently dropped or cause parse errors in Excel / Google Sheets.
+
+  // Gather all class/section pairs for the Notes row so admins can see valid values
+  const classesListStr = classes.length > 0
+    ? classes.map((c) => {
+        const sections = c.sections && c.sections.length > 0
+          ? ` (Sections: ${c.sections.map((s) => s.name).join("/")})`
+          : "";
+        return `${c.name}${sections}`;
+      }).join(" | ")
+    : "Class 1 (A/B) | Class 2 (A/B) | Class 3 (A/B)";
+
+  // CSV column headers — clean, human-readable, no parenthetical noise in the header
+  // so Excel auto-detect works cleanly
+  const csvEscape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+
   const headers = [
     "First Name",
     "Middle Name",
     "Last Name",
-    "Date of Birth (YYYY-MM-DD or DD/MM/YYYY)",
-    "Gender (male/female/other)",
+    "Date of Birth",
+    "Gender",
     "Class",
     "Section",
     "Roll No",
-    "Admission No (Optional)",
-    "SR No (Optional)",
-    "Admission Date (YYYY-MM-DD Optional)",
+    "Admission No",
+    "SR No",
+    "Admission Date",
     "Parent Name",
     "Parent Phone",
-    "Parent Relation (father/mother/guardian)",
-    "Category (general/obc/sc/st/ews)",
+    "Parent Relation",
+    "Category",
     "Address Line 1",
     "City",
     "State",
     "Pincode",
-    "Is RTE (yes/no)",
-  ].join(",");
+    "Is RTE",
+  ];
 
-  const sampleRow = [
-    "Aarav",
+  // Instruction row — shown as row 2 in Excel. Uses quotes to prevent mis-parsing.
+  const instructionRow = [
+    csvEscape("[REQUIRED] Legal first name"),
+    csvEscape("[optional] Middle name"),
+    csvEscape("[REQUIRED] Legal last name"),
+    csvEscape("[REQUIRED] YYYY-MM-DD or DD/MM/YYYY"),
+    csvEscape("[REQUIRED] male / female / other"),
+    csvEscape(`[REQUIRED] Exact class name. Available: ${classesListStr}`),
+    csvEscape("[optional] Section letter e.g. A, B"),
+    csvEscape("[optional] Roll number in class"),
+    csvEscape("[optional] Leave blank to auto-generate"),
+    csvEscape("[optional] Scholar Register number"),
+    csvEscape("[optional] YYYY-MM-DD — defaults to today"),
+    csvEscape("[REQUIRED] Parent or guardian full name"),
+    csvEscape("[REQUIRED] 10-digit Indian mobile (no spaces)"),
+    csvEscape("[optional] father / mother / guardian"),
+    csvEscape("[optional] general / obc / sc / st / ews"),
+    csvEscape("[optional] Street address"),
+    csvEscape("[optional] City / Town"),
+    csvEscape("[optional] State name"),
+    csvEscape("[optional] 6-digit pincode"),
+    csvEscape("[optional] yes / no"),
+  ];
+
+  // Two realistic example rows using real-looking Indian data (prefixed with [SAMPLE] to prevent accidental import)
+  const example1 = [
+    "[SAMPLE] Aarav",
     "",
     "Sharma",
     "2019-05-12",
@@ -289,7 +332,7 @@ export function generateImportTemplate(
     "",
     "",
     "Ramesh Sharma",
-    "9876543210",
+    csvEscape("9876543210"),
     "father",
     "general",
     "123 Main Road",
@@ -297,11 +340,44 @@ export function generateImportTemplate(
     "Uttar Pradesh",
     "226010",
     "no",
-  ].join(",");
+  ];
+
+  const example2 = [
+    "[SAMPLE] Priya",
+    "",
+    "Verma",
+    "2020-08-22",
+    "female",
+    classes[1]?.name || classes[0]?.name || "Class 2",
+    classes[1]?.sections?.[0]?.name || classes[0]?.sections?.[0]?.name || "A",
+    "2",
+    "",
+    "",
+    "",
+    "Sunita Verma",
+    csvEscape("9123456789"),
+    "mother",
+    "obc",
+    "45 Gandhi Nagar",
+    "Kanpur",
+    "Uttar Pradesh",
+    "208001",
+    "no",
+  ];
+
+  const rows = [
+    headers.join(","),
+    instructionRow.join(","),
+    example1.join(","),
+    example2.join(","),
+  ];
+
+  // UTF-8 BOM prefix so Excel opens it with correct encoding
+  const bom = "\uFEFF";
 
   return {
-    csv: `${headerComment}${headers}\n${sampleRow}\n`,
-    filename: `myzkool_students_import_template.csv`,
+    csv: bom + rows.join("\n") + "\n",
+    filename: `MyZkool_Student_Import_Template.csv`,
   };
 }
 
@@ -551,6 +627,8 @@ export async function parseAndValidateImportCSV(
   const seenKeysInFile = new Set<string>();
   const seenAdmissionNosInFile = new Set<string>();
 
+  const seenSrNosInFile = new Set<string>();
+
   for (let i = 0; i < dataLines.length; i++) {
     const rawCols = dataLines[i];
     const getVal = (field: string) => {
@@ -559,6 +637,13 @@ export async function parseAndValidateImportCSV(
         ? rawCols[parseInt(idx, 10)].trim()
         : "";
     };
+
+    // Skip instruction/guidance rows that come from our own template
+    // (row 2 in the template has values like "[REQUIRED] Legal first name")
+    const firstVal = getVal("first_name") || (rawCols[0] || "").trim();
+    if (firstVal.startsWith("[REQUIRED]") || firstVal.startsWith("[optional]")) {
+      continue;
+    }
 
     const rowData: Partial<ImportRowData> = {
       first_name: getVal("first_name"),
@@ -695,13 +780,55 @@ export async function parseAndValidateImportCSV(
     if (rowData.admission_no) {
       const admNorm = rowData.admission_no.trim().toLowerCase();
       if (seenAdmissionNosInFile.has(admNorm)) {
-        errors.push(`Duplicate admission number "${rowData.admission_no}" in file`);
+        errors.push(`Duplicate admission number "${rowData.admission_no}" within this file (Row ${i + 1})`);
       } else {
         seenAdmissionNosInFile.add(admNorm);
       }
 
       if (dbAdmissionNoSet.has(admNorm)) {
         errors.push(`Admission number "${rowData.admission_no}" already exists in the database`);
+      }
+    }
+
+    // 6b. SR No in-file duplicate check
+    if (rowData.sr_no) {
+      const srNorm = rowData.sr_no.trim().toLowerCase();
+      if (seenSrNosInFile.has(srNorm)) {
+        errors.push(`Duplicate SR number "${rowData.sr_no}" within this file (Row ${i + 1})`);
+      } else {
+        seenSrNosInFile.add(srNorm);
+      }
+    }
+
+    // 6c. Admission date format validation (when provided)
+    if (rowData.admission_date) {
+      const parsedAdmDate = normalizeDateString(rowData.admission_date);
+      if (!parsedAdmDate) {
+        errors.push("Admission Date must be in YYYY-MM-DD or DD/MM/YYYY format");
+      } else {
+        rowData.admission_date = parsedAdmDate.iso;
+      }
+    }
+
+    // 6d. Category enum validation
+    if (rowData.category) {
+      const catLower = (rowData.category as string).toLowerCase().trim();
+      const validCategories = ["general", "obc", "sc", "st", "ews"];
+      if (!validCategories.includes(catLower)) {
+        errors.push(`Category must be one of: general, obc, sc, st, ews (got "${rowData.category}")`);
+        rowData.category = "general"; // reset to safe default
+      } else {
+        rowData.category = catLower as StudentCategory;
+      }
+    }
+
+    // 6e. Pincode format validation (when provided)
+    if (rowData.pin) {
+      const pinDigits = rowData.pin.replace(/\D/g, "");
+      if (pinDigits.length !== 6) {
+        errors.push(`Pincode must be exactly 6 digits (got "${rowData.pin}")`);
+      } else {
+        rowData.pin = pinDigits; // normalize to digits only
       }
     }
 
@@ -750,18 +877,62 @@ export async function parseAndValidateImportCSV(
 }
 
 export function generateErrorReportCSV(rows: ImportValidationRow[]): string {
-  const invalidRows = rows.filter((r) => !r.is_valid);
-  const header = "Row,First Name,Last Name,Class,Errors\n";
-  const body = invalidRows
+  const bom = "\uFEFF";
+  const csvEscape = (v: string | undefined | null) => `"${(v || "").replace(/"/g, '""')}"`;
+
+  // Include error details and original row data with Excel UTF-8 BOM
+  const header = [
+    "Row",
+    "First Name",
+    "Last Name",
+    "Class",
+    "Errors",
+    "Status",
+    "Middle Name",
+    "Date of Birth",
+    "Gender",
+    "Section",
+    "Parent Name",
+    "Parent Phone",
+    "Admission No",
+    "SR No",
+    "Category",
+    "City",
+    "State",
+    "Warnings",
+  ].join(",");
+
+  const body = rows
+    .filter((r) => !r.is_valid || (r.warnings && r.warnings.length > 0))
     .map((r) => {
-      const fn = r.data.first_name || "";
-      const ln = r.data.last_name || "";
-      const cls = r.data.class_name || "";
-      const err = `"${r.errors.join("; ").replace(/"/g, '""')}"`;
-      return `${r.row_index},${fn},${ln},${cls},${err}`;
+      const d = r.data;
+      const status = !r.is_valid ? "ERROR" : r.is_duplicate_db ? "DUPLICATE" : "WARNING";
+      const errorText = r.errors.length > 0 ? r.errors.join("; ") : "";
+      const warnText = r.warnings && r.warnings.length > 0 ? r.warnings.join("; ") : "";
+      return [
+        r.row_index,
+        csvEscape(d.first_name),
+        csvEscape(d.last_name),
+        csvEscape(d.class_name),
+        csvEscape(errorText),
+        csvEscape(status),
+        csvEscape(d.middle_name),
+        csvEscape(d.dob),
+        csvEscape(d.gender),
+        csvEscape(d.section_name),
+        csvEscape(d.parent_name),
+        csvEscape(d.parent_phone),
+        csvEscape(d.admission_no),
+        csvEscape(d.sr_no),
+        csvEscape(d.category),
+        csvEscape(d.city),
+        csvEscape(d.state),
+        csvEscape(warnText),
+      ].join(",");
     })
     .join("\n");
-  return header + body;
+
+  return bom + header + "\n" + body;
 }
 
 export async function commitImportBatch(

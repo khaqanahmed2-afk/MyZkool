@@ -18,6 +18,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@shared": [
+        "./packages/shared/src/index.ts"
+      ],
+      "@shared/*": [
+        "./packages/shared/src/*"
       ]
     },
     "allowImportingTsExtensions": true,

@@ -7,31 +7,27 @@ import { getSchoolForCurrentUser } from "../../services/schoolService";
 import type { School } from "../../types/school";
 
 export function AdminShell() {
-  const { user, schoolId, loading: authLoading } = useAuth();
+  const { user, schoolId, school: authSchool, loading: authLoading } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [school, setSchool] = useState<School | null>(null);
-  const [isSchoolLoading, setIsSchoolLoading] = useState(true);
+  const [school, setSchool] = useState<School | null>(authSchool);
   const location = useLocation();
 
   useEffect(() => {
-    async function loadSchool() {
-      if (!user) {
-        setIsSchoolLoading(false);
-        return;
-      }
-      const { school } = await getSchoolForCurrentUser(user.id, schoolId);
-      setSchool(school);
-      setIsSchoolLoading(false);
+    if (authSchool) {
+      setSchool(authSchool);
+    } else if (user && schoolId) {
+      getSchoolForCurrentUser(user.id, schoolId).then(({ school: fetchedSchool }) => {
+        if (fetchedSchool) setSchool(fetchedSchool);
+      });
     }
-    loadSchool();
-  }, [user, schoolId]);
+  }, [authSchool, user, schoolId]);
 
   // Close mobile menu on route change
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  if (authLoading || isSchoolLoading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-blue-200 border-t-[#2158E0] rounded-full animate-spin"></div>

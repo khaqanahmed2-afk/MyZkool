@@ -39,10 +39,10 @@ export const HowItWorks: React.FC = () => {
         {/* Section Header */}
         <div className="max-w-3xl mx-auto text-center mb-16">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-[#2158E0] text-xs font-bold tracking-wide uppercase mb-3">
-            Simple 4-Step Onboarding
+            Simple 4 Step Onboarding
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold font-heading text-[#141A2E] tracking-tight">
-            From Sign-Up to Live School, Without the Learning Curve
+            From Sign Up to Live School, Without the Learning Curve
           </h2>
           <p className="mt-4 text-base sm:text-lg text-[#5B6478]">
             We don't hand you an empty account and an instruction manual. We configure it with you.
@@ -81,8 +81,8 @@ export const HowItWorks: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-[#F1F5F9] flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-                  <CheckCircle2 className="w-4 h-4" />
+                <div className="mt-6 pt-4 border-t border-[#F1F5F9] flex items-center gap-1.5 text-xs text-emerald-800 font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
                   <span>Guided by our team</span>
                 </div>
               </div>

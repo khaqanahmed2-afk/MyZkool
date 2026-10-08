@@ -5,13 +5,13 @@
     scroll-behavior: smooth;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
-  
+
   h1, h2, h3, h4, h5, h6, .font-heading {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
 }
 
-/* Custom scrollbar and animations */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
 }
@@ -26,6 +26,25 @@
   background: #94A3B8;
 }
 
+/* ── Hero section CSS animations ───────────────────────────────────────────── */
+/* These replace Framer Motion on the LCP-critical above-the-fold elements     */
+@keyframes heroFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes heroFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Orbit animation (kept but only used if JS orbit is active) ──────────────*/
 @keyframes orbit {
   0% {
     transform: rotate(0deg) translateX(var(--orbit-radius, 140px)) rotate(0deg);
@@ -35,6 +54,7 @@
   }
 }
 
+/* ── Prefers-reduced-motion: disable all animations ─────────────────────────*/
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;

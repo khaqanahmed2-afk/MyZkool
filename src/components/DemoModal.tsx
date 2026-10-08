@@ -101,7 +101,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
         <div className="p-6 bg-[#F8FAFC] border-b border-[#E6EAF3] flex items-center justify-between">
           <div>
             <div className="text-xs font-bold text-[#2158E0] uppercase tracking-wider">
-              {defaultPlan ? `Selected: ${defaultPlan} Plan` : "30-Minute Free Demo"}
+              {defaultPlan ? `Selected: ${defaultPlan} Plan` : "30 Minute Free Demo"}
             </div>
             <h3 id="demo-modal-title" className="text-xl font-bold font-heading text-[#141A2E]">
               See MyZkool in Action for Your School
@@ -252,8 +252,8 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                     className="w-full px-3.5 py-2.5 rounded-xl border border-[#E6EAF3] focus:border-[#2158E0] text-sm text-[#141A2E] bg-white outline-none"
                   >
                     <option value="Under 400">Under 400 students</option>
-                    <option value="Up to 800">400 - 800 students (Basic)</option>
-                    <option value="800 to 1,800">800 - 1,800 students (Pro)</option>
+                    <option value="Up to 800">400 to 800 students (Basic)</option>
+                    <option value="800 to 1,800">800 to 1,800 students (Pro)</option>
                     <option value="1,800+">1,800+ students (Custom)</option>
                   </select>
                 </div>

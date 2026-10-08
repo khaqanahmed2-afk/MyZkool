@@ -22,7 +22,7 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ onOpenDemo }) => {
         </h2>
 
         <p className="mt-6 text-base sm:text-lg text-neutral-300 max-w-2xl mx-auto leading-relaxed">
-          Join schools across Tier-2 and Tier-3 India simplifying their websites, fee collections, and parent communication in one modern login.
+          Simplify school operations and keep parents connected, all in one modern platform.
         </p>
 
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -40,7 +40,7 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ onOpenDemo }) => {
         <div className="mt-10 pt-8 border-t border-white/10 flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs sm:text-sm text-neutral-300">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-[#1FAE7A]" />
-            <span>30-minute tailored walkthrough</span>
+            <span>30 minute tailored walkthrough</span>
           </div>
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-[#1FAE7A]" />

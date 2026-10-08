@@ -367,7 +367,7 @@ export class NotificationWorker {
     
     this.isRunning = true;
     this.intervalId = setInterval(() => this.processBatch(), this.pollInterval);
-    console.log("Notification worker started");
+    console.info("Notification worker started");
   }
 
   stop() {
@@ -376,7 +376,7 @@ export class NotificationWorker {
       this.intervalId = null;
     }
     this.isRunning = false;
-    console.log("Notification worker stopped");
+    console.info("Notification worker stopped");
   }
 
   async processBatch(): Promise<void> {

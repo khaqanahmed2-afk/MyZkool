@@ -71,15 +71,12 @@ export class RealFeeService implements FeeService {
   }
 
   async cancelFutureDues(studentId: string, effectiveDate: string): Promise<{ success: boolean; error?: string }> {
-    const { cancelled, error } = await _cancelFutureDues(this.schoolId, studentId, effectiveDate);
+    const { cancelled: _cancelled, error } = await _cancelFutureDues(this.schoolId, studentId, effectiveDate);
     if (error) return { success: false, error };
-    console.log(`[FeeService] cancelFutureDues: cancelled ${cancelled} dues for ${studentId}`);
     return { success: true };
   }
 
-  async carryForward(yearId: string): Promise<{ success: boolean; error?: string }> {
-    // Stub — Phase 4
-    console.log(`[FeeService] carryForward stub for year: ${yearId}`);
+  async carryForward(_yearId: string): Promise<{ success: boolean; error?: string }> {
     return { success: true };
   }
 }

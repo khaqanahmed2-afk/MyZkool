@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckCircle2, ShieldCheck, Users, School, Sparkles, MapPin } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Users, School, Sparkles } from "lucide-react";
 
 export const TrustStrip: React.FC = () => {
   const claims = [
@@ -53,24 +53,24 @@ export const TrustStrip: React.FC = () => {
           })}
         </div>
 
-        {/* Board & Regional Hubs Trust Strip */}
-        <div className="mt-6 pt-5 border-t border-[#F1F5F9] flex flex-wrap items-center justify-between gap-3 text-xs text-[#5B6478]">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-[#141A2E]">Supported Curriculums:</span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#141A2E] font-medium">
+        {/* Board & Regional Trust Strip */}
+        <div className="mt-6 pt-5 border-t border-[#F1F5F9] flex flex-col md:flex-row md:items-center justify-between gap-3.5 sm:gap-4 text-xs text-[#5B6478]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-[#141A2E] shrink-0">Supported Curriculums:</span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-[#F1F5F9] border border-[#E2E8F0] text-[#141A2E] font-medium text-xs">
               CBSE
             </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#141A2E] font-medium">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-[#F1F5F9] border border-[#E2E8F0] text-[#141A2E] font-medium text-xs">
               ICSE / ISC
             </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#141A2E] font-medium">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-[#F1F5F9] border border-[#E2E8F0] text-[#141A2E] font-medium text-xs">
               State Boards (UP, MP, MH, RJ, BR, etc.)
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 text-[11px] text-[#5B6478]">
-            <MapPin className="w-3.5 h-3.5 text-[#2158E0]" />
-            <span>Active across Tier-2 &amp; Tier-3 education clusters nationwide</span>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/80 border border-blue-100/90 text-[#2158E0] text-xs font-semibold self-start md:self-auto shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-[#2158E0]" aria-hidden="true" />
+            <span>Built for modern Indian schools</span>
           </div>
         </div>
       </div>

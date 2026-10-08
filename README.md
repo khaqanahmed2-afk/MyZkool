@@ -1,250 +1,172 @@
-# MyZkool: School Website Builder & Management ERP
+# MyZkool
 
-> **One platform instead of five disconnected tools.** A complete school website, admissions pipeline, student lifecycle management, fee collection & counter accounting, school transport fleet management, and automated parent communication system built specifically for Indian K-12 schools, with zero IT team required and all parent-facing communication delivered directly over **WhatsApp**.
-
----
-
-## 🌟 Executive Overview
-
-MyZkool is designed specifically for small and mid-size K-12 schools across India, with an emphasis on institutions in Tier-2 and Tier-3 cities.
-
-- **WhatsApp-First Parent Communication:** Parents never need to download or navigate a separate mobile application. Daily attendance alerts, fee receipts with instant UPI payment links, and urgent transport notices arrive directly in their active WhatsApp inbox (98.4%+ open rate).
-- **Single Integrated Workspace:** Consolidates fragmented systems (separate website builders, offline Excel registers, tally ledgers, manual bus charts, and paper admission forms) into a unified, role-based dashboard for Principals, Trustees, Teachers, Accountants, and Transport Coordinators.
-- **Affordable & Accessible:** Transparent tiered pricing tailored to Indian school fee structures with 18% GST invoicing for Input Tax Credit (ITC) and a **30-Day Money-Back Guarantee**.
-- **DPDP Act, 2023 Compliant:** Engineered from the ground up for Indian data sovereignty, ephemeral document processing, Aadhaar encryption & masking, and statutory Grievance Redressal.
-- **Enterprise-Grade Database Architecture:** Backed by Supabase PostgreSQL with strict Row-Level Security (RLS) across 70+ tables, guaranteeing strict multi-tenant isolation.
+Modern School Website Builder, ERP, and WhatsApp Communication Platform designed for K12 schools across India.
 
 ---
 
-## 🚀 Core Platform Modules
+## Overview
 
-### 1. Student Lifecycle Management (SIS)
-- **8-Step Admission Wizard (`/admin/students/new`)**:
-  - *Personal Info*: Student name, DOB with age boundary checks (2–25 yrs), gender, blood group, mother tongue, caste category, and RTE status.
-  - *Guardian Details*: Father, mother, and local guardian profiles. Sibling auto-linking by phone number prevents duplicate parent records.
-  - *Address*: Permanent and correspondence postal address validation.
-  - *Previous Schooling*: Prior school record, last class passed, TC number, and board tracking.
-  - *Medical Profile*: Allergies, chronic conditions, regular medications, emergency doctor contact, and blood group.
-  - *Document Vault*: Upload and verify Birth Certificate, Aadhaar Card, Transfer Certificate, and Report Cards with immutable superseding rules.
-  - *Transport Pre-assignment*: Real-time route and stop assignment with seat availability verification.
-  - *Fee Structure Assignment*: Automatic class fee schedule binding with concession rule applications.
-- **Student Directory & Roster (`/admin/students`)**:
-  - Multi-filter search (class, section, enrollment status, category, RTE, gender).
-  - Quick-view drawer for rapid student profile inspections without leaving the list.
-  - Quick action toolbar: Change status, issue TC, assign transport, view dues.
-- **Comprehensive Student 360° Profile (`/admin/students/:id`)**:
-  - Tabbed interface: Academic Overview, Fee Ledger & Due Dates, Transport Schedule, Attendance History, Document Vault, and Timeline Audit.
-- **Promotion Pipeline (`/admin/students/promotion`)**:
-  - Batch academic year promotions with preview counts matching commit results.
-  - Per-student override actions: Promote, Detain, or Record as Left/Passed Out.
-  - Statutory 24-hour undo window allowing instant rollback of promotion batches.
-- **Transfer Certificate (TC) Engine (`/admin/students/tc-register`)**:
-  - Auto-incrementing TC numbering (`TC-YYYY-XXXX`).
-  - Outstanding dues verification blocking issuance unless overridden by School Owner with mandatory logged audit reasons.
-  - QR-code verification payload generation and duplicate certificate copy handling.
-- **Bulk CSV Import & Rollback Engine (`/admin/students/import`)**:
-  - Intelligent column auto-mapping (handles multi-format headers like "First Name", "Student Name", "Fname").
-  - Pre-commit validation against existing student duplicates and class/section rosters.
-  - High performance: Imports 500+ student rows in under 15 seconds.
-  - Atomic batch rollback: One-click reversal of imported batches before dependent records (fees/transport) are created.
-- **Audited Student Export**:
-  - Masked Aadhaar export (`XXXXXXXX1234`), omitting private staff notes and internal encryption keys.
-  - Every export action logs an immutable audit event for DPDP Act compliance.
+Most school software platforms are designed for large, highly staffed institutions with dedicated IT teams. Small to mid size schools across India face a very different reality: a single administrative office, principals managing multiple responsibilities simultaneously, and parents who prefer communicating over WhatsApp rather than installing another native mobile application.
+
+**MyZkool** solves this by unifying fragmented tools into a single, cohesive platform:
+1. **School Website Builder**: A zero code, ready to publish institutional website with built-in admissions forms.
+2. **Student Information System (SIS)**: Complete student lifecycle management from admission to transfer certificate issuance.
+3. **Fee Counter and Accounting**: High speed fee collections, multiple payment modes, real time receipts, and automatic WhatsApp reminders.
+4. **Attendance and Roll Call**: Quick daily attendance tracking for students and staff with instant alerts for parents.
+5. **Transport Fleet Logistics**: Vehicle roster, route builder with Leaflet maps, distance based fee zones, and guardian handover verification.
+6. **Parent Engagement**: Direct updates, receipts, notices, and payment links sent straight to parents on WhatsApp.
 
 ---
 
-### 2. Comprehensive Fee Counter & Financial Accounting
-- **Fee Heads & Reusable Fee Structures (`/admin/fees/structures`, `/admin/fees/heads`)**:
-  - Configurable fee heads: Tuition, Admission, Annual, Examination, Laboratory, Library, Sports, Transport, and Miscellaneous.
-  - Multi-cycle structures: Monthly, Quarterly, Half-Yearly, and Annual terms.
-  - Class-wide and wing-wide assignment with automatic dues generation.
-- **Point-of-Sale Fee Collection Counter (`/admin/fees/collect`)**:
-  - High-speed collection interface for school accountants and cashiers.
-  - Split payment support across multiple modes: Cash, Cheque, UPI, and Bank Transfer.
-  - Paise financial precision across all computations (zero floating-point rounding errors).
-  - Real-time digital fee receipt generation with printable thermal/A4 formats and WhatsApp delivery.
-- **Cheque Register & Clearance Workflow (`/admin/fees/cheques`)**:
-  - Lifecycle tracking: `Received` → `Deposited` → `Cleared` or `Bounced`.
-  - Automated bounce fee penalties and receipt balance reversals upon cheque dishonor.
-- **Defaulters Tracking & Age Brackets (`/admin/fees/defaulters`)**:
-  - Aging buckets: 0–30 days, 31–60 days, 61–90 days, and 90+ days overdue.
-  - Automated 1-click WhatsApp payment reminders with embedded UPI links (Google Pay, PhonePe, Paytm, BHIM, RuPay).
-- **Concessions & Scholarship Management (`/admin/fees/concessions`)**:
-  - Rule-based concessions: Sibling discounts, Staff ward benefits, RTE full concessions, and Merit/Need-based waivers.
-- **Late Fee Rules (`/admin/fees/late-fee-rules`)**:
-  - Grace period configuration, flat daily late fees, or percentage penalties.
-- **Day-Close Counter Reconciliation (`/admin/fees/day-close`)**:
-  - End-of-day cash drawer balancing: System ledger vs physical cash count.
-  - Cashier denomination breakdown (₹2000, ₹500, ₹200, ₹100, ₹50, etc.).
-  - Supervisor lock and handover sign-off prevents backdated modifications.
-- **Refunds & Fee Adjustments (`/admin/fees/refunds`)**:
-  - Audited refund workflows with double-entry reversal safeguards.
+## Features
+
+### 1. Landing Page and Public Surface
+* **Responsive Marketing Portal**: Showcases the core platform, philosophy, live feature breakdowns, transparent pricing, onboarding steps, and interactive FAQ.
+* **Dedicated About Us Page (`/about`)**: Complete team and vision story featuring the real founders (Khaqan Ahmad, Ahiri Naskar, Aqsa Ibrahim).
+* **AI School Solutions Advisor**: Natural language advisory powered by Google Gemini, answering queries on data migration, fee structures, and school setup.
+* **Interactive Demo Booking Modal**: Connected to Web3Forms with DPDP Act 2023 compliance consent.
+* **Public Parent Payment Link (`/pay/:token`)**: Direct checkout link for parents to clear school dues online without requiring app installation.
+
+### 2. Multi-Tenant Onboarding Pipeline (8 Stages)
+* **School Profile (`/onboarding/school-profile`)**: Institutional identity, board affiliation, contact details, and automated tenant subdomain allocation.
+* **Academic Setup (`/onboarding/academics`)**: Academic calendar configuration, single active current session enforcement, and holiday calendars.
+* **Classes and Sections (`/onboarding/classes`)**: Grade structure definition with section subdivisions and primary or secondary wing templates.
+* **Curriculum Mapping (`/onboarding/subjects`)**: Subject library categorization (core, elective, activity) with multi-class batch assignments.
+* **Subscription Selection (`/onboarding/subscription`)**: Tier catalog selection (Basic, Pro, Custom), duration discounts, and 18% statutory GST tax invoicing.
+* **Website Setup (`/onboarding/website`)**: School website initialization with primary brand palette, admissions lead toggle, and default institutional pages.
+* **Staff Roster (`/onboarding/staff`)**: Role-based access control (`teacher`, `accountant`, `admin`) with unique employee codes.
+* **Launch Checklist (`/onboarding/complete`)**: Verification audit with copyable domain URLs and activation of the School Admin ERP workspace.
+
+### 3. Student Lifecycle Management
+* **8-Step Admission Wizard (`/admin/students/new`)**: Validates student biodata, guardians, address, prior school history, medical records, document vault, optional transport, and fee structures.
+* **Student Directory (`/admin/students`)**: Multi-filter search (class, section, status, caste category, RTE), column chooser, and quick-view drawer.
+* **Student 360° Profile (`/admin/students/:id`)**: Comprehensive view of academic history, fee ledgers, transport schedules, attendance rosters, and document storage.
+* **Promotion Pipeline (`/admin/students/promotion`)**: Batch academic year promotions with student overrides and a 24-hour rollback window.
+* **Transfer Certificate (TC) Engine (`/admin/students/tc-register`)**: Auto-incrementing TC sequence, dues clearance verification, and QR code verification payloads.
+* **Bulk Import and Export (`/admin/students/import`)**: Intelligent header auto-mapping, duplicate detection, and masked Aadhaar exports compliant with DPDP Act guidelines.
+
+### 4. Fee Counter and Financial Operations
+* **Fee Heads and Structures (`/admin/fees/structures`, `/admin/fees/heads`)**: Configurable tuition, admission, examination, transport, and custom fee categories.
+* **Point-of-Sale Fee Collection (`/admin/fees/collect`)**: High-speed collection counter supporting cash, cheque, UPI, and bank transfers with integer paise financial precision.
+* **Cheque Register (`/admin/fees/cheques`)**: Clearance lifecycle tracking (`Received`, `Deposited`, `Cleared`, `Bounced`) with automated bounce fee penalties.
+* **Defaulters Tracking (`/admin/fees/defaulters`)**: Overdue aging brackets with one-click WhatsApp reminder triggers.
+* **Concession and Late Fee Rules (`/admin/fees/concessions`, `/admin/fees/late-fee-rules`)**: Automated sibling, staff ward, and RTE discount rules alongside customizable grace periods.
+* **Day Close Reconciliation (`/admin/fees/day-close`)**: End-of-day cash drawer balancing, cashier denomination breakdowns, and supervisor lockouts.
+* **Financial Reports (`/admin/fees/reports`)**: Itemized collection ledgers, head-wise realizations, and audit trails.
+
+### 5. Transport Fleet and Logistics
+* **Vehicle Fleet Roster (`/admin/transport/vehicles`)**: Seating capacity, fuel types, GPS device mapping, and vehicle operational status.
+* **Driver and Staff Directory (`/admin/transport/staff`)**: Driver licenses with expiry alerts and contact credentials.
+* **Route Builder (`/admin/transport/routes`)**: Interactive Leaflet maps, drag-and-drop stop sequencing, timing schedules, and printable driver route sheets.
+* **Distance Fee Zones (`/admin/transport/fee-zones`)**: Flat, slab, and distance-based fare matrices.
+* **Student Transport Allocations (`/admin/transport/assign`)**: Stop assignments with vehicle capacity meters and guardian handover verification.
 
 ---
 
-### 3. School Transport Management & Fleet Logistics
-- **Fleet & Vehicle Roster (`/admin/transport/vehicles`)**:
-  - School-owned buses, vans, and third-party contractor fleets.
-  - Seating capacity tracking, fuel type, GPS device binding, and vehicle status (`active`, `maintenance`, `retired`).
-- **Driver & Attendant Directory (`/admin/transport/staff`)**:
-  - Driver licensing details with expiration tracking.
-  - Masked emergency phone and address records.
-  - Instant WhatsApp driver portal onboarding links.
-- **Interactive Route Builder & Mapping (`/admin/transport/routes`)**:
-  - Route planning with drag-and-drop stop sequencing.
-  - Pick-up and drop-off timing synchronization.
-  - Integrated Leaflet map visualization for route geometry.
-  - Printable Route Sheets (`PrintableRouteSheet.tsx`) for drivers and bus attendants.
-- **Distance & Slab-Based Fee Zones (`/admin/transport/fee-zones`)**:
-  - Flexible pricing models: Flat fee, Distance-based (per km), or Multi-stop slab zones.
-  - Automated billing month synchronizations.
-- **Compliance & Document Expiry Engine**:
-  - Document expiration alerts: Fitness certificates, Vehicle Insurance, PUC, Road Tax, and Permits.
-  - Automated thresholds (60d, 30d, 15d, 7d, expired) with deduplicated notification alerts.
-  - Compliance blocks preventing route assignment of non-compliant vehicles.
-- **Student Transport Assignment Drawer (`/admin/transport/assign`)**:
-  - Quick assignment directly from Student Profile or Bulk Assignment grid.
-  - Real-time seat capacity meter with supervisor override reason logging.
-  - Authorized guardian handover enforcement.
-  - Automated transport fee dues generation with transaction rollback on error.
-- **Academic Year Transport Renewal (`/admin/transport/year-renewal`)**:
-  - Single-click rollover of transport routes, stops, and riders into the upcoming academic session.
+## Tech Stack
+
+* **Frontend Framework**: [React 19](https://react.dev/)
+* **Language**: [TypeScript 5.8](https://www.typescriptlang.org/)
+* **Build Tool and Dev Server**: [Vite 6](https://vitejs.dev/)
+* **Routing**: [React Router v7](https://reactrouter.com/)
+* **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) with custom `@layer base` typography and tokens
+* **Icons**: [Lucide React](https://lucide.dev/)
+* **Maps**: [Leaflet](https://leafletjs.com/) with `@types/leaflet`
+* **Typography**: Plus Jakarta Sans (Headings) and Inter (Body) via Google Fonts
+* **Backend Runtime**: [Node.js](https://nodejs.org/) with [Express 4](https://expressjs.com/) and [tsx](https://github.com/privatenumber/tsx)
+* **Server Bundler**: [esbuild 0.25](https://esbuild.github.io/)
+* **Database and Authentication**: [Supabase PostgreSQL](https://supabase.com/) with Row-Level Security (RLS) policies
+* **AI Integration**: [@google/genai](https://www.npmjs.com/package/@google/genai) (Google Gemini 2.5 Flash and Gemini 3.1 Flash TTS)
+* **Form Handling**: [Web3Forms](https://web3forms.com/) API
 
 ---
 
-### 4. Modern School Website Builder
-- **Zero-Code School Website (`/onboarding/website`)**:
-  - Ready-to-publish website templates customized for Indian school admissions, achievements, fee structures, and principal messages.
-  - Primary, secondary, and accent brand color customizers with instant live preview.
-  - Pre-configured navigation: Home, About Us, Academics, Admissions, and Contact Us.
-- **Custom Domain & SSL**:
-  - Free automated tenant subdomain (`{school-subdomain}.myzkool.com`).
-  - Support for custom institutional domains (e.g. `yourschool.edu.in`) with automated SSL certificates.
-- **Admissions Lead Capture**:
-  - Online enquiry forms delivering parent admissions requests straight to the School Admin dashboard.
-
----
-
-### 5. Interactive Marketing Tools & AI School Advisor
-- **Interactive School ERP Demo**:
-  - Live interactive dashboard demonstration directly on the marketing website (`/admin`).
-- **ROI & Operational Savings Calculator**:
-  - Calculates annual hours saved on paperwork, fee realization improvements, and direct monetary savings by replacing fragmented software licenses.
-- **AI School Advisor (Beta)**:
-  - Powered by **Google Gemini 2.5 Flash** (`@google/genai`).
-  - School administrators can ask questions in natural language, listen via text-to-speech, or upload photos of existing paper registers to preview automated data mapping.
-- **Web3Forms Demo Booking Modal**:
-  - Connected directly to the Web3Forms API with spam honeypot filtering, mandatory DPDP Act consent verification, and instant WhatsApp follow-up links.
-
----
-
-## 🏫 Multi-Tenant Onboarding Pipeline (8 Stages)
-
-MyZkool features a production-ready, resume-capable 8-stage onboarding process for school administrators:
-
-1. **School Profile (`/onboarding/school-profile`)**: Institutional identity, board affiliation, contact details, and automated tenant subdomain claiming (`{subdomain}.myzkool.com`).
-2. **Academic Setup (`/onboarding/academics`)**: Academic calendar configuration with automatic cycle calculation, single active current-year enforcement, and statutory holiday defaults.
-3. **Classes & Sections (`/onboarding/classes`)**: Grade structure definition with section subdivision, sort-order auto-incrementing, and primary/secondary wing quick-setup templates.
-4. **Subjects / Curriculum (`/onboarding/subjects`)**: Subject library categorization (core, elective, activity) with multi-class batch assignments and curriculum mapping.
-5. **Subscription & Plan Selection (`/onboarding/subscription`)**: Tier catalog selection (Basic, Pro, Custom), prepay duration discounts (monthly, 6-month, yearly), 18% statutory GST calculation, and 14-day zero-risk trial activation.
-6. **Website Setup & Initialization (`/onboarding/website`)**: Zero-code school website bootstrap with primary brand coloring, admissions lead toggle, tenant parent portal link (`{subdomain}.myzkool.com/parent-login`), and 5 default pages.
-7. **Staff Setup (`/onboarding/staff`)**: Non-blocking staff roster onboarding with role-based segregation (`teacher`, `accountant`), clean employee code auto-generation, and full multi-tenant isolation.
-8. **Onboarding Complete (`/onboarding/complete`)**: Comprehensive aggregated setup audit with real-time launch checklist, copyable domain URLs, and atomic status transition to `onboarding_completed: true` launching the School Admin ERP dashboard.
-
----
-
-## 🛡️ Security, Privacy & DPDP Act Compliance
-
-- **PostgreSQL Row-Level Security (RLS)**:
-  - All 72 tables across 9 domains are protected by strict RLS policies bound to the authenticated user's `school_id`. No tenant can query or leak another tenant's data.
-- **Aadhaar Data Protection**:
-  - Sensitive 12-digit Aadhaar numbers are never stored in plain text.
-  - Stored as encrypted binary bytes (AES-256-GCM) with salted blind indexing (SHA-256) for uniqueness checks.
-  - System interfaces and CSV exports strictly mask Aadhaar values (`XXXXXXXX1234`).
-- **Paise Precision Financial Ledger**:
-  - All financial amounts (fees, dues, concessions, payments, refunds) are stored as integer paise (1 INR = 100 paise) in PostgreSQL `BIGINT`, eliminating floating-point rounding errors.
-- **Ephemeral AI Processing**:
-  - Documents or images uploaded to the Gemini AI Advisor are processed in-memory for instant visual structure extraction and are never retained or used to train public foundation models.
-- **Comprehensive Audit Trail**:
-  - Every sensitive action (fee waivers, promotion undos, TC issuance overrides, bulk student deletions, CSV exports) generates an immutable audit record containing actor ID, role, timestamp, reason, and previous state.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer                  | Technologies                                                                                                 |
-| :--------------------- | :----------------------------------------------------------------------------------------------------------- |
-| **Frontend Framework** | [React 19](https://react.dev/), [TypeScript 5.8](https://www.typescriptlang.org/), [Vite 6](https://vitejs.dev/) |
-| **Routing**            | [React Router v7](https://reactrouter.com/)                                                                  |
-| **Styling**            | [Tailwind CSS v4](https://tailwindcss.com/)                                                                  |
-| **Maps & Transport**   | [Leaflet](https://leafletjs.com/), `@types/leaflet`                                                          |
-| **Icons & Typography** | [Lucide React](https://lucide.dev/), Plus Jakarta Sans (Headings), Inter (Body)                              |
-| **Backend & Server**   | [Express.js](https://expressjs.com/), [Node.js](https://nodejs.org/), Vite SPA middleware                    |
-| **Bundler & Compiler** | [esbuild](https://esbuild.github.io/) (CJS server bundle), Vite (Frontend assets)                             |
-| **Database & Auth**    | [Supabase PostgreSQL](https://supabase.com/) with Row-Level Security (RLS) & Auth                            |
-| **AI Integration**     | [@google/genai](https://www.npmjs.com/package/@google/genai) (Google Gemini 2.5 Flash)                       |
-| **Lead Routing**       | [Web3Forms](https://web3forms.com/) API                                                                      |
-
----
-
-## 📁 Directory Structure
+## Project Structure
 
 ```text
-├── index.html                           # HTML entry point with metadata & SVG favicon
-├── metadata.json                        # Platform metadata and permission declarations
-├── package.json                         # Dependencies, scripts, and build configuration
-├── server.ts                            # Express server with Vite middleware & Gemini API routes
-├── vite.config.ts                       # Vite configuration with Tailwind CSS plugin
-├── SCHEMA.md                            # Complete database schema reference (72 tables, RLS, indexes)
-├── FOLDER_STRUCTURE.md                  # Comprehensive folder structure documentation
-├── CLEANUP_REPORT.md                    # Codebase audit & refactoring history
-├── public/
+MyZkool/
+├── index.html                           # Main HTML entry point with metadata and fonts
+├── package.json                         # Dependencies, metadata, and lifecycle scripts
+├── tsconfig.json                        # TypeScript compiler options and aliases
+├── vite.config.ts                       # Vite bundling, Tailwind v4 plugin, and chunk configuration
+├── server.ts                            # Express server, Vite middleware, and Gemini API routes
+├── .env.example                         # Example configuration template with documented variables
+├── .gitignore                           # Git ignore rules for node_modules, dist, and local secrets
+│
+├── public/                              # Static public assets
 │   ├── favicon.svg                      # Official MyZkool SVG favicon
-│   └── logo.svg                         # Official MyZkool vector emblem
+│   ├── logo.svg                         # Vector logo emblem
+│   ├── hero-laptop.png                  # High-resolution dashboard showcase mockup
+│   ├── myzkoolp.png                     # Parent mobile app preview mockup
+│   ├── Khaqan Ahmad.jpg                 # Founder profile photo
+│   ├── Ahiri Naskar.png                 # Co-Founder profile photo
+│   ├── Aqsa Ibrahim.jpg                 # Co-Founder profile photo
+│   ├── robots.txt                       # Search engine crawler policies
+│   └── sitemap.xml                      # Canonical URL sitemap
+│
 ├── src/
-│   ├── App.tsx                          # App routing & root state
-│   ├── main.tsx                         # React DOM mount point
-│   ├── index.css                        # Tailwind CSS entry point
-│   ├── components/
-│   │   ├── admin/                       # Admin dashboard shell, Sidebar, Header, Fee navigation
+│   ├── main.tsx                         # Client application entry point
+│   ├── App.tsx                          # Top-level route switch and lazy page definitions
+│   ├── index.css                        # Tailwind v4 import, fonts, and animation tokens
+│   │
+│   ├── components/                      # Reusable UI components
+│   │   ├── Navbar.tsx                   # Top navigation with responsive mobile menu
+│   │   ├── Hero.tsx                     # Above-the-fold hero section with core pills
+│   │   ├── TrustStrip.tsx               # Qualitative trust claims and board badges
+│   │   ├── Philosophy.tsx               # Why MyZkool section with visual realization cards
+│   │   ├── Features.tsx                 # Detailed 6-card feature grid with mini UI mockups
+│   │   ├── Roadmap.tsx                  # Upcoming modules and roadmap timeline
+│   │   ├── HowItWorks.tsx               # 4-step guided onboarding explanation
+│   │   ├── WhatsAppSpotlight.tsx        # Parent app showcase with animated status badges
+│   │   ├── Pricing.tsx                  # 3-tier pricing cards and full comparison table
+│   │   ├── FAQ.tsx                      # Collapsible accordion answering school inquiries
+│   │   ├── FinalCTA.tsx                 # High-impact conversion section
+│   │   ├── Footer.tsx                   # Footer navigation, legal links, and contacts
+│   │   ├── DemoModal.tsx                # Interactive demo booking form with Web3Forms
+│   │   ├── LoginModal.tsx               # Role-based login selection modal
+│   │   ├── LegalModal.tsx               # Privacy policy, terms, refunds, and grievance modal
+│   │   ├── AiSchoolAdvisor.tsx          # Floating Gemini AI school advisory chat widget
+│   │   ├── MyZkoolLogo.tsx              # Scalable SVG logo component
+│   │   ├── admin/                       # Admin layout, sidebar, header, and navigation
 │   │   ├── auth/                        # ProtectedRoute, Auth forms, GoogleAuthButton
-│   │   ├── onboarding/                  # Onboarding header, navigation, and layout wrappers
-│   │   └── ...                          # Landing page components & calculators
-│   ├── context/
-│   │   └── AuthContext.tsx              # Supabase Auth session provider & role management
-│   ├── lib/
-│   │   ├── amountInWords.ts             # Indian currency amount-in-words converter
-│   │   ├── sensitiveCrypto.ts           # AES-256-GCM Aadhaar encryption & masking utilities
-│   │   └── supabase.ts                  # Supabase client instantiation
-│   ├── middleware/
-│   │   ├── auth.ts                      # Express multi-tenant school context middleware
-│   │   └── features.ts                  # Plan feature gating & limit verifications
-│   ├── pages/
-│   │   ├── admin/
-│   │   │   ├── fees/                    # 13 Fee ERP pages (Collect, Structures, Cheques, Day Close, etc.)
-│   │   │   ├── students/                # 9 Student management pages (Directory, Profile, Wizard, Import, etc.)
-│   │   │   ├── transport/               # 8 Transport management pages (Fleet, Routes, Zones, Assign, etc.)
-│   │   │   └── settings/                # School administrative settings
-│   │   ├── auth/                        # Login, Registration, Password recovery
+│   │   └── onboarding/                  # Onboarding layout and progress indicators
+│   │
+│   ├── pages/                           # Application pages
+│   │   ├── LandingPage.tsx              # Main public landing page
+│   │   ├── AboutPage.tsx                # Dedicated company story and founder page
+│   │   ├── admin/                       # School ERP admin management pages
+│   │   │   ├── Dashboard.tsx            # Main operational dashboard
+│   │   │   ├── fees/                    # Fee collection, structures, cheques, day-close
+│   │   │   ├── students/                # Student directory, 360 profile, wizard, import
+│   │   │   ├── transport/               # Vehicles, staff, route builder, fee zones
+│   │   │   └── settings/                # Classes and institutional configurations
+│   │   ├── auth/                        # Login, registration, password recovery, verification
 │   │   ├── onboarding/                  # 8-stage school onboarding pages
-│   │   └── LandingPage.tsx              # Public marketing homepage
+│   │   └── public/                      # Parent payment page (`ParentPayPage.tsx`)
+│   │
+│   ├── context/
+│   │   └── AuthContext.tsx              # Supabase auth session and tenant context
 │   ├── routes/
-│   │   └── transportRoutes.ts           # Server-side Express transport API endpoints
-│   ├── services/                        # Service layer (Student, Fee, Transport, Academic, School, Auth)
-│   └── types/                           # TypeScript domain definitions (students, fees, transport, etc.)
-├── supabase/
-│   └── migrations/                      # 20 Database migrations (001 through 020)
-└── tests/                               # 20 Automated test suites (>700 test cases)
+│   │   ├── AppRoutes.tsx                # Authenticated and admin route tree
+│   │   └── transportRoutes.ts           # Server-side transport endpoints
+│   ├── services/                        # Business logic, caching, and database queries
+│   ├── types/                           # TypeScript interfaces and domain models
+│   ├── utils/                           # Aadhaar validation and cryptographic utilities
+│   └── workers/                         # Background notification and sync workers
+│
+├── docs/                                # Architectural documentation and audits
+├── supabase/                            # Database schema migrations with RLS policies
+└── tests/                               # Automated end-to-end and unit test suites
 ```
 
 ---
 
-## ⚙️ Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- **Node.js**: v18.0.0 or higher (Node 20+ recommended)
-- **npm**: v9.0.0 or higher
+* **Node.js**: Version 18.0.0 or higher (Node 20+ LTS recommended)
+* **npm**: Version 9.0.0 or higher
 
 ### Installation
 
@@ -260,76 +182,106 @@ MyZkool features a production-ready, resume-capable 8-stage onboarding process f
    ```
 
 3. **Configure environment variables**:
-   Create a `.env` file based on `.env.example`:
    ```bash
    cp .env.example .env
    ```
-   Provide your Supabase and Gemini API credentials:
-   ```env
-   VITE_SUPABASE_URL="https://your-project.supabase.co"
-   VITE_SUPABASE_ANON_KEY="your-anon-key"
-   SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
-   GEMINI_API_KEY="your-google-gemini-api-key"
-   PORT=3000
+   Open `.env` in your editor and configure the necessary keys (see [Environment Variables](#environment-variables)).
+
+4. **Start the local development server**:
+   ```bash
+   npm run dev
    ```
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 📜 Available Scripts
+## Environment Variables
 
-- **`npm run dev`**: Starts the Express backend with Vite development middleware on `http://localhost:3000`.
-- **`npm run build`**: Builds the static frontend bundle via Vite and compiles `server.ts` into a standalone production server (`dist/server.cjs`) via esbuild.
-- **`npm start`**: Runs the production-compiled server (`dist/server.cjs`).
-- **`npm run lint`**: Runs TypeScript type checking across all files (`tsc --noEmit`).
-- **`npm run clean`**: Cleans the `dist/` directory and temporary build artifacts.
+All supported environment variables are declared in `.env.example`:
 
-### Running Automated Tests
+| Variable | Description | Required | Example / Default |
+| :--- | :--- | :---: | :--- |
+| `GEMINI_API_KEY` | Google Gemini AI key for AI Advisor chat and TTS | Optional | `AIzaSy...` |
+| `APP_URL` | Application root URL for callbacks and public links | Required | `http://localhost:3000` |
+| `VITE_SUPABASE_URL` | Supabase project URL | Required | `https://xyz.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Supabase public anonymous API key | Required | `eyJhbGci...` |
+| `PORT` | Local server port | Optional | `3000` |
 
-To run the complete automated test suite (all 20 test suites):
+> **Security Note:** Never commit `.env` or sensitive API keys to source control. Only `.env.example` should be checked into git.
+
+---
+
+## Available Scripts
+
+The following scripts are defined in `package.json`:
+
+* **`npm run dev`**: Starts the development server (`tsx server.ts`) with live reloading and Vite HMR on port 3000.
+* **`npm run build`**: Creates a production build of the client application into `dist/` via Vite and bundles `server.ts` into `dist/server.cjs` via esbuild.
+* **`npm start`**: Runs the production server (`node dist/server.cjs`).
+* **`npm run lint`**: Executes TypeScript compiler type checking (`tsc --noEmit`).
+* **`npm run preview`**: Previews the static Vite client build locally.
+* **`npm run clean`**: Deletes the `dist/` directory and build artifacts.
+
+---
+
+## Development
+
+* The code is organized into modular directories under `src/`.
+* Public pages (`/` and `/about`) are isolated from the authenticated Supabase context to maximize load performance and minimize first paint times.
+* The application uses standard React 19 hooks and functional components.
+* Styling uses Tailwind CSS v4 with unified design tokens for colors, spacing, and typography.
+* Always run `npm run lint` before creating commits to verify TypeScript types.
+
+---
+
+## Production Build
+
+To compile both the client web application and the server runtime for production:
 
 ```bash
-# Run a specific test suite
-npx tsx tests/test-academic-setup.ts
-npx tsx tests/test-phase1c.ts
-npx tsx tests/test-students-operations.ts
+npm run build
+```
 
-# Run all test suites (PowerShell)
-Get-ChildItem -Name tests\test-*.ts | ForEach-Object { npx tsx "tests/$_" }
+This generates:
+* `dist/index.html` and optimized client bundles (`dist/assets/`).
+* `dist/server.cjs`: Standalone Node.js Express server bundle ready for deployment.
 
-# Run all test suites (Bash / Linux / macOS)
-for f in tests/test-*.ts; do npx tsx "$f"; done
+Test the production bundle locally with:
+```bash
+npm start
 ```
 
 ---
 
-## 🧪 Verification & Test Coverage Summary
+## Deployment
 
-The MyZkool platform is tested across **20 automated test suites** with **700+ assertions passing** (0 failures):
+The application is architected to run on any standard Node.js hosting platform or container environment (e.g. AWS ECS, GCP Cloud Run, Render, Railway, DigitalOcean App Platform):
 
-- **Multi-Tenant Onboarding**: `test-school-onboarding.ts`, `test-academic-setup.ts`, `test-classes-subjects.ts`, `test-subscription.ts`, `test-website-setup.ts`, `test-staff.ts`, `test-onboarding-complete.ts`.
-- **Student Operations & Lifecycle**: `test-students-foundations.ts`, `test-students-list-profile.ts`, `test-students-wizard.ts`, `test-students-operations.ts`, `test-phase1c.ts`.
-- **Fee Collection & Ledger**: `test-phase2.ts`, `test-phase3a.ts`, `test-phase3b.ts`, `test-phase4.ts`, `test-phase5.ts`, `test-amount-in-words.ts`.
-- **Transport Logistics**: `test-phase6.ts`.
-- **Database & Security**: `test-rls-isolation.ts` (strictly validates Row-Level Security multi-tenant partitioning).
-
----
-
-## 🔒 Statutory Compliance & Privacy
-
-- **Digital Personal Data Protection (DPDP) Act, 2023**: Student records, attendance rosters, and financial accounts belong exclusively to the subscribing school. MyZkool operates strictly as a Data Processor.
-- **Ephemeral AI Processing**: Photos of registers or fee receipts submitted to the AI Advisor are processed in-memory for instant visual structure extraction and are never retained or used to train public foundation models.
-- **Grievance Redressal**: Designated Grievance & Data Protection Officer with statutory 24-hour acknowledgment and 15-day resolution windows.
+1. **Container / Node Environment**:
+   * Set Node environment: `NODE_ENV=production`
+   * Run `npm install --omit=dev` (or install all dependencies and run `npm run build`)
+   * Start command: `node dist/server.cjs` or `npm start`
+2. **Reverse Proxy & HTTPS**:
+   * Terminate SSL at your load balancer or reverse proxy (e.g. Cloudflare, Nginx, Caddy).
+   * Ensure port 3000 (or the value of `PORT`) is forwarded.
+3. **Database Configuration**:
+   * Ensure your Supabase project migrations (`supabase/migrations/`) are applied.
+   * Provide production `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 
 ---
 
-## 📞 Official Contacts & Headquarters
+## Contributing
 
-- **Headquarters:** MyZkool Technologies, Lucknow, Uttar Pradesh - 226010, India
-- **WhatsApp Support:** [+91 95559 54854](https://wa.me/919555954854)
-- **Email:** [khaqanbuilds@gmail.com](mailto:khaqanbuilds@gmail.com)
-- **Instagram:** [@myzkool](https://www.instagram.com/myzkool)
-- **Operating Hours:** Monday to Saturday, 8:00 AM to 7:00 PM IST
+1. Create a feature branch from `main`:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+2. Commit changes using clear, descriptive commit messages.
+3. Ensure `npm run lint` and `npm run build` pass without warnings or errors.
+4. Open a pull request against `main`.
 
 ---
 
-© 2024 - 2026 MyZkool Technologies. All rights reserved.
+## License
+
+This project is licensed under the Apache 2.0 License. See the header notices in source files for details.

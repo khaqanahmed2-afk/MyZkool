@@ -23,31 +23,37 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-1 lg:gap-2">
             <a
-              href="#philosophy"
+              href="/#philosophy"
               className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
             >
               Product
             </a>
             <a
-              href="#features"
+              href="/#features"
               className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
             >
               Features
             </a>
             <a
-              href="#pricing"
+              href="/#pricing"
               className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
             >
               Pricing
             </a>
             <a
-              href="#how-it-works"
+              href="/#how-it-works"
               className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
             >
               How it works
             </a>
+            <Link
+              to="/about"
+              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
+            >
+              About
+            </Link>
             <a
-              href="#faq"
+              href="/#faq"
               className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
             >
               FAQ
@@ -96,35 +102,42 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
       {mobileMenuOpen && (
         <div className="md:hidden bg-white border-b border-[#E6EAF3] px-4 pt-2 pb-6 space-y-3 shadow-xl animate-in slide-in-from-top duration-200">
           <a
-            href="#philosophy"
+            href="/#philosophy"
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
           >
             Product
           </a>
           <a
-            href="#features"
+            href="/#features"
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
           >
             Features
           </a>
           <a
-            href="#pricing"
+            href="/#pricing"
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
           >
             Pricing
           </a>
           <a
-            href="#how-it-works"
+            href="/#how-it-works"
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
           >
             How it works
           </a>
+          <Link
+            to="/about"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
+          >
+            About
+          </Link>
           <a
-            href="#faq"
+            href="/#faq"
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
           >

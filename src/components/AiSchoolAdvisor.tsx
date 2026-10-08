@@ -68,7 +68,7 @@ export const AiSchoolAdvisor: React.FC = () => {
         ...prev,
         {
           role: "model",
-          content: "You have reached the demo advisor limit for this session. For an in-depth consultation tailored to your school's student count and syllabus, please book a free 30-minute walkthrough with our onboarding team!",
+          content: "You have reached the demo advisor limit for this session. For an in-depth consultation tailored to your school's student count and syllabus, please book a free 30 minute walkthrough with our onboarding team!",
         },
       ]);
       return;
@@ -98,7 +98,7 @@ export const AiSchoolAdvisor: React.FC = () => {
         ...newHistory,
         {
           role: "model",
-          content: "MyZkool is built specifically for Tier-2 and Tier-3 schools. With our one-login ERP, your teachers mark attendance in seconds and parents receive immediate updates on WhatsApp without installing extra apps.",
+          content: "MyZkool is built specifically for Tier 2 and Tier 3 schools. With our unified ERP, your teachers mark attendance in seconds and parents receive immediate updates on WhatsApp without installing extra apps.",
         },
       ]);
     } finally {

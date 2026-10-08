@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, lazy, Suspense } from "react";
 import { Navbar } from "../components/Navbar";
 import { Hero } from "../components/Hero";
 import { TrustStrip } from "../components/TrustStrip";
@@ -11,10 +11,21 @@ import { Pricing } from "../components/Pricing";
 import { FAQ } from "../components/FAQ";
 import { FinalCTA } from "../components/FinalCTA";
 import { Footer } from "../components/Footer";
-import { DemoModal } from "../components/DemoModal";
-import { LoginModal } from "../components/LoginModal";
-import { LegalModal, LegalDocType } from "../components/LegalModal";
-import { AiSchoolAdvisor } from "../components/AiSchoolAdvisor";
+import type { LegalDocType } from "../components/LegalModal";
+
+// ── Lazy-load heavy modals and AI widget (not needed for first paint) ──────────
+const DemoModal = lazy(() =>
+  import("../components/DemoModal").then((m) => ({ default: m.DemoModal }))
+);
+const LoginModal = lazy(() =>
+  import("../components/LoginModal").then((m) => ({ default: m.LoginModal }))
+);
+const LegalModal = lazy(() =>
+  import("../components/LegalModal").then((m) => ({ default: m.LegalModal }))
+);
+const AiSchoolAdvisor = lazy(() =>
+  import("../components/AiSchoolAdvisor").then((m) => ({ default: m.AiSchoolAdvisor }))
+);
 
 export default function LandingPage() {
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
@@ -22,6 +33,8 @@ export default function LandingPage() {
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType>("privacy");
   const [selectedPlanForDemo, setSelectedPlanForDemo] = useState<string | undefined>(undefined);
+  // Delay mounting the AI advisor until user has scrolled past hero
+  const [showAdvisor, setShowAdvisor] = useState(false);
 
   const handleOpenDemo = (plan?: string) => {
     setSelectedPlanForDemo(plan);
@@ -38,10 +51,21 @@ export default function LandingPage() {
     setIsLegalModalOpen(true);
   };
 
+  // Mount the AI advisor after idle — it is non-critical for initial render
+  React.useEffect(() => {
+    const id = requestIdleCallback
+      ? requestIdleCallback(() => setShowAdvisor(true), { timeout: 3000 })
+      : window.setTimeout(() => setShowAdvisor(true), 2000);
+    return () => {
+      if (requestIdleCallback) cancelIdleCallback(id as number);
+      else clearTimeout(id as number);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-white text-[#141A2E] font-body selection:bg-blue-100 selection:text-[#2158E0]">
       {/* Top Navigation */}
-      <Navbar 
+      <Navbar
         onOpenDemo={() => handleOpenDemo()}
         onOpenLogin={() => setIsLoginModalOpen(true)}
       />
@@ -82,28 +106,40 @@ export default function LandingPage() {
       {/* Footer */}
       <Footer onOpenLegal={handleOpenLegal} />
 
-      {/* Interactive Modals */}
-      <DemoModal
-        isOpen={isDemoModalOpen}
-        onClose={handleCloseDemo}
-        defaultPlan={selectedPlanForDemo}
-        onOpenPrivacy={() => handleOpenLegal("privacy")}
-      />
+      {/* Interactive Modals — only mount JS bundle when actually opened */}
+      <Suspense fallback={null}>
+        {isDemoModalOpen && (
+          <DemoModal
+            isOpen={isDemoModalOpen}
+            onClose={handleCloseDemo}
+            defaultPlan={selectedPlanForDemo}
+            onOpenPrivacy={() => handleOpenLegal("privacy")}
+          />
+        )}
 
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onOpenDemo={() => handleOpenDemo()}
-      />
+        {isLoginModalOpen && (
+          <LoginModal
+            isOpen={isLoginModalOpen}
+            onClose={() => setIsLoginModalOpen(false)}
+            onOpenDemo={() => handleOpenDemo()}
+          />
+        )}
 
-      <LegalModal
-        isOpen={isLegalModalOpen}
-        initialDoc={activeLegalDoc}
-        onClose={() => setIsLegalModalOpen(false)}
-      />
+        {isLegalModalOpen && (
+          <LegalModal
+            isOpen={isLegalModalOpen}
+            initialDoc={activeLegalDoc}
+            onClose={() => setIsLegalModalOpen(false)}
+          />
+        )}
+      </Suspense>
 
-      {/* AI School Advisor Floating Widget (Chat + TTS + Document Analysis) */}
-      <AiSchoolAdvisor />
+      {/* AI School Advisor — deferred until browser is idle */}
+      {showAdvisor && (
+        <Suspense fallback={null}>
+          <AiSchoolAdvisor />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -20,7 +20,7 @@ export const FAQ: React.FC = () => {
     },
     {
       question: "Is our school's data secure?",
-      answer: "Yes. Data is access-controlled by role, so only authorized staff see what they should. Teachers only access their assigned classes, accountants handle fee books, and principals maintain total oversight.",
+      answer: "Yes. Data is access controlled by role, so only authorized staff see what they should. Teachers only access their assigned classes, accountants handle fee books, and principals maintain total oversight.",
     },
   ];
 

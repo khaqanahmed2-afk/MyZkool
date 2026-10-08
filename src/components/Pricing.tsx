@@ -13,14 +13,14 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
     { feature: "Website Builder", basic: true, pro: true, custom: true },
     { feature: "Admissions Pipeline", basic: true, pro: true, custom: true },
     { feature: "Fees & Payments", basic: true, pro: true, custom: true },
-    { feature: "Attendance & Roll-Call", basic: true, pro: true, custom: true },
+    { feature: "Attendance & Roll Call", basic: true, pro: true, custom: true },
     { feature: "WhatsApp Communication", basic: true, pro: true, custom: true },
     { feature: "Exams & Report Cards", basic: false, pro: true, custom: true },
     { feature: "Timetable & Schedule", basic: false, pro: true, custom: true },
     { feature: "Staff & Student Records", basic: false, pro: true, custom: true },
     { feature: "Transport Tracking", basic: false, pro: true, custom: true },
     { feature: "Priority Support", basic: false, pro: true, custom: true },
-    { feature: "Multi-branch Management", basic: false, pro: false, custom: true },
+    { feature: "Multi Branch Management", basic: false, pro: false, custom: true },
     { feature: "Dedicated Onboarding", basic: false, pro: false, custom: true },
     { feature: "Custom Reporting", basic: false, pro: false, custom: true },
     { feature: "Student capacity", basic: "Up to 800", pro: "Up to 1,800", custom: "1,800+" },
@@ -109,7 +109,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
                       <span className="text-4xl font-extrabold font-heading text-[#141A2E]">₹949</span>
                       <span className="text-sm text-[#5B6478]">/ month</span>
                     </div>
-                    <div className="text-xs text-emerald-600 font-semibold mt-1">
+                    <div className="text-xs text-emerald-800 font-semibold mt-1">
                       ₹5,694 total billed every 6 months (5% off)
                     </div>
                   </div>
@@ -120,7 +120,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
                       <span className="text-4xl font-extrabold font-heading text-[#141A2E]">₹899</span>
                       <span className="text-sm text-[#5B6478]">/ month</span>
                     </div>
-                    <div className="text-xs text-emerald-600 font-semibold mt-1">
+                    <div className="text-xs text-emerald-800 font-semibold mt-1">
                       ₹10,789 total billed annually (10% off)
                     </div>
                   </div>
@@ -260,7 +260,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
                 <div className="flex items-baseline gap-1">
                   <span className="text-3xl font-extrabold font-heading text-[#141A2E]">Custom Quote</span>
                 </div>
-                <div className="text-xs text-[#5B6478] mt-1">Multi-branch or large institutions</div>
+                <div className="text-xs text-[#5B6478] mt-1">Multi branch or large institutions</div>
               </div>
 
               <div className="space-y-3 pb-6 border-t border-[#E6EAF3] pt-5 text-sm text-[#141A2E]">
@@ -269,7 +269,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Check className="w-4 h-4 text-[#2158E0] shrink-0" />
-                  <span>Multi-branch Management</span>
+                  <span>Multi Branch Management</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Check className="w-4 h-4 text-[#2158E0] shrink-0" />
@@ -307,7 +307,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
               * Prices are exclusive of 18% GST. B2B GST tax invoice with Input Tax Credit (ITC) provided for registered trusts/societies.
             </p>
             <p>
-              <strong>Accepted Payments:</strong> UPI (PhonePe, GPay, Paytm), RuPay, Debit/Credit Cards, NetBanking &amp; NEFT/RTGS. Includes a 30-day money-back satisfaction guarantee and pro-rata refunds for prepaid plans.
+              <strong>Accepted Payments:</strong> UPI (PhonePe, GPay, Paytm), RuPay, Debit/Credit Cards, NetBanking &amp; NEFT/RTGS. Includes a 30 day money back satisfaction guarantee and pro rata refunds for prepaid plans.
             </p>
           </div>
         </div>

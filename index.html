@@ -4,14 +4,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MyZkool — School Website Builder &amp; Management ERP with WhatsApp</title>
+  <title>MyZkool School Website Builder &amp; Management ERP with WhatsApp</title>
   <meta name="description"
-    content="One platform for your school's website, fees, attendance, report cards, and WhatsApp notifications. Designed for K-12 schools across Tier-2 and Tier-3 India with no IT team required." />
+    content="One platform for your school's website, fees, attendance, report cards, and WhatsApp notifications. Designed for K12 schools across Tier 2 and Tier 3 India with no IT team required." />
   <meta name="keywords"
     content="school ERP India, school website builder, WhatsApp school notices, CBSE school software, ICSE fee collection ERP, Indian school management system" />
   <meta name="theme-color" content="#2158E0" />
   <link rel="canonical" href="https://myzkool.in/" />
-  <meta property="og:title" content="MyZkool — School Website Builder &amp; ERP with WhatsApp" />
+  <meta property="og:title" content="MyZkool School Website Builder &amp; ERP with WhatsApp" />
   <meta property="og:description"
     content="One platform for your school's website, fees, attendance, and WhatsApp notifications. Zero IT team required." />
   <meta property="og:type" content="website" />
@@ -20,18 +20,38 @@
   <meta property="og:site_name" content="MyZkool" />
   <meta property="og:image" content="https://myzkool.in/logo.svg" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="MyZkool — School Website Builder &amp; Management ERP" />
+  <meta name="twitter:title" content="MyZkool School Website Builder &amp; Management ERP" />
   <meta name="twitter:description"
     content="One platform for your school's website, fees, attendance, and WhatsApp notifications." />
   <meta name="twitter:image" content="https://myzkool.in/logo.svg" />
   <meta name="google-site-verification" content="MBFhB-WQrNMnfJsvmntoCs_6-PXrpFGAG0rDaxaNTIM" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="apple-touch-icon" href="/logo.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!--
+    Font loading strategy:
+    - preconnect to reduce DNS + TLS handshake time
+    - Only load weights actually used in the design system:
+        Inter: 400 (body), 500 (medium), 600 (semibold), 700 (bold)
+        Plus Jakarta Sans: 600 (semibold), 700 (bold), 800 (extra-bold)
+    - font-display=swap prevents FOIT (invisible text during font load)
+    - The &display=swap parameter is added to the CSS2 URL
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
-    rel="stylesheet">
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+    media="print"
+    onload="this.media='all'"
+  />
+  <!-- Fallback for no-JS environments -->
+  <noscript>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+    />
+  </noscript>
 </head>
 
 <body class="bg-[#F8FAFC] text-[#141A2E] antialiased selection:bg-[#2158E0] selection:text-white">

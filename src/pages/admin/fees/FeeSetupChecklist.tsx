@@ -30,7 +30,7 @@ const CHECKLIST: ChecklistItem[] = [
   {
     id: "heads",
     label: "Fee Heads",
-    description: "Define what you charge — tuition, exam fee, transport, etc.",
+    description: "Define what you charge: tuition, exam fee, transport, and more.",
     href: "/admin/fees/setup/heads",
     icon: IndianRupee,
     required: true,

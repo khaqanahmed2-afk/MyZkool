@@ -190,7 +190,7 @@ export default function FeeHeadsPage() {
     <div className="max-w-5xl mx-auto py-6 px-4">
       <FeeNavHeader
         title="Fee Categories / Heads"
-        subtitle="Define what you charge — tuition, exam fee, transport, admission, etc."
+        subtitle="Define what you charge: tuition, exam fee, transport, admission, and more."
         action={
           <>
             <button

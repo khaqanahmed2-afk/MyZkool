@@ -172,7 +172,7 @@ async function getCurrentSchoolId(): Promise<string | null> {
       .from("profiles")
       .select("school_id")
       .eq("auth_id", user.id)
-      .single();
+      .maybeSingle();
     
     return profile?.school_id || null;
   } catch {
@@ -1530,11 +1530,29 @@ export async function saveStudentDraft(
 
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("student_drafts")
         .upsert(draft, { onConflict: "school_id,created_by" })
         .select()
-        .single();
+        .maybeSingle();
+
+      // If database lacks a UNIQUE constraint matching ON CONFLICT, fallback to delete-then-insert
+      if (error && (error.message?.includes("ON CONFLICT") || error.code === "42P10")) {
+        await supabase
+          .from("student_drafts")
+          .delete()
+          .eq("school_id", schoolId)
+          .eq("created_by", userId);
+
+        const insertRes = await supabase
+          .from("student_drafts")
+          .insert(draft)
+          .select()
+          .single();
+
+        data = insertRes.data;
+        error = insertRes.error;
+      }
 
       if (!error && data) {
         return { draft: data as StudentDraft };
@@ -1569,26 +1587,54 @@ export async function saveStudentDraft(
 export async function getStudentDraft(
   schoolId: string,
   userId: string
-): Promise<{ draft?: StudentDraft | null; error?: string }> {
+): Promise<{ draft?: StudentDraft | null; error?: string; multipleDraftsWarning?: boolean }> {
   if (!schoolId || !userId) {
     return { error: "school_id and user_id are required" };
   }
 
+  // Validate UUID format to prevent PostgREST syntax errors
+  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId);
+  if (!isValidUuid && isSupabaseConfigured) {
+    return { draft: null, error: "Invalid user identifier" };
+  }
+
   if (isSupabaseConfigured) {
     try {
+      // Query without .single() to avoid PostgREST 406 on 0 rows, and limit to 2 to detect unexpected duplicates
       const { data, error } = await supabase
         .from("student_drafts")
         .select("*")
         .eq("school_id", schoolId)
         .eq("created_by", userId)
-        .single();
+        .order("updated_at", { ascending: false })
+        .limit(2);
 
-      if (!error && data) {
-        return { draft: data as StudentDraft };
+      if (error) {
+        // Distinguish RLS/permission failure (PostgreSQL error 42501)
+        if (
+          error.code === "42501" ||
+          error.message?.toLowerCase().includes("permission") ||
+          error.message?.toLowerCase().includes("row-level security")
+        ) {
+          return { draft: null, error: "Permission denied reading student draft" };
+        }
+        return { draft: null, error: error.message };
       }
-      return { draft: null };
-    } catch (err) {
-      return { error: String(err) };
+
+      if (!data || data.length === 0) {
+        return { draft: null };
+      }
+
+      if (data.length > 1) {
+        console.warn(
+          `[getStudentDraft] Multiple drafts found for user ${userId} in school ${schoolId}. Returning latest draft.`
+        );
+        return { draft: data[0] as StudentDraft, multipleDraftsWarning: true };
+      }
+
+      return { draft: data[0] as StudentDraft };
+    } catch (err: any) {
+      return { draft: null, error: err?.message || String(err) };
     }
   }
 
@@ -2648,7 +2694,8 @@ export async function admitStudentTransactional(
     };
 
     if (isSupabaseConfigured) {
-      const { error: insErr } = await supabase.from("students").insert(studentRecord);
+      const { aadhaar_enc: _aEnc, aadhaar_last4: _aL4, aadhaar_hash: _aHash, ...studentDbRow } = studentRecord as any;
+      const { error: insErr } = await supabase.from("students").insert(studentDbRow);
       if (insErr) {
         if (insErr.code === "23505" || insErr.message?.includes("admission_no") || insErr.message?.includes("unique")) {
           throw new Error(`A student with admission number '${admissionNo}' already exists in this school.`);
@@ -3083,7 +3130,7 @@ export async function admitStudentTransactional(
 
     // STEP 10: Transport & Fee stubs
     if (payload.step7_transport?.opt_in) {
-      console.log(`[Transport] Student ${studentId} assigned to transport route: ${payload.step7_transport.route_id || 'default'}`);
+      // Opted into transport route
     }
 
     if (payload.step8_fee?.fee_structure_id) {

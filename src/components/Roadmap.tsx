@@ -3,15 +3,15 @@ import { Sparkles, BedDouble, BookOpen, MonitorPlay, Smartphone, BrainCircuit, U
 
 export const Roadmap: React.FC = () => {
   const roadmapItems = [
-    { title: "Hostel Management", icon: BedDouble, desc: "Room allocation, mess billing & warden sign-offs" },
-    { title: "Library Management", icon: BookOpen, desc: "Barcode book issue, return alerts & fine tracking" },
-    { title: "Online Classes / LMS integration", icon: MonitorPlay, desc: "Video lessons, homework submissions & quiz bank" },
-    { title: "Native Parent Mobile App", icon: Smartphone, desc: "For parents who prefer a dedicated iOS/Android portal" },
-    { title: "AI-based fee-default & attendance-risk predictions", icon: BrainCircuit, desc: "Proactive alerts to avoid student drop-outs & defaults" },
-    { title: "Alumni Network", icon: Users2, desc: "Graduating batch directory, fundraisers & reunions" },
-    { title: "Payroll & Staff HR", icon: Banknote, desc: "Teacher salary generation, PF slips & biometric sync" },
-    { title: "Multi-branch / school-group management", icon: Building2, desc: "Unified dashboard for trust boards with 2+ campuses" },
-    { title: "Regional language interface (Hindi & more)", icon: Languages, desc: "Hindi, Marathi, Gujarati, Tamil & Telugu UI toggles" },
+    { title: "Hostel Management", icon: BedDouble, desc: "Room allocation, mess billing and warden approvals" },
+    { title: "Library Management", icon: BookOpen, desc: "Barcode book issue, return alerts and fine tracking" },
+    { title: "Online Classes and LMS integration", icon: MonitorPlay, desc: "Video lessons, homework submissions and quiz bank" },
+    { title: "Native Parent Mobile App", icon: Smartphone, desc: "For parents who prefer a dedicated mobile portal" },
+    { title: "AI Fee Default and Attendance Risk Predictions", icon: BrainCircuit, desc: "Proactive alerts to prevent student dropouts and fee defaults" },
+    { title: "Alumni Network", icon: Users2, desc: "Graduating batch directory, fundraisers and reunions" },
+    { title: "Payroll and Staff HR", icon: Banknote, desc: "Teacher salary generation, PF slips and biometric sync" },
+    { title: "Multi Branch and School Group Management", icon: Building2, desc: "Unified dashboard for trust boards with multiple campuses" },
+    { title: "Regional language interface (Hindi and more)", icon: Languages, desc: "Hindi, Marathi, Gujarati, Tamil and Telugu UI toggles" },
   ];
 
   return (

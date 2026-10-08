@@ -1,97 +1,159 @@
 import React from "react";
-import { Users, UserCheck, Calendar, FileText } from "lucide-react";
+import {
+  Users,
+  UserCheck,
+  UserPlus,
+  FileText,
+  CreditCard,
+  Bus,
+} from "lucide-react";
 
-interface SummaryData {
-  totalEnrolled: number;
-  girlsCount: number;
+export interface StudentSummaryData {
+  totalStudents: number;
+  enrolledCount: number;
+  newAdmissionsCount: number;
   boysCount: number;
-  admittedThisYear: number;
+  girlsCount: number;
   documentsPending: number;
+  feePendingCount: number;
+  transportCount: number;
 }
 
 interface StudentSummaryStripProps {
-  data: SummaryData;
+  data: StudentSummaryData;
   activeFilter?: string;
   onFilterClick: (filterKey: string) => void;
 }
 
+interface MetricCardConfig {
+  key: string;
+  label: string;
+  count: number;
+  icon: React.ElementType;
+  iconColor: string;
+  iconBg: string;
+  activeRing: string;
+  activeBg: string;
+}
+
 export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: StudentSummaryStripProps) {
+  const cards: MetricCardConfig[] = [
+    {
+      key: "all",
+      label: "Total Students",
+      count: data.totalStudents,
+      icon: Users,
+      iconColor: "text-[#2158E0]",
+      iconBg: "bg-blue-50",
+      activeRing: "ring-[#2158E0]",
+      activeBg: "bg-blue-50/60",
+    },
+    {
+      key: "active",
+      label: "Active / Enrolled",
+      count: data.enrolledCount,
+      icon: UserCheck,
+      iconColor: "text-emerald-600",
+      iconBg: "bg-emerald-50",
+      activeRing: "ring-emerald-500",
+      activeBg: "bg-emerald-50/60",
+    },
+    {
+      key: "new_admissions",
+      label: "New Admissions",
+      count: data.newAdmissionsCount,
+      icon: UserPlus,
+      iconColor: "text-indigo-600",
+      iconBg: "bg-indigo-50",
+      activeRing: "ring-indigo-500",
+      activeBg: "bg-indigo-50/60",
+    },
+    {
+      key: "boys",
+      label: "Boys",
+      count: data.boysCount,
+      icon: Users,
+      iconColor: "text-sky-600",
+      iconBg: "bg-sky-50",
+      activeRing: "ring-sky-500",
+      activeBg: "bg-sky-50/60",
+    },
+    {
+      key: "girls",
+      label: "Girls",
+      count: data.girlsCount,
+      icon: Users,
+      iconColor: "text-pink-600",
+      iconBg: "bg-pink-50",
+      activeRing: "ring-pink-500",
+      activeBg: "bg-pink-50/60",
+    },
+    {
+      key: "docs_pending",
+      label: "Docs Pending",
+      count: data.documentsPending,
+      icon: FileText,
+      iconColor: "text-amber-600",
+      iconBg: "bg-amber-50",
+      activeRing: "ring-amber-500",
+      activeBg: "bg-amber-50/60",
+    },
+    {
+      key: "fee_pending",
+      label: "Fee Pending",
+      count: data.feePendingCount,
+      icon: CreditCard,
+      iconColor: "text-orange-600",
+      iconBg: "bg-orange-50",
+      activeRing: "ring-orange-500",
+      activeBg: "bg-orange-50/60",
+    },
+    {
+      key: "transport",
+      label: "Transport",
+      count: data.transportCount,
+      icon: Bus,
+      iconColor: "text-cyan-600",
+      iconBg: "bg-cyan-50",
+      activeRing: "ring-cyan-500",
+      activeBg: "bg-cyan-50/60",
+    },
+  ];
+
   return (
-    <div className="bg-white border border-[#E6EAF3] rounded-xl p-3 shadow-xs mb-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 divide-y md:divide-y-0 md:divide-x divide-[#E6EAF3]">
-        {/* Total Enrolled */}
-        <button
-          type="button"
-          onClick={() => onFilterClick("all")}
-          className={`flex items-center gap-3 p-2 rounded-lg text-left transition-colors cursor-pointer hover:bg-slate-50 ${
-            activeFilter === "all" ? "bg-blue-50/70 ring-1 ring-[#2158E0]" : ""
-          }`}
-        >
-          <div className="w-10 h-10 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center shrink-0">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-slate-500">Total enrolled</div>
-            <div className="text-xl font-bold text-slate-900 font-display">{data.totalEnrolled}</div>
-          </div>
-        </button>
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mb-4">
+      {cards.map((card) => {
+        const Icon = card.icon;
+        const isActive = activeFilter === card.key;
 
-        {/* Gender Breakdown */}
-        <button
-          type="button"
-          onClick={() => onFilterClick("girls")}
-          className={`flex items-center gap-3 p-2 pt-3 md:pt-2 md:pl-4 rounded-lg text-left transition-colors cursor-pointer hover:bg-slate-50 ${
-            activeFilter === "girls" || activeFilter === "boys" ? "bg-blue-50/70 ring-1 ring-[#2158E0]" : ""
-          }`}
-        >
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-[#1FAE7A] flex items-center justify-center shrink-0">
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-slate-500">Girls / Boys</div>
-            <div className="text-xl font-bold text-slate-900 font-display">
-              <span className="text-pink-600">{data.girlsCount}</span>
-              <span className="text-slate-400 font-normal mx-1">/</span>
-              <span className="text-blue-600">{data.boysCount}</span>
+        return (
+          <button
+            key={card.key}
+            type="button"
+            onClick={() => onFilterClick(card.key)}
+            aria-pressed={isActive}
+            className={`p-3 bg-white border rounded-xl text-left transition-all duration-150 cursor-pointer shadow-2xs hover:shadow-xs group flex flex-col justify-between ${
+              isActive
+                ? `border-transparent ring-2 ${card.activeRing} ${card.activeBg}`
+                : "border-[#E6EAF3] hover:border-slate-300 hover:bg-slate-50/60"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-1 mb-2">
+              <span className="text-[11px] font-medium text-slate-500 group-hover:text-slate-700 truncate">
+                {card.label}
+              </span>
+              <div
+                className={`w-6 h-6 rounded-lg ${card.iconBg} ${card.iconColor} flex items-center justify-center shrink-0`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+              </div>
             </div>
-          </div>
-        </button>
-
-        {/* Admitted this year */}
-        <button
-          type="button"
-          onClick={() => onFilterClick("new_admissions")}
-          className={`flex items-center gap-3 p-2 pt-3 md:pt-2 md:pl-4 rounded-lg text-left transition-colors cursor-pointer hover:bg-slate-50 ${
-            activeFilter === "new_admissions" ? "bg-blue-50/70 ring-1 ring-[#2158E0]" : ""
-          }`}
-        >
-          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <Calendar className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-slate-500">Admitted this year</div>
-            <div className="text-xl font-bold text-slate-900 font-display">{data.admittedThisYear}</div>
-          </div>
-        </button>
-
-        {/* Documents pending */}
-        <button
-          type="button"
-          onClick={() => onFilterClick("docs_pending")}
-          className={`flex items-center gap-3 p-2 pt-3 md:pt-2 md:pl-4 rounded-lg text-left transition-colors cursor-pointer hover:bg-slate-50 ${
-            activeFilter === "docs_pending" ? "bg-amber-50/70 ring-1 ring-amber-500" : ""
-          }`}
-        >
-          <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-slate-500">Documents pending</div>
-            <div className="text-xl font-bold text-amber-700 font-display">{data.documentsPending}</div>
-          </div>
-        </button>
-      </div>
+            <div className="text-xl font-bold text-slate-900 font-display tracking-tight">
+              {card.count}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
-

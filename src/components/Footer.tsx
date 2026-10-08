@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { Mail, MessageSquare, Phone, MapPin, Heart, ShieldCheck, Instagram } from "lucide-react";
 import { LegalDocType } from "./LegalModal";
 import { MyZkoolLogo } from "./MyZkoolLogo";
@@ -32,34 +33,39 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
             </div>
           </div>
 
-          {/* Product Column */}
+          {/* Product & Company Column */}
           <div>
-            <h4 className="font-heading font-bold text-sm text-[#141A2E] tracking-wider uppercase mb-4">
-              Product
-            </h4>
+            <h3 className="font-heading font-bold text-sm text-[#141A2E] tracking-wider uppercase mb-4">
+              Product &amp; Company
+            </h3>
             <ul className="space-y-2.5 text-sm">
               <li>
-                <a href="#features" className="hover:text-[#2158E0] transition-colors">
+                <Link to="/about" className="hover:text-[#2158E0] transition-colors font-medium text-[#2158E0]">
+                  About Us (Our Story)
+                </Link>
+              </li>
+              <li>
+                <a href="/#features" className="hover:text-[#2158E0] transition-colors">
                   Features
                 </a>
               </li>
               <li>
-                <a href="#pricing" className="hover:text-[#2158E0] transition-colors">
+                <a href="/#pricing" className="hover:text-[#2158E0] transition-colors">
                   Pricing &amp; Plans
                 </a>
               </li>
               <li>
-                <a href="#how-it-works" className="hover:text-[#2158E0] transition-colors">
+                <a href="/#how-it-works" className="hover:text-[#2158E0] transition-colors">
                   How it Works
                 </a>
               </li>
               <li>
-                <a href="#roadmap" className="hover:text-[#2158E0] transition-colors">
+                <a href="/#roadmap" className="hover:text-[#2158E0] transition-colors">
                   Product Roadmap
                 </a>
               </li>
               <li>
-                <a href="#comparison-table" className="hover:text-[#2158E0] transition-colors">
+                <a href="/#comparison-table" className="hover:text-[#2158E0] transition-colors">
                   Feature Comparison
                 </a>
               </li>
@@ -68,9 +74,9 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
 
           {/* Legal & Trust Column */}
           <div>
-            <h4 className="font-heading font-bold text-sm text-[#141A2E] tracking-wider uppercase mb-4">
+            <h3 className="font-heading font-bold text-sm text-[#141A2E] tracking-wider uppercase mb-4">
               Legal &amp; Trust
-            </h4>
+            </h3>
             <ul className="space-y-2.5 text-sm">
               <li>
                 <button
@@ -114,16 +120,16 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
 
           {/* Get in Touch Column */}
           <div>
-            <h4 className="font-heading font-bold text-sm text-[#141A2E] tracking-wider uppercase mb-4">
+            <h3 className="font-heading font-bold text-sm text-[#141A2E] tracking-wider uppercase mb-4">
               Get in Touch
-            </h4>
+            </h3>
             <ul className="space-y-3 text-sm">
               <li>
                 <a
                   href="https://wa.me/919555954854?text=Hi%2C%20I%27d%20like%20to%20know%20more%20about%20MyZkool"
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 text-emerald-600 font-semibold hover:text-emerald-700 transition-colors"
+                  className="inline-flex items-center gap-2 text-emerald-700 font-semibold hover:text-emerald-800 transition-colors"
                 >
                   <MessageSquare className="w-4 h-4 shrink-0" />
                   <span>+91 95559 54854</span>
@@ -161,7 +167,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
 
         {/* Bottom Line */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#5B6478]">
-          <p>© 2024 - 2026 MyZkool Technologies. All rights reserved.</p>
+          <p>© 2024 to 2026 MyZkool Technologies. All rights reserved.</p>
           <div className="flex items-center gap-4 text-[11px]">
             <button onClick={() => onOpenLegal?.("privacy")} className="hover:underline cursor-pointer">Privacy Policy</button>
             <span>•</span>

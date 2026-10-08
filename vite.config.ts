@@ -20,31 +20,37 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
     build: {
+      // Raise warning limit to avoid noise on legitimately large route chunks
       chunkSizeWarningLimit: 600,
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (
-                id.includes('react') ||
-                id.includes('react-dom') ||
-                id.includes('react-router-dom') ||
-                id.includes('motion')
-              ) {
-                return 'vendor-framework';
-              }
-              if (id.includes('@supabase')) {
-                return 'vendor-supabase';
-              }
-              if (id.includes('lucide-react')) {
-                return 'vendor-icons';
-              }
-              if (id.includes('leaflet')) {
-                return 'vendor-leaflet';
-              }
-              if (id.includes('@google/genai')) {
-                return 'vendor-genai';
-              }
+            if (!id.includes('node_modules')) return;
+
+            // React + React-DOM: foundational — always needed
+            if (id.includes('/react-dom/') || id.includes('/react/')) {
+              return 'vendor-react';
+            }
+            // React Router: loaded as part of app shell
+            if (id.includes('react-router')) {
+              return 'vendor-router';
+            }
+
+            // Supabase: only loaded in AppRoutes (auth/admin path)
+            if (id.includes('@supabase')) {
+              return 'vendor-supabase';
+            }
+            // Lucide: tree-shaken at import level but still grouped here
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            // Leaflet: transport map
+            if (id.includes('leaflet')) {
+              return 'vendor-leaflet';
+            }
+            // Google GenAI: AI advisor only
+            if (id.includes('@google/genai')) {
+              return 'vendor-genai';
             }
           },
         },
