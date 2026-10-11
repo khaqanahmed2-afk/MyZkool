@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { X, CheckCircle2, MessageSquare, ArrowRight, School, Phone, User, MapPin, Mail, AlertCircle } from "lucide-react";
 
-interface DemoModalProps {
+export interface DemoModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultPlan?: string;
@@ -313,7 +313,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                 </div>
               </div>
 
-              {/* DPDP Act 2023 Consent Checkbox - Required to enable submit */}
+              {/* DPDP Act 2023 Consent Checkbox */}
               <div className="pt-1">
                 <label className="flex items-start gap-2.5 text-[11px] text-[#5B6478] cursor-pointer select-none">
                   <input
@@ -367,3 +367,5 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
     </div>
   );
 };
+
+export default DemoModal;

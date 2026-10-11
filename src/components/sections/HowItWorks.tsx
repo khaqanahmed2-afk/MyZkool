@@ -1,38 +1,8 @@
 import React from "react";
-import { School, Settings2, Users, MessageSquare, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
+import { HOW_IT_WORKS_STEPS } from "../../data/landingData";
 
 export const HowItWorks: React.FC = () => {
-  const steps = [
-    {
-      number: "01",
-      tag: "Step 1",
-      title: "Tell Us About Your School",
-      desc: "Name, board, classes and sections: we set your account up around your school, not a generic template.",
-      icon: School,
-    },
-    {
-      number: "02",
-      tag: "Step 2",
-      title: "We Configure Your Website & ERP",
-      desc: "Our team sets up your website, fee structure and class lists with you, not for you to figure out alone.",
-      icon: Settings2,
-    },
-    {
-      number: "03",
-      tag: "Step 3",
-      title: "Your Staff Start Using It",
-      desc: "Attendance, fees and admissions move onto MyZkool with dedicated support while your team gets comfortable.",
-      icon: Users,
-    },
-    {
-      number: "04",
-      tag: "Step 4",
-      title: "Parents Get Updates on WhatsApp",
-      desc: "No app to install. Parents start receiving fee reminders, attendance and notices from day one.",
-      icon: MessageSquare,
-    },
-  ];
-
   return (
     <section className="py-20 bg-[#F6F8FC] border-b border-[#E6EAF3]" id="how-it-works">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -51,7 +21,7 @@ export const HowItWorks: React.FC = () => {
 
         {/* 4-Step Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {steps.map((step, idx) => {
+          {HOW_IT_WORKS_STEPS.map((step, idx) => {
             const Icon = step.icon;
             return (
               <div
@@ -93,3 +63,5 @@ export const HowItWorks: React.FC = () => {
     </section>
   );
 };
+
+export default HowItWorks;

@@ -1,19 +1,8 @@
 import React from "react";
-import { Sparkles, BedDouble, BookOpen, MonitorPlay, Smartphone, BrainCircuit, Users2, Banknote, Building2, Languages } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { ROADMAP_ITEMS } from "../../data/landingData";
 
 export const Roadmap: React.FC = () => {
-  const roadmapItems = [
-    { title: "Hostel Management", icon: BedDouble, desc: "Room allocation, mess billing and warden approvals" },
-    { title: "Library Management", icon: BookOpen, desc: "Barcode book issue, return alerts and fine tracking" },
-    { title: "Online Classes and LMS integration", icon: MonitorPlay, desc: "Video lessons, homework submissions and quiz bank" },
-    { title: "Native Parent Mobile App", icon: Smartphone, desc: "For parents who prefer a dedicated mobile portal" },
-    { title: "AI Fee Default and Attendance Risk Predictions", icon: BrainCircuit, desc: "Proactive alerts to prevent student dropouts and fee defaults" },
-    { title: "Alumni Network", icon: Users2, desc: "Graduating batch directory, fundraisers and reunions" },
-    { title: "Payroll and Staff HR", icon: Banknote, desc: "Teacher salary generation, PF slips and biometric sync" },
-    { title: "Multi Branch and School Group Management", icon: Building2, desc: "Unified dashboard for trust boards with multiple campuses" },
-    { title: "Regional language interface (Hindi and more)", icon: Languages, desc: "Hindi, Marathi, Gujarati, Tamil and Telugu UI toggles" },
-  ];
-
   return (
     <section className="py-20 bg-white border-b border-[#E6EAF3]" id="roadmap">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -32,7 +21,7 @@ export const Roadmap: React.FC = () => {
 
         {/* Roadmap Chips Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {roadmapItems.map((item, idx) => {
+          {ROADMAP_ITEMS.map((item, idx) => {
             const Icon = item.icon;
             return (
               <div
@@ -61,3 +50,5 @@ export const Roadmap: React.FC = () => {
     </section>
   );
 };
+
+export default Roadmap;

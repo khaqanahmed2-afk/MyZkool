@@ -110,24 +110,12 @@ MyZkool/
 │   ├── index.css                        # Tailwind v4 import, fonts, and animation tokens
 │   │
 │   ├── components/                      # Reusable UI components
-│   │   ├── Navbar.tsx                   # Top navigation with responsive mobile menu
-│   │   ├── Hero.tsx                     # Above-the-fold hero section with core pills
-│   │   ├── TrustStrip.tsx               # Qualitative trust claims and board badges
-│   │   ├── Philosophy.tsx               # Why MyZkool section with visual realization cards
-│   │   ├── Features.tsx                 # Detailed 6-card feature grid with mini UI mockups
-│   │   ├── Roadmap.tsx                  # Upcoming modules and roadmap timeline
-│   │   ├── HowItWorks.tsx               # 4-step guided onboarding explanation
-│   │   ├── WhatsAppSpotlight.tsx        # Parent app showcase with animated status badges
-│   │   ├── Pricing.tsx                  # 3-tier pricing cards and full comparison table
-│   │   ├── FAQ.tsx                      # Collapsible accordion answering school inquiries
-│   │   ├── FinalCTA.tsx                 # High-impact conversion section
-│   │   ├── Footer.tsx                   # Footer navigation, legal links, and contacts
-│   │   ├── DemoModal.tsx                # Interactive demo booking form with Web3Forms
-│   │   ├── LoginModal.tsx               # Role-based login selection modal
-│   │   ├── LegalModal.tsx               # Privacy policy, terms, refunds, and grievance modal
-│   │   ├── AiSchoolAdvisor.tsx          # Floating Gemini AI school advisory chat widget
-│   │   ├── MyZkoolLogo.tsx              # Scalable SVG logo component
-│   │   ├── admin/                       # Admin layout, sidebar, header, and navigation
+│   │   ├── index.ts                     # Central component barrel export
+│   │   ├── common/                      # Shared brand primitives (MyZkoolLogo)
+│   │   ├── layout/                      # Shell layout components (Navbar, Footer)
+│   │   ├── ui/                          # Interactive modals (DemoModal, LoginModal, LegalModal)
+│   │   ├── sections/                    # Landing sections (Hero, Features, Pricing, Advisor, etc.)
+│   │   ├── admin/                       # Admin layout, sidebar, header, fee UI components
 │   │   ├── auth/                        # ProtectedRoute, Auth forms, GoogleAuthButton
 │   │   └── onboarding/                  # Onboarding layout and progress indicators
 │   │

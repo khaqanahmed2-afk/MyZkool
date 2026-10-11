@@ -85,8 +85,6 @@ export class JobWorker {
    * Claims and processes the next eligible job using FOR UPDATE SKIP LOCKED
    */
   async processNextJob(): Promise<{ processed: boolean; jobId?: number; result?: any; error?: any }> {
-    const now = new Date().toISOString();
-
     // 1. If Supabase Postgres is configured, execute SKIP LOCKED via RPC or transaction
     if (isSupabaseConfigured) {
       try {

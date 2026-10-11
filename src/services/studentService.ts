@@ -66,15 +66,12 @@ import {
   STUDENT_PERMISSIONS,
   STUDENT_ROLE_PERMISSIONS,
   ParentRelation,
-  EnrollmentStatus,
-  DocumentRequiredFor,
 } from "../types/students";
 import type { AcademicYear } from "../types/academic";
 import type { SchoolClass, SchoolSection } from "../types/curriculum";
 import { encryptSensitive, decryptSensitive, hashAadhaar } from "../utils/sensitiveCrypto";
-import { cleanAadhaar, maskAadhaar, validateAadhaar } from "../utils/aadhaarValidation";
+import { cleanAadhaar, maskAadhaar } from "../utils/aadhaarValidation";
 import { feeService } from "./feeService";
-import { transportService } from "./transportService";
 import { checkSchoolStudentLimit } from "./studentOperationsService";
 
 // Local storage fallbacks

@@ -1,9 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { X, ArrowRight, MessageSquare, Lock, UserCheck } from "lucide-react";
-import { MyZkoolLogo } from "./MyZkoolLogo";
+import { X, ArrowRight, MessageSquare, Lock } from "lucide-react";
+import { MyZkoolLogo } from "../common/MyZkoolLogo";
 
-interface LoginModalProps {
+export interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenDemo: () => void;
@@ -120,3 +120,5 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onOpenD
     </div>
   );
 };
+
+export default LoginModal;

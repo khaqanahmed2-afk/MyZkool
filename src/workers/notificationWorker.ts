@@ -5,7 +5,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import type { NotificationOutbox, NotificationChannel, ConsentStatus } from "../types/students";
+import type { NotificationOutbox, NotificationChannel } from "../types/students";
 
 /**
  * Notification Provider Interface
@@ -107,6 +107,10 @@ export class WhatsAppProvider implements NotificationProvider {
   constructor(accessToken: string, phoneNumberId: string) {
     this.accessToken = accessToken;
     this.phoneNumberId = phoneNumberId;
+  }
+
+  getCredentials() {
+    return { accessToken: this.accessToken, phoneNumberId: this.phoneNumberId };
   }
 
   async sendTemplate(params: SendTemplateParams): Promise<SendResult> {

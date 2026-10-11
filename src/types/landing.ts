@@ -42,3 +42,5 @@ export interface ChatMessage {
   role: "user" | "model";
   content: string;
 }
+
+export type LegalDocType = "privacy" | "terms" | "refund" | "grievance";

@@ -7,7 +7,7 @@ import {
   Calendar,
 } from "lucide-react";
 
-interface WhatsAppSpotlightProps {
+export interface WhatsAppSpotlightProps {
   onOpenDemo: () => void;
 }
 
@@ -31,9 +31,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 xl:gap-20 items-center">
 
-          {/* ══════════════════════════════════════════════════ */}
-          {/* Left Column: Value Proposition & Copy              */}
-          {/* ══════════════════════════════════════════════════ */}
+          {/* Left Column: Value Proposition & Copy */}
           <div className="lg:col-span-6 space-y-7">
 
             {/* Eyebrow */}
@@ -88,9 +86,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
             </div>
           </div>
 
-          {/* ══════════════════════════════════════════════════ */}
-          {/* Right Column: myzkoolp.png with Floating Badges    */}
-          {/* ══════════════════════════════════════════════════ */}
+          {/* Right Column: myzkoolp.png with Floating Badges */}
           <div className="lg:col-span-6 flex justify-center items-center py-10 sm:py-12 lg:py-6">
             <div className="relative w-full max-w-[520px] sm:max-w-[580px] lg:max-w-[620px] flex items-center justify-center">
 
@@ -230,3 +226,5 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
     </section>
   );
 };
+
+export default WhatsAppSpotlight;

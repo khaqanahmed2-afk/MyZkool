@@ -6,7 +6,6 @@
  * Writes in-app notifications and outbox messages deduped by document and threshold.
  */
 
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import {
   getTransportSettings,
   getAllVehicleDocuments,

@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckCheck, TrendingUp, UserCheck, ShieldCheck, HeartHandshake, Zap, ArrowUpRight } from "lucide-react";
+import { CheckCheck, TrendingUp, UserCheck, ShieldCheck, Zap } from "lucide-react";
 
 export const Philosophy: React.FC = () => {
   return (
@@ -48,7 +48,7 @@ export const Philosophy: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: Floating Card Stack (AdElevate Style) */}
+          {/* Right Column: Floating Card Stack */}
           <div className="lg:col-span-6 relative">
             {/* Background decorative gradient container */}
             <div className="relative w-full max-w-lg mx-auto bg-gradient-to-tr from-[#EAF1FF] via-[#F4F7FF] to-white p-6 sm:p-8 rounded-3xl border border-[#E6EAF3] shadow-sm">
@@ -138,3 +138,5 @@ export const Philosophy: React.FC = () => {
     </section>
   );
 };
+
+export default Philosophy;

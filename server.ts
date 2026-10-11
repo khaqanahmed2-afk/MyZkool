@@ -6,10 +6,12 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import dotenv from "dotenv";
 import { transportRouter } from "./src/routes/transportRoutes";
 import { getSchoolBySubdomain } from "./src/services/schoolService";
+import { apiErrorHandler } from "./src/middleware/errorHandler";
 
 dotenv.config();
 
 const app = express();
+app.disable("x-powered-by");
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 app.use(express.json({ limit: "25mb" }));
@@ -265,6 +267,9 @@ app.post("/api/analyze-image", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to analyze document", details: error.message });
   }
 });
+
+// Standard API Error Handling Middleware
+app.use(apiErrorHandler);
 
 // Vite middleware & Static serving
 async function startServer() {

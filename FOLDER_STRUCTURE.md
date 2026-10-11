@@ -35,9 +35,13 @@ src/
 ├── vite-env.d.ts          # Vite environment type declarations
 │
 ├── components/            # Shared & reusable UI components
-│   ├── [LandingPage components]  # Hero, Navbar, Pricing, FAQ, etc. (public website)
+│   ├── index.ts           # Central component barrel export
+│   ├── common/            # Shared branded primitives (MyZkoolLogo)
+│   ├── layout/            # Site layout components (Navbar, Footer)
+│   ├── ui/                # Shared interactive modals (DemoModal, LoginModal, LegalModal)
+│   ├── sections/          # Marketing landing page sections (Hero, Pricing, Features, etc.)
 │   ├── admin/             # Admin shell components (Sidebar, AdminShell, AdminHeader)
-│   │   └── fees/          # Fee-module sub-components (FeeNavHeader)
+│   │   └── fees/          # Fee UI components (FeeNavHeader, StudentLedgerTab)
 │   ├── auth/              # Auth flow components (AuthLayout, ProtectedRoute, GoogleAuthButton)
 │   └── onboarding/        # Onboarding layout components (OnboardingLayout, OnboardingProgress)
 │

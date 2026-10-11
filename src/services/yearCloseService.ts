@@ -10,7 +10,6 @@
  * - Idempotent: repeated runs produce exactly ONE carry-forward due per student.
  */
 
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { ensureSystemHeads, getFeeHeads } from "./feeSetupService";
 import type { StudentDue, FeeLedgerEntry } from "../types/fees";
 import type { YearClosePreview, YearCloseResult, YearCloseStudentPreview } from "../types/feeOperations";

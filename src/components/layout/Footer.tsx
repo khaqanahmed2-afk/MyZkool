@@ -1,10 +1,10 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Mail, MessageSquare, Phone, MapPin, Heart, ShieldCheck, Instagram } from "lucide-react";
-import { LegalDocType } from "./LegalModal";
-import { MyZkoolLogo } from "./MyZkoolLogo";
+import { Mail, MessageSquare, MapPin, ShieldCheck, Instagram } from "lucide-react";
+import type { LegalDocType } from "../../types/landing";
+import { MyZkoolLogo } from "../common/MyZkoolLogo";
 
-interface FooterProps {
+export interface FooterProps {
   onOpenLegal?: (doc: LegalDocType) => void;
 }
 
@@ -182,3 +182,5 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
     </footer>
   );
 };
+
+export default Footer;

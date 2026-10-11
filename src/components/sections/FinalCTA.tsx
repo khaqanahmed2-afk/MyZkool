@@ -1,7 +1,7 @@
 import React from "react";
-import { ArrowRight, CheckCircle2, PhoneCall, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
 
-interface FinalCTAProps {
+export interface FinalCTAProps {
   onOpenDemo: () => void;
 }
 
@@ -56,3 +56,5 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ onOpenDemo }) => {
     </section>
   );
 };
+
+export default FinalCTA;

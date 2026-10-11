@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, User } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
-import StudentLedgerTab from "./StudentLedgerTab";
+import StudentLedgerTab from "../../../components/admin/fees/StudentLedgerTab";
 import { getStudentProfile } from "../../../services/studentService";
 
 export default function StudentLedgerPage() {

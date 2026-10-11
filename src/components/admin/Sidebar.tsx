@@ -26,7 +26,7 @@ import {
   Layers,
   FileCheck2,
 } from "lucide-react";
-import { MyZkoolLogo } from "../MyZkoolLogo";
+import { MyZkoolLogo } from "../common/MyZkoolLogo";
 import type { School } from "../../types/school";
 import { useAuth } from "../../hooks/useAuth";
 import { getPendingCount } from "../../services/approvalService";

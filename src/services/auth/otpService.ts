@@ -6,7 +6,7 @@
 import crypto from 'crypto';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { getSmsAdapter } from './smsAdapter';
-import { AUTH_LIMITS } from '../../../packages/shared/src/constants';
+import { AUTH_LIMITS } from '../../constants';
 
 export interface OtpRecord {
   id: string;

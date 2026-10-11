@@ -61,7 +61,7 @@ import {
 } from "../../../services/studentOperationsService";
 import TransferCertificateModal from "./TransferCertificateModal";
 import { DeleteStudentModal } from "./DeleteStudentModal";
-import StudentLedgerTab from "../fees/StudentLedgerTab";
+import StudentLedgerTab from "../../../components/admin/fees/StudentLedgerTab";
 import { AssignTransportDrawer } from "../transport/AssignTransportDrawer";
 import {
   getStudentTransportDetails,

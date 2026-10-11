@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { MyZkoolLogo } from "../MyZkoolLogo";
+import { MyZkoolLogo } from "../common/MyZkoolLogo";
 import { OnboardingProgress } from "./OnboardingProgress";
 import { useAuth } from "../../hooks/useAuth";
 import { LogOut, HelpCircle, ShieldCheck } from "lucide-react";

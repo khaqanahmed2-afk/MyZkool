@@ -1,28 +1,9 @@
 import React, { useState } from "react";
 import { ChevronDown, HelpCircle, MessageCircle } from "lucide-react";
-import { FAQItem } from "../types/landing";
+import { FAQS } from "../../data/landingData";
 
 export const FAQ: React.FC = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
-
-  const faqs: FAQItem[] = [
-    {
-      question: "Do we need an IT person to set this up?",
-      answer: "No. Our team sets up your website and ERP with you during onboarding. We train your administrative staff, configure your fee heads, and get your classes running smoothly without requiring technical staff.",
-    },
-    {
-      question: "Will parents need to download an app?",
-      answer: "No. All parent communication works over WhatsApp, which they already use. Fee reminders, attendance notices, and student report cards arrive in their existing chat window with instant open rates.",
-    },
-    {
-      question: "Can we move our existing student data in?",
-      answer: "Yes. Our onboarding team helps migrate student, fee and attendance records from your current registers or spreadsheets. You can share your Excel files or physical registers and we handle the data formatting.",
-    },
-    {
-      question: "Is our school's data secure?",
-      answer: "Yes. Data is access controlled by role, so only authorized staff see what they should. Teachers only access their assigned classes, accountants handle fee books, and principals maintain total oversight.",
-    },
-  ];
 
   const toggle = (index: number) => {
     setOpenIndex(openIndex === index ? null : index);
@@ -48,7 +29,7 @@ export const FAQ: React.FC = () => {
 
         {/* Accordion List */}
         <div className="space-y-4">
-          {faqs.map((faq, idx) => {
+          {FAQS.map((faq, idx) => {
             const isOpen = openIndex === idx;
             return (
               <div
@@ -103,3 +84,5 @@ export const FAQ: React.FC = () => {
     </section>
   );
 };
+
+export default FAQ;

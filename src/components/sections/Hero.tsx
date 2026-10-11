@@ -1,89 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  ArrowRight,
-  UserPlus,
-  Users,
-  CalendarCheck,
-  CreditCard,
-  MessageSquare,
-  BarChart3,
-  Globe,
-  Check,
-  ChevronRight,
-} from "lucide-react";
+import { ArrowRight, Check, ChevronRight } from "lucide-react";
+import { FEATURE_PILLS, FEATURE_STRIP_ITEMS } from "../../data/landingData";
 
-interface HeroProps {
+export interface HeroProps {
   onOpenDemo: () => void;
 }
 
-/* ─────────────────────────────────────────────────────────── */
-/* Feature Pills                                                */
-/* ─────────────────────────────────────────────────────────── */
-const featurePills = [
-  { label: "Admissions", icon: UserPlus, color: "text-indigo-600", bg: "bg-indigo-50" },
-  { label: "Students", icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
-  { label: "Attendance", icon: CalendarCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
-  { label: "Fees", icon: CreditCard, color: "text-rose-600", bg: "bg-rose-50" },
-  { label: "Communication", icon: MessageSquare, color: "text-violet-600", bg: "bg-violet-50" },
-  { label: "Reports", icon: BarChart3, color: "text-amber-600", bg: "bg-amber-50" },
-  { label: "School Website", icon: Globe, color: "text-teal-600", bg: "bg-teal-50" },
-];
-
-/* ─────────────────────────────────────────────────────────── */
-/* Feature Strip Data                                           */
-/* ─────────────────────────────────────────────────────────── */
-const featureStripItems = [
-  {
-    num: "01",
-    icon: Users,
-    title: "Student Management",
-    desc: "Keep all student data, documents and profiles in one place.",
-    iconColor: "text-blue-600",
-    iconBg: "bg-blue-50",
-  },
-  {
-    num: "02",
-    icon: CalendarCheck,
-    title: "Attendance",
-    desc: "Track attendance easily for students and staff.",
-    iconColor: "text-emerald-600",
-    iconBg: "bg-emerald-50",
-  },
-  {
-    num: "03",
-    icon: CreditCard,
-    title: "Fee Management",
-    desc: "Automate fees, send reminders and track payments.",
-    iconColor: "text-indigo-600",
-    iconBg: "bg-indigo-50",
-  },
-  {
-    num: "04",
-    icon: MessageSquare,
-    title: "Parent Communication",
-    desc: "Stay connected with parents in real time.",
-    iconColor: "text-violet-600",
-    iconBg: "bg-violet-50",
-  },
-  {
-    num: "05",
-    icon: Globe,
-    title: "School Website",
-    desc: "Create a beautiful, professional website for your school.",
-    iconColor: "text-teal-600",
-    iconBg: "bg-teal-50",
-  },
-];
-
-/* ─────────────────────────────────────────────────────────── */
-/* Main Component                                               */
-/* ─────────────────────────────────────────────────────────── */
 export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
   const [isVisible, setIsVisible] = useState(false);
   const heroRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    // Subtle initial reveal
     const timer = requestAnimationFrame(() => {
       setIsVisible(true);
     });
@@ -102,7 +29,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
         className="relative pt-10 pb-12 md:pt-14 md:pb-16 lg:pt-16 lg:pb-20 overflow-hidden bg-white"
         aria-label="Hero"
       >
-        {/* ── Subtle dot-grid background ─────────────────────── */}
+        {/* Subtle dot-grid background */}
         <div
           className="absolute inset-0 pointer-events-none opacity-[0.025]"
           aria-hidden="true"
@@ -112,7 +39,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
           }}
         />
 
-        {/* ── Subtle blue glow for depth ─────────────────────── */}
+        {/* Subtle blue glow for depth */}
         <div
           className="absolute -top-20 -left-24 w-[480px] h-[440px] rounded-full pointer-events-none blur-3xl opacity-60"
           aria-hidden="true"
@@ -127,9 +54,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 xl:gap-12 items-center">
 
-            {/* ══════════════════════════════════════════════════ */}
-            {/* LEFT — Marketing Content (45–50%)                  */}
-            {/* ══════════════════════════════════════════════════ */}
+            {/* LEFT — Marketing Content */}
             <div
               className={`lg:col-span-5 xl:col-span-5 space-y-6 lg:space-y-7 transition-all duration-700 ease-out ${
                 isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
@@ -170,7 +95,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                   Core Modules
                 </p>
                 <div className="flex flex-wrap gap-2" id="hero-feature-pills" role="list">
-                  {featurePills.map((pill) => {
+                  {FEATURE_PILLS.map((pill) => {
                     const Icon = pill.icon;
                     return (
                       <div
@@ -222,9 +147,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
               </div>
             </div>
 
-            {/* ══════════════════════════════════════════════════ */}
-            {/* RIGHT — Product Showcase Image (50–55%)            */}
-            {/* ══════════════════════════════════════════════════ */}
+            {/* RIGHT — Product Showcase Image */}
             <div
               className={`lg:col-span-7 xl:col-span-7 flex items-center justify-center lg:justify-end transition-all duration-700 ease-out delay-150 ${
                 isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
@@ -240,7 +163,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                   aria-hidden="true"
                 />
 
-                {/* Main Generated MyZkool Product Mockup Image */}
+                {/* Main Product Mockup Image */}
                 <img
                   src="/hero-laptop.png"
                   alt="MyZkool School Management Platform and Parent App preview"
@@ -257,13 +180,11 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
         </div>
       </section>
 
-      {/* ════════════════════════════════════════════════════════ */}
-      {/* FEATURE STRIP                                            */}
-      {/* ════════════════════════════════════════════════════════ */}
+      {/* FEATURE STRIP */}
       <div className="w-full bg-[#EEF3FD] border-t border-[#D8E4F8] border-b" aria-label="Core feature overview">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-[#C8D8F2]">
-            {featureStripItems.map((item) => {
+            {FEATURE_STRIP_ITEMS.map((item) => {
               const Icon = item.icon;
               return (
                 <div
@@ -289,3 +210,5 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
     </>
   );
 };
+
+export default Hero;

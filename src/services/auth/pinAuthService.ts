@@ -5,7 +5,7 @@
 
 import crypto from 'crypto';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
-import { AUTH_LIMITS } from '../../../packages/shared/src/constants';
+import { AUTH_LIMITS } from '../../constants';
 import { verifyOtp } from './otpService';
 
 export interface UserAccount {

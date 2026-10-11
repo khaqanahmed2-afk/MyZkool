@@ -1,58 +1,51 @@
-import React, { useState, lazy, Suspense } from "react";
-import { Navbar } from "../components/Navbar";
-import { Hero } from "../components/Hero";
-import { TrustStrip } from "../components/TrustStrip";
-import { Philosophy } from "../components/Philosophy";
-import { Features } from "../components/Features";
-import { Roadmap } from "../components/Roadmap";
-import { HowItWorks } from "../components/HowItWorks";
-import { WhatsAppSpotlight } from "../components/WhatsAppSpotlight";
-import { Pricing } from "../components/Pricing";
-import { FAQ } from "../components/FAQ";
-import { FinalCTA } from "../components/FinalCTA";
-import { Footer } from "../components/Footer";
-import type { LegalDocType } from "../components/LegalModal";
+import React, { useState, useEffect, lazy, Suspense } from "react";
+import { Navbar } from "../components/layout/Navbar";
+import { Hero } from "../components/sections/Hero";
+import { TrustStrip } from "../components/sections/TrustStrip";
+import { Philosophy } from "../components/sections/Philosophy";
+import { Features } from "../components/sections/Features";
+import { Roadmap } from "../components/sections/Roadmap";
+import { HowItWorks } from "../components/sections/HowItWorks";
+import { WhatsAppSpotlight } from "../components/sections/WhatsAppSpotlight";
+import { Pricing } from "../components/sections/Pricing";
+import { FAQ } from "../components/sections/FAQ";
+import { FinalCTA } from "../components/sections/FinalCTA";
+import { Footer } from "../components/layout/Footer";
+import { useLandingModals } from "../hooks/useLandingModals";
 
 // ── Lazy-load heavy modals and AI widget (not needed for first paint) ──────────
 const DemoModal = lazy(() =>
-  import("../components/DemoModal").then((m) => ({ default: m.DemoModal }))
+  import("../components/ui/DemoModal").then((m) => ({ default: m.DemoModal }))
 );
 const LoginModal = lazy(() =>
-  import("../components/LoginModal").then((m) => ({ default: m.LoginModal }))
+  import("../components/ui/LoginModal").then((m) => ({ default: m.LoginModal }))
 );
 const LegalModal = lazy(() =>
-  import("../components/LegalModal").then((m) => ({ default: m.LegalModal }))
+  import("../components/ui/LegalModal").then((m) => ({ default: m.LegalModal }))
 );
 const AiSchoolAdvisor = lazy(() =>
-  import("../components/AiSchoolAdvisor").then((m) => ({ default: m.AiSchoolAdvisor }))
+  import("../components/sections/AiSchoolAdvisor").then((m) => ({ default: m.AiSchoolAdvisor }))
 );
 
 export default function LandingPage() {
-  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
-  const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType>("privacy");
-  const [selectedPlanForDemo, setSelectedPlanForDemo] = useState<string | undefined>(undefined);
-  // Delay mounting the AI advisor until user has scrolled past hero
+  const {
+    isDemoModalOpen,
+    isLoginModalOpen,
+    isLegalModalOpen,
+    activeLegalDoc,
+    selectedPlanForDemo,
+    handleOpenDemo,
+    handleCloseDemo,
+    handleOpenLegal,
+    handleCloseLegal,
+    handleOpenLogin,
+    handleCloseLogin,
+  } = useLandingModals();
+
+  // Delay mounting the AI advisor until browser is idle / after initial paint
   const [showAdvisor, setShowAdvisor] = useState(false);
 
-  const handleOpenDemo = (plan?: string) => {
-    setSelectedPlanForDemo(plan);
-    setIsDemoModalOpen(true);
-  };
-
-  const handleCloseDemo = () => {
-    setIsDemoModalOpen(false);
-    setSelectedPlanForDemo(undefined);
-  };
-
-  const handleOpenLegal = (doc: LegalDocType = "privacy") => {
-    setActiveLegalDoc(doc);
-    setIsLegalModalOpen(true);
-  };
-
-  // Mount the AI advisor after idle — it is non-critical for initial render
-  React.useEffect(() => {
+  useEffect(() => {
     const id = requestIdleCallback
       ? requestIdleCallback(() => setShowAdvisor(true), { timeout: 3000 })
       : window.setTimeout(() => setShowAdvisor(true), 2000);
@@ -67,7 +60,7 @@ export default function LandingPage() {
       {/* Top Navigation */}
       <Navbar
         onOpenDemo={() => handleOpenDemo()}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onOpenLogin={handleOpenLogin}
       />
 
       {/* Main Page Flow */}
@@ -120,7 +113,7 @@ export default function LandingPage() {
         {isLoginModalOpen && (
           <LoginModal
             isOpen={isLoginModalOpen}
-            onClose={() => setIsLoginModalOpen(false)}
+            onClose={handleCloseLogin}
             onOpenDemo={() => handleOpenDemo()}
           />
         )}
@@ -129,7 +122,7 @@ export default function LandingPage() {
           <LegalModal
             isOpen={isLegalModalOpen}
             initialDoc={activeLegalDoc}
-            onClose={() => setIsLegalModalOpen(false)}
+            onClose={handleCloseLegal}
           />
         )}
       </Suspense>

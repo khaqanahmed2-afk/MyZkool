@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { X, ShieldCheck, FileText, RefreshCw, Mail, Scale, CheckCircle2 } from "lucide-react";
+import { X, Scale } from "lucide-react";
+import type { LegalDocType } from "../../types/landing";
 
-export type LegalDocType = "privacy" | "terms" | "refund" | "grievance";
+export type { LegalDocType };
 
-interface LegalModalProps {
+export interface LegalModalProps {
   isOpen: boolean;
   initialDoc?: LegalDocType;
   onClose: () => void;
@@ -56,7 +57,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-[#E2E8F0] text-[#5B6478] transition-colors"
+            className="p-2 rounded-full hover:bg-[#E2E8F0] text-[#5B6478] transition-colors cursor-pointer"
             aria-label="Close legal modal"
           >
             <X className="w-5 h-5" />
@@ -67,7 +68,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
         <div className="px-5 pt-3 bg-[#F8FAFC] border-b border-[#E6EAF3] flex gap-2 overflow-x-auto text-xs font-semibold">
           <button
             onClick={() => setActiveDoc("privacy")}
-            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap ${
+            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap cursor-pointer ${
               activeDoc === "privacy"
                 ? "bg-white text-[#2158E0] border-t border-x border-[#E6EAF3] -mb-px"
                 : "text-[#5B6478] hover:text-[#141A2E]"
@@ -77,7 +78,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
           </button>
           <button
             onClick={() => setActiveDoc("terms")}
-            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap ${
+            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap cursor-pointer ${
               activeDoc === "terms"
                 ? "bg-white text-[#2158E0] border-t border-x border-[#E6EAF3] -mb-px"
                 : "text-[#5B6478] hover:text-[#141A2E]"
@@ -87,7 +88,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
           </button>
           <button
             onClick={() => setActiveDoc("refund")}
-            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap ${
+            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap cursor-pointer ${
               activeDoc === "refund"
                 ? "bg-white text-[#2158E0] border-t border-x border-[#E6EAF3] -mb-px"
                 : "text-[#5B6478] hover:text-[#141A2E]"
@@ -97,7 +98,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
           </button>
           <button
             onClick={() => setActiveDoc("grievance")}
-            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap ${
+            className={`py-2 px-3 rounded-t-lg transition-colors whitespace-nowrap cursor-pointer ${
               activeDoc === "grievance"
                 ? "bg-white text-[#2158E0] border-t border-x border-[#E6EAF3] -mb-px"
                 : "text-[#5B6478] hover:text-[#141A2E]"
@@ -267,3 +268,5 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
     </div>
   );
 };
+
+export default LegalModal;

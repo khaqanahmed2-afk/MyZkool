@@ -1,6 +1,6 @@
 import React from "react";
 
-interface MyZkoolLogoProps {
+export interface MyZkoolLogoProps {
   size?: number | string;
   className?: string;
   showText?: boolean;
@@ -47,3 +47,5 @@ export const MyZkoolLogo: React.FC<MyZkoolLogoProps> = ({
     </div>
   );
 };
+
+export default MyZkoolLogo;

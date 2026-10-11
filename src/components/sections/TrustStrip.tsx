@@ -1,36 +1,14 @@
 import React from "react";
-import { CheckCircle2, ShieldCheck, Users, School, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { TRUST_CLAIMS } from "../../data/landingData";
 
 export const TrustStrip: React.FC = () => {
-  const claims = [
-    {
-      title: "One platform",
-      detail: "website + ERP + WhatsApp",
-      icon: School,
-    },
-    {
-      title: "No IT team required",
-      detail: "zero technical burden",
-      icon: Users,
-    },
-    {
-      title: "Setup with our team",
-      detail: "guided, not a manual",
-      icon: ShieldCheck,
-    },
-    {
-      title: "Built for Indian school workflows",
-      detail: "CBSE, ICSE & State Boards",
-      icon: CheckCircle2,
-    },
-  ];
-
   return (
     <section className="py-8 bg-white border-b border-[#E6EAF3]" id="trust-strip">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Qualitative Claims Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {claims.map((claim, idx) => {
+          {TRUST_CLAIMS.map((claim, idx) => {
             const Icon = claim.icon;
             return (
               <div
@@ -77,3 +55,5 @@ export const TrustStrip: React.FC = () => {
     </section>
   );
 };
+
+export default TrustStrip;

@@ -24,7 +24,6 @@ import {
   getTransportSettings,
   getRouteById,
   getVehicles,
-  getTransportStaff,
   getVehicleDocuments,
 } from "./transportCoreService";
 import type {
@@ -50,7 +49,6 @@ const AUDIT_KEY = (s: string) => `myzkool_audit_logs_${s}`;
 const OUTBOX_KEY = (s: string) => `myzkool_fee_outbox_${s}`;
 const STUDENTS_KEY = (s: string) => `myzkool_students_${s}`;
 const CLASSES_KEY = (s: string) => `myzkool_classes_${s}`;
-const SECTIONS_KEY = (s: string) => `myzkool_sections_${s}`;
 const ZONES_KEY = (s: string) => `myzkool_transport_fee_zones_${s}`;
 
 function nowISO() {
@@ -138,7 +136,6 @@ export async function calculateStopMonthlyFee(
   stopId: string,
   serviceType: ServiceType
 ): Promise<number> {
-  const settings = await getTransportSettings(schoolId);
   const zones = lsGet<any>(ZONES_KEY(schoolId));
 
   // Find stop

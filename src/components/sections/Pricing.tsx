@@ -1,30 +1,13 @@
 import React, { useState } from "react";
-import { Check, X, ArrowRight, ShieldCheck, HelpCircle } from "lucide-react";
-import { ComparisonRow } from "../types/landing";
+import { Check, X } from "lucide-react";
+import { PRICING_COMPARISON_ROWS } from "../../data/landingData";
 
-interface PricingProps {
+export interface PricingProps {
   onOpenDemo: (selectedPlan?: string) => void;
 }
 
 export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "6month" | "12month">("monthly");
-
-  const comparisonData: ComparisonRow[] = [
-    { feature: "Website Builder", basic: true, pro: true, custom: true },
-    { feature: "Admissions Pipeline", basic: true, pro: true, custom: true },
-    { feature: "Fees & Payments", basic: true, pro: true, custom: true },
-    { feature: "Attendance & Roll Call", basic: true, pro: true, custom: true },
-    { feature: "WhatsApp Communication", basic: true, pro: true, custom: true },
-    { feature: "Exams & Report Cards", basic: false, pro: true, custom: true },
-    { feature: "Timetable & Schedule", basic: false, pro: true, custom: true },
-    { feature: "Staff & Student Records", basic: false, pro: true, custom: true },
-    { feature: "Transport Tracking", basic: false, pro: true, custom: true },
-    { feature: "Priority Support", basic: false, pro: true, custom: true },
-    { feature: "Multi Branch Management", basic: false, pro: false, custom: true },
-    { feature: "Dedicated Onboarding", basic: false, pro: false, custom: true },
-    { feature: "Custom Reporting", basic: false, pro: false, custom: true },
-    { feature: "Student capacity", basic: "Up to 800", pro: "Up to 1,800", custom: "1,800+" },
-  ];
 
   return (
     <section className="py-20 bg-white border-b border-[#E6EAF3]" id="pricing">
@@ -46,7 +29,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
           <div className="mt-8 inline-flex items-center p-1.5 bg-[#F1F5F9] rounded-full border border-[#E6EAF3] max-w-md w-full justify-between">
             <button
               onClick={() => setBillingCycle("monthly")}
-              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all ${
+              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer ${
                 billingCycle === "monthly"
                   ? "bg-white text-[#141A2E] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -56,7 +39,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
             </button>
             <button
               onClick={() => setBillingCycle("6month")}
-              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-1 ${
+              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 billingCycle === "6month"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -67,7 +50,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
             </button>
             <button
               onClick={() => setBillingCycle("12month")}
-              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-1 ${
+              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 billingCycle === "12month"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -344,7 +327,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E6EAF3]">
-                {comparisonData.map((row, idx) => (
+                {PRICING_COMPARISON_ROWS.map((row, idx) => (
                   <tr 
                     key={idx} 
                     className={`hover:bg-[#F8FAFC] transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-[#FAFBFD]"}`}
@@ -414,3 +397,5 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
     </section>
   );
 };
+
+export default Pricing;

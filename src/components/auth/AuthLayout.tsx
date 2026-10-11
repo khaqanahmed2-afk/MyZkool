@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { MyZkoolLogo } from "../MyZkoolLogo";
+import { MyZkoolLogo } from "../common/MyZkoolLogo";
 import { ShieldCheck, CheckCircle2, ArrowLeft, Sparkles } from "lucide-react";
 
 interface AuthLayoutProps {

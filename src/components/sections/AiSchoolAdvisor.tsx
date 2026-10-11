@@ -5,18 +5,14 @@ import {
   Volume2, 
   VolumeX, 
   UploadCloud, 
-  Image as ImageIcon, 
   Send, 
   X, 
-  Minimize2, 
-  Maximize2, 
   Bot, 
-  User, 
   Loader2,
   FileCheck,
   CheckCircle2
 } from "lucide-react";
-import { ChatMessage } from "../types/landing";
+import type { ChatMessage } from "../../types/landing";
 
 export const AiSchoolAdvisor: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -93,7 +89,7 @@ export const AiSchoolAdvisor: React.FC = () => {
       const data = await res.json();
       const reply = data.text || data.fallbackText || "MyZkool makes school management simple with direct WhatsApp notifications for attendance and fee receipts.";
       setMessages([...newHistory, { role: "model", content: reply }]);
-    } catch (err) {
+    } catch {
       setMessages([
         ...newHistory,
         {
@@ -126,7 +122,6 @@ export const AiSchoolAdvisor: React.FC = () => {
       });
       const data = await res.json();
       if (data.audioBase64) {
-        // Play audio from base64 WAV/PCM
         const audioSrc = `data:audio/mp3;base64,${data.audioBase64}`;
         const audio = new Audio(audioSrc);
         audioRef.current = audio;
@@ -178,7 +173,7 @@ export const AiSchoolAdvisor: React.FC = () => {
 
       const data = await res.json();
       setAnalysisResult(data.analysis || "Document processed successfully. Ready for MyZkool ERP automated mapping.");
-    } catch (err) {
+    } catch {
       setAnalysisResult("Document analysis complete: MyZkool can automatically extract your student register headers, fee heads, and class schedules for 1-click cloud sync.");
     } finally {
       setIsAnalyzingImage(false);
@@ -233,7 +228,7 @@ export const AiSchoolAdvisor: React.FC = () => {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-300 hover:text-white"
+                className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-300 hover:text-white cursor-pointer"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
@@ -245,7 +240,7 @@ export const AiSchoolAdvisor: React.FC = () => {
           <div className="px-3 pt-2 bg-[#F8FAFC] border-b border-[#E6EAF3] flex gap-2">
             <button
               onClick={() => setActiveTab("chat")}
-              className={`flex-1 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === "chat"
                   ? "bg-white text-[#2158E0] border-t border-x border-[#E6EAF3] -mb-px"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -257,7 +252,7 @@ export const AiSchoolAdvisor: React.FC = () => {
 
             <button
               onClick={() => setActiveTab("document")}
-              className={`flex-1 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === "document"
                   ? "bg-white text-[#2158E0] border-t border-x border-[#E6EAF3] -mb-px"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -325,19 +320,19 @@ export const AiSchoolAdvisor: React.FC = () => {
               <div className="p-2 bg-white border-t border-[#E6EAF3] overflow-x-auto flex gap-1.5 scrollbar-none">
                 <button
                   onClick={() => handleSendMessage("How does WhatsApp fee collection work?")}
-                  className="px-2.5 py-1 rounded-full bg-[#F1F5F9] hover:bg-blue-50 text-[10px] text-[#141A2E] font-medium whitespace-nowrap transition-colors"
+                  className="px-2.5 py-1 rounded-full bg-[#F1F5F9] hover:bg-blue-50 text-[10px] text-[#141A2E] font-medium whitespace-nowrap transition-colors cursor-pointer"
                 >
                   WhatsApp Fees?
                 </button>
                 <button
                   onClick={() => handleSendMessage("Can you migrate our school's student Excel sheet?")}
-                  className="px-2.5 py-1 rounded-full bg-[#F1F5F9] hover:bg-blue-50 text-[10px] text-[#141A2E] font-medium whitespace-nowrap transition-colors"
+                  className="px-2.5 py-1 rounded-full bg-[#F1F5F9] hover:bg-blue-50 text-[10px] text-[#141A2E] font-medium whitespace-nowrap transition-colors cursor-pointer"
                 >
                   Excel Migration?
                 </button>
                 <button
                   onClick={() => handleSendMessage("What features are in the Basic vs Pro plan?")}
-                  className="px-2.5 py-1 rounded-full bg-[#F1F5F9] hover:bg-blue-50 text-[10px] text-[#141A2E] font-medium whitespace-nowrap transition-colors"
+                  className="px-2.5 py-1 rounded-full bg-[#F1F5F9] hover:bg-blue-50 text-[10px] text-[#141A2E] font-medium whitespace-nowrap transition-colors cursor-pointer"
                 >
                   Basic vs Pro?
                 </button>
@@ -420,7 +415,7 @@ export const AiSchoolAdvisor: React.FC = () => {
                           setUploadedImage(null);
                           setAnalysisResult(null);
                         }}
-                        className="absolute top-2 right-2 p-1 bg-black/60 rounded-full text-white hover:bg-black"
+                        className="absolute top-2 right-2 p-1 bg-black/60 rounded-full text-white hover:bg-black cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -449,7 +444,7 @@ export const AiSchoolAdvisor: React.FC = () => {
               <div className="pt-3 border-t border-[#E6EAF3] text-center">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-[#2158E0] font-semibold hover:underline"
+                  className="text-xs text-[#2158E0] font-semibold hover:underline cursor-pointer"
                 >
                   {uploadedImage ? "Scan Another Document" : "Choose Sample Image"}
                 </button>
@@ -461,3 +456,5 @@ export const AiSchoolAdvisor: React.FC = () => {
     </div>
   );
 };
+
+export default AiSchoolAdvisor;
