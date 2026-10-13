@@ -160,17 +160,17 @@ async function getCurrentSchoolId(): Promise<string | null> {
       return null;
     }
   }
-  
+
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-    
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("school_id")
       .eq("auth_id", user.id)
       .maybeSingle();
-    
+
     return profile?.school_id || null;
   } catch {
     return null;
@@ -213,17 +213,31 @@ async function hasPermission(permission: StudentPermissionKey): Promise<boolean>
       return true;
     }
   }
-  
+
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
-    
+    if (!user) {
+      try {
+        const storedRole = localStorage.getItem("myzkool_user_role");
+        if (storedRole) {
+          const rolePermissions = getPermissionsForRole(storedRole);
+          return rolePermissions.includes(permission);
+        }
+        const storedPerms = localStorage.getItem("myzkool_user_permissions");
+        if (storedPerms) {
+          const permissions = JSON.parse(storedPerms);
+          return permissions.includes(permission);
+        }
+      } catch { }
+      return permission === "students.read";
+    }
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("role, school_id")
       .eq("auth_id", user.id)
       .maybeSingle();
-    
+
     if (!profile) {
       try {
         const storedRole = localStorage.getItem("myzkool_user_role") || user.user_metadata?.role;
@@ -231,10 +245,10 @@ async function hasPermission(permission: StudentPermissionKey): Promise<boolean>
           const rolePermissions = getPermissionsForRole(storedRole);
           return rolePermissions.includes(permission);
         }
-      } catch {}
+      } catch { }
       return permission === "students.read";
     }
-    
+
     const rolePermissions = getPermissionsForRole(profile.role);
     return rolePermissions.includes(permission);
   } catch {
@@ -256,7 +270,7 @@ export async function getNextCounter(schoolId: string, key: string): Promise<{ v
         p_school_id: schoolId,
         p_key: key,
       });
-      
+
       if (!error && data !== null) {
         return { value: Number(data) };
       }
@@ -518,18 +532,28 @@ export async function listStudents(
 
   if (isSupabaseConfigured) {
     try {
+      const isEnrFiltered = Boolean(class_id || section_id || (userRole === "teacher" && teacherSectionIds));
+      const enrollJoin = isEnrFiltered
+        ? `student_enrollments!student_enrollments_student_id_fkey!inner (
+            class_id,
+            section_id,
+            class:classes!student_enrollments_class_id_fkey(name),
+            section:sections(name)
+          )`
+        : `student_enrollments!student_enrollments_student_id_fkey (
+            class_id,
+            section_id,
+            class:classes!student_enrollments_class_id_fkey(name),
+            section:sections(name)
+          )`;
+
       let query = supabase
         .from("students")
         .select(`
           *,
-          student_enrollments (
-            class_id,
-            section_id,
-            class:classes(name),
-            section:sections(name)
-          ),
-          student_parents (
-            parent:parents(full_name, phone),
+          ${enrollJoin},
+          student_parents!student_parents_student_id_fkey (
+            parent:parents!student_parents_parent_id_fkey(full_name, phone),
             is_primary_contact
           )
         `)
@@ -583,7 +607,7 @@ export async function listStudents(
       if (!error && data) {
         const hasMore = data.length > limit;
         const items = hasMore ? data.slice(0, limit) : data;
-        
+
         const mappedItems: StudentListItem[] = items.map((item: any) => ({
           id: item.id,
           admission_no: item.admission_no,
@@ -608,18 +632,23 @@ export async function listStudents(
         // Fetch real total count via a separate COUNT query (not capped by page limit)
         let totalCount = items.length;
         try {
+          const countSelect = isEnrFiltered
+            ? "id, student_enrollments!student_enrollments_student_id_fkey!inner(class_id, section_id)"
+            : "id";
           let countQuery = supabase
             .from("students")
-            .select("id", { count: "exact", head: true })
+            .select(countSelect, { count: "exact", head: true })
             .eq("school_id", schoolId)
             .is("deleted_at", null);
           if (status) countQuery = countQuery.eq("status", status);
           if (gender) countQuery = countQuery.eq("gender", gender);
           if (category) countQuery = countQuery.eq("category", category);
           if (is_rte !== undefined) countQuery = countQuery.eq("is_rte", is_rte);
+          if (class_id) countQuery = countQuery.eq("student_enrollments.class_id", class_id);
+          if (section_id) countQuery = countQuery.eq("student_enrollments.section_id", section_id);
           if (search) countQuery = (countQuery as any).or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,admission_no.ilike.%${search}%,sr_no.ilike.%${search}%`);
           const { count } = await countQuery;
-          if (count !== null) totalCount = count;
+          if (count !== null && count !== undefined) totalCount = count;
         } catch {
           // Non-fatal: fall back to page-size estimate
         }
@@ -632,8 +661,28 @@ export async function listStudents(
           },
         };
       }
-      return { error: error?.message || "Failed to list students" };
+
+      console.error("Supabase listStudents query error:", error);
+      // Fallback to local storage if available for resilient operation
+      try {
+        const cacheKey = getStudentsCacheKey(schoolId);
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const cachedStudents = JSON.parse(cached);
+          if (Array.isArray(cachedStudents) && cachedStudents.length > 0) {
+            console.warn("Notice: falling back to localStorage cache after Supabase error:", error?.message);
+            // Will fall through to local storage handling below
+          } else {
+            return { error: error?.message || "Failed to list students" };
+          }
+        } else {
+          return { error: error?.message || "Failed to list students" };
+        }
+      } catch {
+        return { error: error?.message || "Failed to list students" };
+      }
     } catch (err) {
+      console.error("Supabase listStudents exception:", err);
       return { error: String(err) };
     }
   }
@@ -643,7 +692,7 @@ export async function listStudents(
     const cacheKey = getStudentsCacheKey(schoolId);
     const cached = localStorage.getItem(cacheKey);
     let students: Student[] = cached ? JSON.parse(cached) : [];
-    
+
     // Role scoping (Spec A6 Rule 11)
     if (userRole === "teacher") {
       const enrollmentsKey = getStudentEnrollmentsCacheKey(schoolId);
@@ -668,7 +717,7 @@ export async function listStudents(
       const pCached = localStorage.getItem(pKey);
       const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
       const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
-      
+
       const phoneMatchingStudentIds = new Set<string>();
       for (const p of parents) {
         if (p.phone && p.phone.includes(searchLower)) {
@@ -676,7 +725,7 @@ export async function listStudents(
         }
       }
 
-      students = students.filter(s => 
+      students = students.filter(s =>
         s.first_name.toLowerCase().includes(searchLower) ||
         s.last_name.toLowerCase().includes(searchLower) ||
         s.admission_no.toLowerCase().includes(searchLower) ||
@@ -1098,13 +1147,13 @@ async function getStudentParents(schoolId: string, studentId: string): Promise<{
         .from("student_parents")
         .select(`
           *,
-          parent:parents(*)
+          parent:parents!student_parents_parent_id_fkey(*)
         `)
         .eq("school_id", schoolId)
         .eq("student_id", studentId);
-      
+
       if (!error && data) {
-        return { 
+        return {
           parents: data.map((sp: any) => ({
             ...sp.parent,
             relation: sp.relation,
@@ -1128,7 +1177,7 @@ async function getStudentParents(schoolId: string, studentId: string): Promise<{
     const parentCacheKey = getParentsCacheKey(schoolId);
     const parentCached = localStorage.getItem(parentCacheKey);
     const parents: Parent[] = parentCached ? JSON.parse(parentCached) : [];
-    
+
     const studentLinks = links.filter(l => l.student_id === studentId);
     const result = studentLinks.map(l => {
       const parent = parents.find(p => p.id === l.parent_id);
@@ -1381,15 +1430,15 @@ export async function getStudentSiblings(schoolId: string, studentId: string): P
     const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
     const myParentIds = studentParents.filter(sp => sp.student_id === studentId).map(sp => sp.parent_id);
     if (myParentIds.length === 0) return { siblings: [] };
-    
+
     const siblingStudentIds = studentParents
       .filter(sp => sp.student_id !== studentId && myParentIds.includes(sp.parent_id))
       .map(sp => sp.student_id);
-      
+
     const studentsKey = getStudentsCacheKey(schoolId);
     const studentsCached = localStorage.getItem(studentsKey);
     const students: Student[] = studentsCached ? JSON.parse(studentsCached) : [];
-    
+
     const siblings: StudentSibling[] = students
       .filter(s => siblingStudentIds.includes(s.id) && !s.deleted_at)
       .map(s => ({
@@ -1473,7 +1522,7 @@ export async function logAudit(input: Omit<AuditLog, "id" | "created_at">): Prom
       const { error } = await supabase
         .from("audit_logs")
         .insert(auditLog);
-      
+
       if (!error) {
         return { success: true };
       }
@@ -1665,7 +1714,7 @@ export async function deleteStudentDraft(
         .delete()
         .eq("school_id", schoolId)
         .eq("created_by", userId);
-      
+
       return { success: !error, error: error?.message };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -1732,7 +1781,7 @@ export async function revealStudentAadhaar(
         encryptedPayload = data.aadhaar_enc;
         last4 = data.aadhaar_last4;
       }
-    } catch {}
+    } catch { }
   } else {
     try {
       const cacheKey = getStudentSensitiveCacheKey(schoolId);
@@ -1743,7 +1792,7 @@ export async function revealStudentAadhaar(
         encryptedPayload = rec.aadhaar_enc;
         last4 = rec.aadhaar_last4 || undefined;
       }
-    } catch {}
+    } catch { }
   }
 
   // Fallback to student record if not found in student_sensitive
@@ -1799,7 +1848,7 @@ export async function getDocumentTypes(schoolId: string): Promise<{ types?: Docu
         .select("*")
         .eq("school_id", schoolId)
         .order("display_order");
-      
+
       return { types: data as DocumentType[] || [], error: error?.message };
     } catch (err) {
       return { error: String(err) };
@@ -2134,14 +2183,14 @@ export async function deleteStudentDocument(
         .eq("school_id", schoolId)
         .single();
       existingDoc = data as StudentDocument;
-    } catch {}
+    } catch { }
   } else {
     try {
       const cacheKey = getStudentDocumentsCacheKey(schoolId);
       const cached = localStorage.getItem(cacheKey);
       const docs: StudentDocument[] = cached ? JSON.parse(cached) : [];
       existingDoc = docs.find(d => d.id === documentId) || null;
-    } catch {}
+    } catch { }
   }
 
   if (!existingDoc) {
@@ -2347,14 +2396,14 @@ export async function lookupParentByPhone(
         .eq("phone", cleanPhone)
         .maybeSingle();
       if (data) foundParent = data as Parent;
-    } catch {}
+    } catch { }
   } else {
     try {
       const cacheKey = getParentsCacheKey(schoolId);
       const cached = localStorage.getItem(cacheKey);
       const parents: Parent[] = cached ? JSON.parse(cached) : [];
       foundParent = parents.find(p => p.phone.replace(/\D/g, "").slice(-10) === cleanPhone);
-    } catch {}
+    } catch { }
   }
 
   if (!foundParent) {
@@ -2368,7 +2417,7 @@ export async function lookupParentByPhone(
     const cachedSp = typeof localStorage !== "undefined" ? localStorage.getItem(spKey) : null;
     const links: StudentParent[] = cachedSp ? JSON.parse(cachedSp) : [];
     const parentLinks = links.filter(l => l.parent_id === foundParent!.id);
-    
+
     const listRes2 = await listStudents(schoolId, { limit: 1000 });
     const allStudents = listRes2.response?.data || [];
     for (const link of parentLinks) {
@@ -2382,7 +2431,7 @@ export async function lookupParentByPhone(
         });
       }
     }
-  } catch {}
+  } catch { }
 
   const finalResult: ParentLookupResult = {
     found: true,
@@ -2632,7 +2681,7 @@ export async function admitStudentTransactional(
           counters[cIdx].next_value -= 1;
           localStorage.setItem(cKey, JSON.stringify(counters));
         }
-      } catch {}
+      } catch { }
     });
 
     if (options?.forceFailAtStep === "counter") {

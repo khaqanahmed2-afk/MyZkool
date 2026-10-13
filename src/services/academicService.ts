@@ -2,11 +2,11 @@
  * Academic Setup Service Layer
  *
  * Handles:
- * - Academic year validation (structural range, date ordering, duration)
- * - Tenant-scoped persistence (scoped to school_id)
+ * - Deterministic, timezone-safe academic year validation (calendar rules, leap years, duration)
+ * - Tenant-scoped persistence (strictly isolated by school_id)
  * - Atomic current-year management (single active year rule)
  * - Onboarding step progression (Step 2 -> Step 3)
- * - Resume behavior (loading saved year, preventing duplicates on re-entry)
+ * - Resume behavior (loading saved year, updating in-place, duplicate prevention)
  * - Fallback local storage for offline / preview resilience
  */
 
@@ -21,78 +21,139 @@ import type {
 const LOCAL_STORAGE_KEY_PREFIX = "myzkool_academic_years_";
 
 /**
- * Validates the academic year form input values
+ * Validates a YYYY-MM-DD calendar date string without timezone shifts.
+ * Validates actual calendar month lengths (28-31 days) and leap years.
+ */
+export function isValidCalendarDate(dateStr: string): boolean {
+  if (!dateStr || typeof dateStr !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!match) return false;
+
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  if (year < 1990 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+
+  // Month day count (handling Feb leap years)
+  // Day 0 of month+1 gives last day of month in local time
+  const maxDays = new Date(year, month, 0).getDate();
+  return day >= 1 && day <= maxDays;
+}
+
+/**
+ * Extracts year, month, and day components from YYYY-MM-DD string.
+ */
+export function parseDateParts(dateStr: string): {
+  year: number;
+  month: number;
+  day: number;
+} | null {
+  if (!isValidCalendarDate(dateStr)) return null;
+  const [y, m, d] = dateStr.trim().split("-").map((v) => parseInt(v, 10));
+  return { year: y, month: m, day: d };
+}
+
+/**
+ * Generates sensible default display label for start and end years.
+ * e.g. 2026, 2027 -> "2026–2027"
+ * e.g. 2026, 2026 -> "2026"
+ */
+export function formatDefaultAcademicYearLabel(
+  startYear: number,
+  endYear: number
+): string {
+  if (!startYear || isNaN(startYear)) return "";
+  if (!endYear || isNaN(endYear)) return String(startYear);
+  return startYear === endYear ? `${startYear}` : `${startYear}–${endYear}`;
+}
+
+/**
+ * Validates the academic year form input values with deterministic business rules.
  */
 export function validateAcademicYearInput(
   input: AcademicYearInput
 ): AcademicYearValidationResult {
   const errors: AcademicYearValidationErrors = {};
 
-  // 1. Start Year & End Year validation
+  // 1. Start Year Validation
   if (!input.start_year || isNaN(input.start_year)) {
     errors.start_year = "Please enter a valid start year.";
   } else if (input.start_year < 1990 || input.start_year > 2100) {
     errors.start_year = "Start year must be between 1990 and 2100.";
   }
 
+  // 2. End Year Validation
   if (!input.end_year || isNaN(input.end_year)) {
     errors.end_year = "Please enter a valid end year.";
   } else if (input.end_year < 1990 || input.end_year > 2100) {
     errors.end_year = "End year must be between 1990 and 2100.";
   }
 
+  // 3. Year Order Check
   if (
     input.start_year &&
     input.end_year &&
     !isNaN(input.start_year) &&
     !isNaN(input.end_year)
   ) {
-    if (input.end_year <= input.start_year) {
-      errors.end_year = `End year (${input.end_year}) must be greater than start year (${input.start_year}).`;
+    if (input.end_year < input.start_year) {
+      errors.end_year = `End year (${input.end_year}) cannot be earlier than start year (${input.start_year}).`;
     }
   }
 
-  // 2. Label validation
+  // 4. Label Validation
   if (!input.label || !input.label.trim()) {
-    errors.label = "Please enter a label for this academic year.";
+    errors.label = "Please enter a display label for this academic year.";
+  } else if (input.label.trim().length > 60) {
+    errors.label = "Academic year label cannot exceed 60 characters.";
   }
 
-  // 3. Start Date validation
-  if (!input.start_date) {
+  // 5. Start Date Validation
+  if (!input.start_date || !input.start_date.trim()) {
     errors.start_date = "Please select the academic year start date.";
-  } else {
-    const sDate = new Date(input.start_date);
-    if (isNaN(sDate.getTime())) {
-      errors.start_date = "Start date is not a valid calendar date.";
-    }
+  } else if (!isValidCalendarDate(input.start_date)) {
+    errors.start_date = "Start date must be a valid calendar date (YYYY-MM-DD).";
   }
 
-  // 4. End Date validation
-  if (!input.end_date) {
+  // 6. End Date Validation
+  if (!input.end_date || !input.end_date.trim()) {
     errors.end_date = "Please select the academic year end date.";
-  } else {
-    const eDate = new Date(input.end_date);
-    if (isNaN(eDate.getTime())) {
-      errors.end_date = "End date is not a valid calendar date.";
-    }
+  } else if (!isValidCalendarDate(input.end_date)) {
+    errors.end_date = "End date must be a valid calendar date (YYYY-MM-DD).";
   }
 
-  // 5. Date ordering & duration comparison
-  if (input.start_date && input.end_date) {
-    const sTime = new Date(input.start_date).getTime();
-    const eTime = new Date(input.end_date).getTime();
+  // 7. Date Ordering, Duration, and Year Consistency
+  const hasValidStartDate = isValidCalendarDate(input.start_date);
+  const hasValidEndDate = isValidCalendarDate(input.end_date);
 
-    if (!isNaN(sTime) && !isNaN(eTime)) {
-      if (eTime <= sTime) {
-        errors.end_date =
-          "End date must be after the start date. End date cannot be on or before start date.";
-      } else {
-        const diffDays = (eTime - sTime) / (1000 * 60 * 60 * 24);
-        if (diffDays < 30) {
-          errors.end_date =
-            "Academic year duration must span at least 30 days.";
-        }
+  if (hasValidStartDate && hasValidEndDate) {
+    const sParts = parseDateParts(input.start_date)!;
+    const eParts = parseDateParts(input.end_date)!;
+
+    // Lexical comparison for ISO YYYY-MM-DD is chronological and timezone-immune
+    if (input.end_date <= input.start_date) {
+      errors.end_date =
+        "End date must be after the start date. End date cannot be on or before start date.";
+    } else {
+      // Calculate duration in days via UTC timestamps to avoid daylight savings / timezone shift
+      const sUtc = Date.UTC(sParts.year, sParts.month - 1, sParts.day);
+      const eUtc = Date.UTC(eParts.year, eParts.month - 1, eParts.day);
+      const diffDays = Math.round((eUtc - sUtc) / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 30) {
+        errors.end_date = "Academic year duration must span at least 30 days.";
       }
+    }
+
+    // Consistency between dates and year fields
+    if (input.start_year && !isNaN(input.start_year) && input.start_year !== sParts.year) {
+      errors.start_year = `Start year (${input.start_year}) must match the start date's calendar year (${sParts.year}).`;
+    }
+
+    if (input.end_year && !isNaN(input.end_year) && input.end_year !== eParts.year) {
+      errors.end_year = `End year (${input.end_year}) must match the end date's calendar year (${eParts.year}).`;
     }
   }
 
@@ -103,14 +164,15 @@ export function validateAcademicYearInput(
 }
 
 /**
- * Computes default academic year based on today's calendar date
+ * Computes default academic year based on reference date (defaults to current calendar date).
  */
 export function getDefaultAcademicYear(referenceDate = new Date()): AcademicYearInput {
   const currentYear = referenceDate.getFullYear();
   const currentMonth = referenceDate.getMonth() + 1; // 1-12
 
-  // Suggest default cycle: if current month is April or later, default to currentYear -> currentYear + 1
-  // Otherwise if Jan-Mar, default to previousYear -> currentYear
+  // Suggest default Indian cycle (April–March):
+  // If current month is April (4) or later, session is currentYear -> currentYear + 1
+  // If Jan–Mar, session is (currentYear - 1) -> currentYear
   let startYear = currentYear;
   let endYear = currentYear + 1;
 
@@ -119,14 +181,13 @@ export function getDefaultAcademicYear(referenceDate = new Date()): AcademicYear
     endYear = currentYear;
   }
 
-  // Standard initial suggestion (customizable by user)
   const startDate = `${startYear}-04-01`;
   const endDate = `${endYear}-03-31`;
 
   return {
     start_year: startYear,
     end_year: endYear,
-    label: `${startYear}–${endYear}`,
+    label: formatDefaultAcademicYearLabel(startYear, endYear),
     start_date: startDate,
     end_date: endDate,
     is_current: true,
@@ -134,7 +195,7 @@ export function getDefaultAcademicYear(referenceDate = new Date()): AcademicYear
 }
 
 /**
- * Retrieves all academic years belonging to a school
+ * Retrieves all academic years belonging to a school.
  */
 export async function getAcademicYearsForSchool(
   schoolId: string
@@ -156,11 +217,11 @@ export async function getAcademicYearsForSchool(
         const mapped: AcademicYear[] = data.map((item) => ({
           id: item.id,
           school_id: item.school_id,
-          start_year: item.start_year,
-          end_year: item.end_year,
-          label: item.label,
-          start_date: item.start_date,
-          end_date: item.end_date,
+          start_year: Number(item.start_year),
+          end_year: Number(item.end_year),
+          label: String(item.label),
+          start_date: String(item.start_date),
+          end_date: String(item.end_date),
           is_current: Boolean(item.is_current),
           created_at: item.created_at,
           updated_at: item.updated_at,
@@ -187,7 +248,7 @@ export async function getAcademicYearsForSchool(
 }
 
 /**
- * Retrieves the current active academic year for a school
+ * Retrieves the current active academic year for a school.
  */
 export async function getCurrentAcademicYear(
   schoolId: string
@@ -211,7 +272,7 @@ export interface SaveAcademicYearParams {
 
 /**
  * Saves or updates an academic year, enforces single current year rule,
- * and advances onboarding step from 2 to 3.
+ * updates profiles and schools onboarding steps, and handles conflict targets.
  */
 export async function saveAcademicSetup({
   schoolId,
@@ -224,7 +285,7 @@ export async function saveAcademicSetup({
   error?: string;
 }> {
   if (!userId) {
-    return { success: false, error: "Authentication required." };
+    return { success: false, error: "Authentication session expired. Please log in again." };
   }
 
   if (!schoolId) {
@@ -237,59 +298,84 @@ export async function saveAcademicSetup({
   // 1. Validation
   const validation = validateAcademicYearInput(input);
   if (!validation.isValid) {
-    const firstError = Object.values(validation.errors)[0] || "Invalid academic year configuration.";
+    const firstError =
+      Object.values(validation.errors)[0] || "Invalid academic year configuration.";
     return { success: false, error: firstError };
   }
 
-  const academicYearId = existingAcademicYearId || crypto.randomUUID();
   const timestamp = new Date().toISOString();
-
-  const record: AcademicYear = {
-    id: academicYearId,
-    school_id: schoolId,
-    start_year: Number(input.start_year),
-    end_year: Number(input.end_year),
-    label: input.label.trim(),
-    start_date: input.start_date,
-    end_date: input.end_date,
-    is_current: Boolean(input.is_current),
-    created_at: timestamp,
-    updated_at: timestamp,
-  };
 
   // 2. Persist to Supabase
   if (isSupabaseConfigured) {
     try {
-      // If setting this academic year as current, reset other academic years for this school
-      if (record.is_current) {
+      // Determine target academic year ID (resume existing, or check matching label to prevent unique constraint conflict)
+      let resolvedAcademicYearId = existingAcademicYearId || null;
+
+      if (!resolvedAcademicYearId) {
+        const { data: existingSameLabel } = await supabase
+          .from("academic_years")
+          .select("id")
+          .eq("school_id", schoolId)
+          .ilike("label", input.label.trim())
+          .maybeSingle();
+
+        if (existingSameLabel?.id) {
+          resolvedAcademicYearId = existingSameLabel.id;
+        }
+      }
+
+      const academicYearId = resolvedAcademicYearId || crypto.randomUUID();
+
+      // If marking as current, unset other academic years for this school first to prevent unique index collisions
+      if (input.is_current) {
         try {
           await supabase
             .from("academic_years")
             .update({ is_current: false })
             .eq("school_id", schoolId)
-            .neq("id", record.id);
-        } catch {
-          // Handled or trigger will handle
+            .neq("id", academicYearId);
+        } catch (resetErr) {
+          console.warn("Could not unset previous current academic years:", resetErr);
         }
       }
 
       // Upsert the academic year record
-      const { error: ayError } = await supabase
+      const recordPayload = {
+        id: academicYearId,
+        school_id: schoolId,
+        start_year: Number(input.start_year),
+        end_year: Number(input.end_year),
+        label: input.label.trim(),
+        start_date: input.start_date,
+        end_date: input.end_date,
+        is_current: Boolean(input.is_current),
+        updated_at: timestamp,
+      };
+
+      const { data: savedAY, error: ayError } = await supabase
         .from("academic_years")
-        .upsert({
-          id: record.id,
-          school_id: record.school_id,
-          start_year: record.start_year,
-          end_year: record.end_year,
-          label: record.label,
-          start_date: record.start_date,
-          end_date: record.end_date,
-          is_current: record.is_current,
-          updated_at: timestamp,
-        });
+        .upsert(recordPayload, { onConflict: "id" })
+        .select()
+        .single();
 
       if (ayError) {
-        console.warn("Supabase academic_years upsert error:", ayError.message);
+        console.error("Supabase academic_years upsert error:", ayError);
+        if (ayError.code === "23505") {
+          return {
+            success: false,
+            error: `An academic year with the label "${input.label.trim()}" already exists for this school.`,
+          };
+        }
+        if (ayError.code === "23514") {
+          return {
+            success: false,
+            error: "The academic year dates or year range violated database calendar constraints.",
+          };
+        }
+        return {
+          success: false,
+          error: ayError.message || "Failed to save academic setup to database.",
+        };
       }
 
       // Update school onboarding step (advance to 3 if currently < 3)
@@ -310,45 +396,98 @@ export async function saveAcademicSetup({
             updated_at: timestamp,
           })
           .eq("id", schoolId);
-      } catch {
-        // Fallback
+      } catch (schoolErr) {
+        console.warn("Could not advance school onboarding_step:", schoolErr);
       }
 
-      // Update profile onboarding step
+      // Update profiles: ensure school_id is bound and advance step
       try {
         await supabase
           .from("profiles")
           .update({
+            school_id: schoolId,
             current_onboarding_step: "/onboarding/classes",
             updated_at: timestamp,
           })
           .eq("auth_id", userId);
-      } catch {
-        // Fallback
+      } catch (profileErr) {
+        console.warn("Could not update user profile onboarding step:", profileErr);
       }
 
-      // Update user auth metadata
+      // Update auth user metadata
       try {
         await supabase.auth.updateUser({
           data: {
+            school_id: schoolId,
             onboarding_step: 3,
             current_onboarding_step: "/onboarding/classes",
           },
         });
-      } catch {
-        // Fallback
+      } catch (authErr) {
+        console.warn("Could not update auth user metadata:", authErr);
       }
-    } catch (err) {
-      console.warn("Database save exception:", err);
+
+      const verifiedRecord: AcademicYear = {
+        id: savedAY?.id || academicYearId,
+        school_id: schoolId,
+        start_year: Number(input.start_year),
+        end_year: Number(input.end_year),
+        label: input.label.trim(),
+        start_date: input.start_date,
+        end_date: input.end_date,
+        is_current: Boolean(input.is_current),
+        created_at: savedAY?.created_at || timestamp,
+        updated_at: timestamp,
+      };
+
+      // Also update localStorage cache for offline/session resilience
+      updateLocalCache(schoolId, userId, verifiedRecord);
+
+      return {
+        success: true,
+        academicYear: verifiedRecord,
+      };
+    } catch (err: any) {
+      console.error("Database save exception:", err);
+      return {
+        success: false,
+        error: err?.message || "An unexpected database error occurred while saving.",
+      };
     }
   }
 
-  // 3. Update localStorage fallback cache
+  // 3. Fallback for pure offline / local-storage testing
+  const fallbackId = existingAcademicYearId || crypto.randomUUID();
+  const fallbackRecord: AcademicYear = {
+    id: fallbackId,
+    school_id: schoolId,
+    start_year: Number(input.start_year),
+    end_year: Number(input.end_year),
+    label: input.label.trim(),
+    start_date: input.start_date,
+    end_date: input.end_date,
+    is_current: Boolean(input.is_current),
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  updateLocalCache(schoolId, userId, fallbackRecord);
+
+  return {
+    success: true,
+    academicYear: fallbackRecord,
+  };
+}
+
+function updateLocalCache(
+  schoolId: string,
+  userId: string,
+  record: AcademicYear
+): void {
   try {
     const raw = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}${schoolId}`);
     let list: AcademicYear[] = raw ? JSON.parse(raw) : [];
 
-    // If new record is current, unset existing current
     if (record.is_current) {
       list = list.map((item) =>
         item.id !== record.id ? { ...item, is_current: false } : item
@@ -367,7 +506,6 @@ export async function saveAcademicSetup({
       JSON.stringify(list)
     );
 
-    // Also update cached school profile onboarding_step to at least 3
     const schoolCacheKey = `myzkool_school_profile_${userId}`;
     const cachedSchoolRaw = localStorage.getItem(schoolCacheKey);
     if (cachedSchoolRaw) {
@@ -378,9 +516,4 @@ export async function saveAcademicSetup({
   } catch {
     // Non-fatal
   }
-
-  return {
-    success: true,
-    academicYear: record,
-  };
 }

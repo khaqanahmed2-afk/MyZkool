@@ -23,6 +23,8 @@ export interface SchoolSection {
   name: string;
   display_name?: string;
   sort_order: number;
+  capacity?: number;
+  class_teacher_id?: string;
   status: "active" | "archived";
   created_at?: string;
   updated_at?: string;
@@ -67,6 +69,7 @@ export interface SectionInput {
   name: string;
   display_name?: string;
   sort_order?: number;
+  capacity?: number;
 }
 
 export interface SubjectInput {

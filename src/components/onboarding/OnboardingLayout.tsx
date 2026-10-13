@@ -13,6 +13,8 @@ interface OnboardingLayoutProps {
   children: React.ReactNode;
   maxWidth?: string;
   showCardWrapper?: boolean;
+  onSaveAndExit?: () => Promise<void> | void;
+  isSavingAndExiting?: boolean;
 }
 
 export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
@@ -23,13 +25,19 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
   children,
   maxWidth,
   showCardWrapper = true,
+  onSaveAndExit,
+  isSavingAndExiting = false,
 }) => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate("/login");
+    if (onSaveAndExit) {
+      await onSaveAndExit();
+    } else {
+      await signOut();
+      navigate("/login");
+    }
   };
 
   return (
@@ -58,12 +66,19 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
 
             <button
               onClick={handleSignOut}
+              disabled={isSavingAndExiting}
               id="onboarding-signout-btn"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0] cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0] cursor-pointer disabled:opacity-50"
               title="Save progress and log out"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Save &amp; Exit</span>
+              {isSavingAndExiting ? (
+                <div className="w-3.5 h-3.5 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <LogOut className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {isSavingAndExiting ? "Saving..." : "Save & Exit"}
+              </span>
             </button>
           </div>
         </div>

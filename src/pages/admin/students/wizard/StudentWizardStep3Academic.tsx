@@ -235,13 +235,13 @@ export const StudentWizardStep3Academic: React.FC<Step3Props> = ({
                   type="number"
                   min="0"
                   max="100"
-                  value={data.previous_school?.result_percent || ""}
+                  value={data.previous_school?.result_percent !== undefined && !Number.isNaN(data.previous_school.result_percent) ? data.previous_school.result_percent : ""}
                   onChange={(e) =>
                     onChange({
                       previous_school: {
                         ...data.previous_school,
                         school_name: data.previous_school?.school_name || "",
-                        result_percent: e.target.value ? Number(e.target.value) : undefined,
+                        result_percent: e.target.value && !isNaN(Number(e.target.value)) ? Number(e.target.value) : undefined,
                       },
                     })
                   }

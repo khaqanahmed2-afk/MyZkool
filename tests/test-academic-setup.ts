@@ -8,7 +8,10 @@ import {
   getAcademicYearsForSchool,
   getCurrentAcademicYear,
   saveAcademicSetup,
+  isValidCalendarDate,
+  formatDefaultAcademicYearLabel,
 } from "../src/services/academicService";
+import { ACADEMIC_CALENDAR_PRESETS } from "../src/types/academic";
 import type { AcademicYearInput } from "../src/types/academic";
 
 // Polyfill localStorage and crypto for Node test environment
@@ -47,7 +50,7 @@ async function runTests() {
   // 1. ACADEMIC YEAR VALIDATION
   console.log("1. Academic Year Range & Form Validation:");
 
-  // Valid academic input
+  // Valid academic input (April–March)
   const validAY: AcademicYearInput = {
     start_year: 2026,
     end_year: 2027,
@@ -68,26 +71,43 @@ async function runTests() {
   const revRes = validateAcademicYearInput(reversedYears);
   assert(
     revRes.isValid === false && Boolean(revRes.errors.end_year),
-    "Rejects reversed years (end_year <= start_year)"
+    "Rejects reversed years (end_year < start_year)"
   );
 
-  // Invalid: Equal years (e.g. 2026 -> 2026)
-  const equalYears: AcademicYearInput = {
+  // Invalid: Equal years when date range spans 2 calendar years
+  const equalYearsMismatched: AcademicYearInput = {
     ...validAY,
     start_year: 2026,
     end_year: 2026,
   };
-  const eqRes = validateAcademicYearInput(equalYears);
+  const eqRes = validateAcademicYearInput(equalYearsMismatched);
   assert(
     eqRes.isValid === false && Boolean(eqRes.errors.end_year),
-    "Rejects equal years (end_year === start_year)"
+    "Rejects equal years when dates span into next calendar year"
   );
 
-  // Invalid: Out-of-bounds start year
+  // Valid: Equal years for January–December calendar year
+  const validJanDec: AcademicYearInput = {
+    start_year: 2026,
+    end_year: 2026,
+    label: "2026",
+    start_date: "2026-01-01",
+    end_date: "2026-12-31",
+    is_current: true,
+  };
+  const janDecRes = validateAcademicYearInput(validJanDec);
+  assert(
+    janDecRes.isValid === true,
+    "Validates January–December calendar where start_year === end_year"
+  );
+
+  // Invalid: Out-of-bounds start year (< 1990)
   const outOfBoundsStart: AcademicYearInput = {
     ...validAY,
     start_year: 1980,
     end_year: 1981,
+    start_date: "1980-04-01",
+    end_date: "1981-03-31",
   };
   const oobStartRes = validateAcademicYearInput(outOfBoundsStart);
   assert(
@@ -95,11 +115,13 @@ async function runTests() {
     "Rejects start year prior to minimum boundary (1990)"
   );
 
-  // Invalid: Out-of-bounds end year
+  // Invalid: Out-of-bounds end year (> 2100)
   const outOfBoundsEnd: AcademicYearInput = {
     ...validAY,
     start_year: 2100,
     end_year: 2101,
+    start_date: "2100-04-01",
+    end_date: "2101-03-31",
   };
   const oobEndRes = validateAcademicYearInput(outOfBoundsEnd);
   assert(
@@ -154,8 +176,48 @@ async function runTests() {
     "Rejects duration under 30 days"
   );
 
-  // 2. SENSABLE DEFAULT GENERATION
-  console.log("\n2. Default Suggestion Generator:");
+  // 2. CALENDAR DATES, LEAP YEARS & MONTH ENDS
+  console.log("\n2. Calendar Dates, Leap Years & Month Ends:");
+  assert(isValidCalendarDate("2024-02-29") === true, "Leap year Feb 29 (2024) is valid");
+  assert(isValidCalendarDate("2028-02-29") === true, "Leap year Feb 29 (2028) is valid");
+  assert(isValidCalendarDate("2026-02-29") === false, "Non-leap year Feb 29 (2026) is invalid");
+  assert(isValidCalendarDate("2027-02-29") === false, "Non-leap year Feb 29 (2027) is invalid");
+  assert(isValidCalendarDate("2026-04-30") === true, "Valid 30-day month end (April 30)");
+  assert(isValidCalendarDate("2026-04-31") === false, "Invalid 31st day on 30-day month (April 31)");
+  assert(isValidCalendarDate("2026-12-31") === true, "Valid 31-day month end (Dec 31)");
+  assert(isValidCalendarDate("2026-11-31") === false, "Invalid 31st day on 30-day month (Nov 31)");
+
+  // 3. CALENDAR PRESETS INTEGRITY
+  console.log("\n3. Academic Calendar Presets:");
+  const presetIds = ACADEMIC_CALENDAR_PRESETS.map((p) => p.id);
+  assert(presetIds.includes("apr_mar"), "Contains April–March preset");
+  assert(presetIds.includes("jun_may"), "Contains June–May preset");
+  assert(presetIds.includes("jan_dec"), "Contains January–December preset");
+  assert(presetIds.includes("sep_jun"), "Contains September–June preset");
+
+  // Test all presets generate valid calendar dates
+  for (const preset of ACADEMIC_CALENDAR_PRESETS) {
+    const sYear = 2026;
+    const eYear = preset.startMonth > preset.endMonth ? 2027 : 2026;
+    const sDate = `${sYear}-${String(preset.startMonth).padStart(2, "0")}-${String(preset.startDay).padStart(2, "0")}`;
+    const eDate = `${eYear}-${String(preset.endMonth).padStart(2, "0")}-${String(preset.endDay).padStart(2, "0")}`;
+    assert(
+      isValidCalendarDate(sDate) && isValidCalendarDate(eDate),
+      `Preset '${preset.name}' produces valid dates (${sDate} to ${eDate})`
+    );
+  }
+
+  // 4. DISPLAY LABEL & DEFAULT GENERATION
+  console.log("\n4. Display Label & Default Generation:");
+  assert(
+    formatDefaultAcademicYearLabel(2026, 2027) === "2026–2027",
+    "Generates en-dash year label for multi-year sessions"
+  );
+  assert(
+    formatDefaultAcademicYearLabel(2026, 2026) === "2026",
+    "Generates single year label for calendar-year sessions"
+  );
+
   const defaultsApr = getDefaultAcademicYear(new Date("2026-05-15"));
   assert(
     defaultsApr.start_year === 2026 && defaultsApr.end_year === 2027,
@@ -176,8 +238,8 @@ async function runTests() {
     "Sensible default for Feb 2026 selects active ongoing 2025–2026 cycle"
   );
 
-  // 3. PERSISTENCE & STEP PROGRESSION
-  console.log("\n3. Academic Setup Persistence & Step Progression:");
+  // 5. PERSISTENCE & STEP PROGRESSION
+  console.log("\n5. Academic Setup Persistence & Step Progression:");
   const testSchoolIdA = "school-uuid-aaaa-1111";
   const testUserIdA = "user-uuid-admin-aaaa";
 
@@ -220,8 +282,8 @@ async function runTests() {
     "Advances school onboarding_step from Step 2 to Step 3 upon successful save"
   );
 
-  // 4. RETRIEVAL & RESUME BEHAVIOR
-  console.log("\n4. Retrieval & Resume Behavior:");
+  // 6. RETRIEVAL & RESUME BEHAVIOR
+  console.log("\n6. Retrieval & Resume Behavior:");
   const retrievedA = await getAcademicYearsForSchool(testSchoolIdA);
   assert(
     retrievedA.academicYears.length === 1,
@@ -306,9 +368,8 @@ async function runTests() {
     "Preserves higher onboarding_step (4) when user edits Step 2 (does not reset progress)"
   );
 
-  // 5. CURRENT YEAR RULE (ATOMIC ACTIVE YEAR MANAGEMENT)
-  console.log("\n5. Current Year Rule & Atomic Active State:");
-  // Add a second academic year for the future (2027-2028) set to is_current: true
+  // 7. CURRENT YEAR RULE (ATOMIC ACTIVE YEAR MANAGEMENT)
+  console.log("\n7. Current Year Rule & Atomic Active State:");
   const futureYearSave = await saveAcademicSetup({
     schoolId: testSchoolIdA,
     userId: testUserIdA,
@@ -318,7 +379,7 @@ async function runTests() {
       label: "2027–2028",
       start_date: "2027-04-01",
       end_date: "2028-03-31",
-      is_current: true, // Setting new year as current
+      is_current: true,
     },
   });
   assert(futureYearSave.success === true, "Creates second academic year (2027-2028)");
@@ -326,7 +387,6 @@ async function runTests() {
   const allYearsA = await getAcademicYearsForSchool(testSchoolIdA);
   assert(allYearsA.academicYears.length === 2, "School now has two academic years configured");
 
-  // Check that the previous academic year (2026-2027) was atomically set to is_current = false
   const oldYear = allYearsA.academicYears.find((y) => y.id === createdYearId);
   const newYear = allYearsA.academicYears.find((y) => y.id === futureYearSave.academicYear!.id);
 
@@ -345,8 +405,8 @@ async function runTests() {
     "getCurrentAcademicYear returns the single active current year"
   );
 
-  // 6. MULTI-TENANT ISOLATION
-  console.log("\n6. Multi-Tenant Isolation:");
+  // 8. MULTI-TENANT ISOLATION
+  console.log("\n8. Multi-Tenant Isolation:");
   const testSchoolIdB = "school-uuid-bbbb-2222";
   const testUserIdB = "user-uuid-admin-bbbb";
 
@@ -378,25 +438,22 @@ async function runTests() {
     "School B retains its distinct calendar dates independently of School A"
   );
 
-  // Cross-tenant verification
   const crossCheck = schoolAYears.academicYears.some((y) => y.school_id === testSchoolIdB);
   assert(crossCheck === false, "School A cannot view or leak School B's academic years");
 
-  // 7. AUTHORIZATION & ROLE GUARDS
-  console.log("\n7. Authorization & Role Verification:");
-  
-  // Unauthenticated user
+  // 9. AUTHORIZATION & ROLE GUARDS
+  console.log("\n9. Authorization & Role Verification:");
+
   const unauthRes = await saveAcademicSetup({
     schoolId: testSchoolIdA,
     userId: "",
     input: validAY,
   });
   assert(
-    unauthRes.success === false && unauthRes.error?.includes("Authentication required"),
+    unauthRes.success === false && unauthRes.error?.includes("Authentication"),
     "Rejects save attempt without authenticated user session"
   );
 
-  // Missing school association (e.g. user jumped to Step 2 without completing Step 1)
   const missingSchoolRes = await saveAcademicSetup({
     schoolId: "",
     userId: testUserIdA,
@@ -407,7 +464,6 @@ async function runTests() {
     "Rejects save attempt if Step 1 (school profile) is not yet completed"
   );
 
-  // Role access permissions for onboarding
   const allowedRoles = ["school_admin", "super_admin"];
   const testRoles = [
     { role: "school_admin", allowed: true },
@@ -425,9 +481,9 @@ async function runTests() {
     );
   }
 
-  // 8. ROUTING & ONBOARDING DESTINATIONS
-  console.log("\n8. Routing & Step Progression Rules:");
-  
+  // 10. ROUTING & ONBOARDING DESTINATIONS
+  console.log("\n10. Routing & Step Progression Rules:");
+
   const getNextDestination = (profile: {
     onboarding_completed: boolean;
     current_onboarding_step: string;

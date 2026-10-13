@@ -420,7 +420,42 @@ export async function selectSchoolPlan(
 
   const now = new Date();
   const trialDays = plan.trial_days || 14;
-  const trialEnds = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+  let trialStartsAt = now.toISOString();
+  let trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+
+  // Retrieve any existing subscription record up-front to prevent trial duplication or rolling extension
+  let existingSub: any = null;
+  if (isSupabaseConfigured) {
+    try {
+      const { data } = await supabase
+        .from("school_subscriptions")
+        .select("id, trial_starts_at, trial_ends_at, status")
+        .eq("school_id", schoolId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      existingSub = data;
+    } catch {
+      // Non-fatal, check cache below
+    }
+  }
+
+  if (!existingSub && typeof localStorage !== "undefined") {
+    try {
+      const raw = localStorage.getItem(`${SUBSCRIPTION_CACHE_KEY_PREFIX}${schoolId}`);
+      if (raw) {
+        existingSub = JSON.parse(raw);
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // If school already has an active trial, preserve original trial timestamps (prevent rolling reset)
+  if (existingSub?.trial_starts_at && existingSub?.trial_ends_at && existingSub.status === "trialing") {
+    trialStartsAt = existingSub.trial_starts_at;
+    trialEndsAt = existingSub.trial_ends_at;
+  }
 
   // Period ends depending on billing cycle
   const periodEnds = new Date(now);
@@ -433,13 +468,13 @@ export async function selectSchoolPlan(
   }
 
   const subscriptionRecord: SchoolSubscription = {
-    id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `sub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    id: existingSub?.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `sub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`),
     school_id: schoolId,
     plan_id: plan.id,
     billing_cycle: billingCycle,
     status: startTrial ? "trialing" : "active",
-    trial_starts_at: now.toISOString(),
-    trial_ends_at: trialEnds.toISOString(),
+    trial_starts_at: trialStartsAt,
+    trial_ends_at: trialEndsAt,
     current_period_starts_at: now.toISOString(),
     current_period_ends_at: periodEnds.toISOString(),
     amount: pricing.subtotal || 0,
@@ -452,7 +487,7 @@ export async function selectSchoolPlan(
     metadata: {
       plan_slug: plan.slug,
       plan_name: plan.name,
-      notes: input.notes || "Configured during School Onboarding Step 5",
+      notes: input.notes || "Configured during School Onboarding Step 4",
       is_trial: startTrial,
       trial_duration_days: trialDays,
       features: plan.slug === "pro" || plan.slug === "custom"
@@ -510,15 +545,6 @@ export async function selectSchoolPlan(
 
       const hasValidPlanId = UUID_REGEX.test(dbPlanId);
 
-      // Check if existing subscription row exists for this school
-      const { data: existingSub } = await supabase
-        .from("school_subscriptions")
-        .select("id")
-        .eq("school_id", schoolId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
       const subPayload: any = {
         school_id: schoolId,
         billing_cycle: billingCycle,
@@ -572,24 +598,6 @@ export async function selectSchoolPlan(
         }
       }
 
-      // Also upsert to school_plans table if available in database
-      try {
-        await supabase
-          .from("school_plans")
-          .upsert({
-            school_id: schoolId,
-            plan_slug: plan.slug,
-            plan_key: plan.slug,
-            billing_status: subscriptionRecord.status,
-            valid_until: subscriptionRecord.trial_ends_at,
-            features: plan.slug === "pro" || plan.slug === "custom"
-              ? ["students", "fees", "attendance", "admissions", "website", "communication", "transport", "exams", "timetable", "reports", "approvals"]
-              : ["students", "fees", "attendance", "admissions", "website", "communication"],
-            updated_at: now.toISOString(),
-          }, { onConflict: "school_id" });
-      } catch (spErr) {
-        console.warn("Supabase school_plans sync note:", spErr);
-      }
     } catch (err) {
       console.warn("Supabase subscription persistence error:", err);
     }

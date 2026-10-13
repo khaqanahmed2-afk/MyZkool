@@ -107,6 +107,7 @@ export interface TransportStaff {
   emergency_contact_phone?: string | null;
   id_proof_type?: string | null;
   id_proof_last4?: string | null; // Masked ID proof (e.g. "•••• •••• 1234")
+  aadhaar_enc?: string | null;
   joined_on: string;
   status: StaffStatus;
   user_id?: string | null;

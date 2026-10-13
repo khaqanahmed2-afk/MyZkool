@@ -1095,7 +1095,7 @@ export default function FeeStructuresPage() {
                                   min="0"
                                   step="50"
                                   placeholder="0"
-                                  value={item.base_amount_rupees === 0 ? "" : item.base_amount_rupees}
+                                  value={item.base_amount_rupees === 0 || Number.isNaN(item.base_amount_rupees) ? "" : item.base_amount_rupees}
                                   onChange={e => handleUpdateItem(idx, { base_amount_rupees: parseFloat(e.target.value) || 0 })}
                                   className="w-full text-right font-mono font-semibold border border-[#E6EAF3] focus:border-[#2158E0] rounded-lg px-2 py-1.5 text-xs outline-none"
                                 />
@@ -1173,7 +1173,7 @@ export default function FeeStructuresPage() {
                                       type="number"
                                       min="0"
                                       step="50"
-                                      value={termVal === 0 ? "" : termVal}
+                                      value={termVal === 0 || Number.isNaN(termVal) ? "" : termVal}
                                       placeholder="0"
                                       onChange={e => {
                                         const newAmt = parseFloat(e.target.value) || 0;

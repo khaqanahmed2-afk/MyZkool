@@ -287,14 +287,17 @@ const FEE_CYCLE_SCHEDULE_KEY = (s: string, y: string) => `myzkool_fee_cycle_sche
 
 export async function getFeeTerms(
   schoolId: string,
-  yearId: string
+  yearId?: string
 ): Promise<{ terms: FeeTerm[]; error?: string }> {
   let terms: FeeTerm[] = [];
 
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase.from("fee_terms")
-        .select("*").eq("school_id", schoolId).eq("academic_year_id", yearId).order("sort_order");
+      let q = supabase.from("fee_terms").select("*").eq("school_id", schoolId);
+      if (yearId && yearId.trim()) {
+        q = q.eq("academic_year_id", yearId.trim());
+      }
+      const { data, error } = await q.order("sort_order");
       if (error) throw error;
       terms = (data || []) as FeeTerm[];
     } catch (e: any) {
@@ -303,7 +306,22 @@ export async function getFeeTerms(
   }
 
   if (terms.length === 0) {
-    terms = lsGet<FeeTerm>(FEE_TERMS_KEY(schoolId, yearId)).sort((a, b) => a.sort_order - b.sort_order);
+    terms = lsGet<FeeTerm>(FEE_TERMS_KEY(schoolId, yearId || "")).sort((a, b) => a.sort_order - b.sort_order);
+    if (terms.length === 0 && (!yearId || !yearId.trim()) && typeof localStorage !== "undefined") {
+      const prefix = `myzkool_fee_terms_${schoolId}_`;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix)) {
+          try {
+            const parsed = JSON.parse(localStorage.getItem(k) || "[]");
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              terms = parsed;
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
   }
 
   // Merge applicable_fee_head_ids from local schedule if column was omitted in DB

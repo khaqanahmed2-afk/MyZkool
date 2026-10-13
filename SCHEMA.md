@@ -56,11 +56,14 @@ The migration sequence in `supabase/migrations/` represents the schema progressi
 | `015_transport_assignments.sql` | Student Transport (Pro) | `transport_assignments`, `transport_requests`, `transport_absences` |
 | `016_fix_students_rls_authorization.sql` | RLS Hardening | RLS helper functions (`school_admin_school_ids`, `is_school_admin`, `school_member_school_ids`) & policy refactor |
 | `20260920120000_onboarding_v2_simplify.sql` | Onboarding v2 | Schema update: 6-step flow, `onboarding_flow_version`, nullable website fields |
+| `20261012180000_school_onboarding_upgrade.sql` | School Profile & RLS Modernization | Adds `district`, campus address constraints, hardened RLS policies, safe RPC `check_subdomain_availability` |
+| `20261013000000_academic_years_calendar_range_update.sql` | Academic Cycles | Relaxes `chk_academic_year_range` to `CHECK (end_year >= start_year)` for annual calendar cycles |
+| `20261013010000_fix_profiles_rls_and_immutability.sql` | Profile & Tenancy Hardening | Fixes `prevent_school_id_update` for initial school binding; adds auth profile provision trigger, field sync trigger, backfill & RLS hardening |
 
 ### Migration Naming Standard & Forward Policy
 - **Legacy Files (001–016)**: Preserved with their sequential prefix (`NNN_name.sql`). These **must not be renamed**, as Supabase migration tracking registers the exact filename in `supabase_migrations.schema_migrations`. Renaming would trigger duplicate migration attempts or CI/CD state divergence.
 - **Forward Standard**: All future migrations must strictly adopt the official Supabase timestamp naming convention:  
-  `YYYYMMDDHHMMSS_<descriptive_name>.sql` (e.g. `20260920120000_onboarding_v2_simplify.sql`).
+  `YYYYMMDDHHMMSS_<descriptive_name>.sql` (e.g. `20260920120000_onboarding_v2_simplify.sql`, `20261012180000_school_onboarding_upgrade.sql`).
 
 ---
 
@@ -74,6 +77,7 @@ The migration sequence in `supabase/migrations/` represents the schema progressi
 #### `schools`
 
 - **Introduced in**: `001_schools_and_onboarding.sql`
+- **Updated in**: `20261012180000_school_onboarding_upgrade.sql`
 - **RLS Enabled**: ✅ Yes
 
 | Column | Type / Constraints |
@@ -87,6 +91,7 @@ The migration sequence in `supabase/migrations/` represents the schema progressi
 | `contact_phone` | `TEXT NOT NULL` |
 | `address` | `TEXT NOT NULL` |
 | `city` | `TEXT NOT NULL` |
+| `district` | `TEXT` |
 | `state` | `TEXT NOT NULL` |
 | `pin_code` | `TEXT NOT NULL` |
 | `logo_url` | `TEXT` |
@@ -95,11 +100,13 @@ The migration sequence in `supabase/migrations/` represents the schema progressi
 | `created_by` | `UUID REFERENCES auth.users(id) ON DELETE RESTRICT` |
 | `created_at` | `TIMESTAMPTZ NOT NULL DEFAULT now()` |
 | `updated_at` | `TIMESTAMPTZ NOT NULL DEFAULT now()` |
-- Check: `CONSTRAINT subdomain_format_check CHECK (subdomain ~ '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$')`
-- Check: `CONSTRAINT onboarding_step_check CHECK (onboarding_step BETWEEN 1 AND 8)`
+- Check: `CONSTRAINT subdomain_format_check CHECK (subdomain ~ '^[a-z0-9]([a-z0-9-]{1,46}[a-z0-9])?$')`
+- Check: `CONSTRAINT schools_pin_code_check CHECK (pin_code ~ '^\d{6}$')`
+- Check: `CONSTRAINT schools_onboarding_step_check CHECK (onboarding_step BETWEEN 1 AND 6)`
 
 **Indexes**:
-- `idx_schools_subdomain_unique` (`LOWER(subdomain`)
+- `idx_schools_subdomain_unique` (`LOWER(subdomain)`)
+- `idx_schools_state_district` (`state, district`)
 - `idx_schools_created_by` (`created_by`)
 - `idx_schools_onboarding_status` (`onboarding_completed, onboarding_step`)
 
@@ -150,7 +157,7 @@ The migration sequence in `supabase/migrations/` represents the schema progressi
 | `is_current` | `BOOLEAN NOT NULL DEFAULT true` |
 | `created_at` | `TIMESTAMPTZ NOT NULL DEFAULT now()` |
 | `updated_at` | `TIMESTAMPTZ NOT NULL DEFAULT now()` |
-- Check: `CONSTRAINT chk_academic_year_range CHECK (end_year > start_year)`
+- Check: `CONSTRAINT chk_academic_year_range CHECK (end_year >= start_year)`
 - Check: `CONSTRAINT chk_academic_year_bounds CHECK (start_year >= 1990 AND start_year <= 2100)`
 - Check: `CONSTRAINT chk_academic_date_order CHECK (end_date > start_date)`
 

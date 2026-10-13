@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   MapPin,
   Plus,
@@ -12,7 +12,7 @@ import {
   Save,
   ChevronUp,
   ChevronDown,
-  Navigation,
+  X,
 } from "lucide-react";
 import {
   getRoutes,
@@ -36,7 +36,6 @@ import { useAuth } from "../../../hooks/useAuth";
 import { checkSchoolFeature } from "../../../middleware/features";
 import { TransportLockedPreview } from "./TransportLockedPreview";
 import { PrintableRouteSheet } from "./PrintableRouteSheet";
-import L from "leaflet";
 
 export function RouteBuilderPage() {
   const { schoolId } = useAuth();
@@ -64,15 +63,15 @@ export function RouteBuilderPage() {
   const [routeError, setRouteError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // Toast feedback state
+  const [toast, setToast] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
   // Time Helper State
   const [showTimeHelper, setShowTimeHelper] = useState(false);
   const [helperIntervalMin, setHelperIntervalMin] = useState(6);
-
-  // Map state
-  const [selectedStopIndexForMap, setSelectedStopIndexForMap] = useState<number | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
 
   useEffect(() => {
     if (!schoolId) return;
@@ -112,7 +111,7 @@ export function RouteBuilderPage() {
     setAttendantId(r.default_attendant_id || "");
     setPickupStart(r.pickup_start_time.slice(0, 5));
     setDropStart(r.drop_start_time.slice(0, 5));
-    setDurationMin(r.est_duration_min);
+    setDurationMin(Number.isFinite(Number(r.est_duration_min)) && Number(r.est_duration_min) > 0 ? Number(r.est_duration_min) : 45);
     setStops(r.stops || []);
     setRouteError("");
     setIsPrintMode(false);
@@ -138,8 +137,6 @@ export function RouteBuilderPage() {
         sequence: 1,
         pickup_time: "07:00",
         drop_time: "15:00",
-        lat: 26.8467,
-        lng: 80.9462,
       },
     ]);
     setRouteError("");
@@ -237,56 +234,6 @@ export function RouteBuilderPage() {
     setStops(updated);
   }
 
-  // ─── Leaflet Map Setup ─────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!mapContainerRef.current || !L) return;
-
-    if (!mapInstanceRef.current) {
-      const initialLat = stops[0]?.lat || 26.8467;
-      const initialLng = stops[0]?.lng || 80.9462;
-
-      const map = L.map(mapContainerRef.current).setView([initialLat, initialLng], 13);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(map);
-
-      map.on("click", (e: any) => {
-        const { lat, lng } = e.latlng;
-        if (selectedStopIndexForMap !== null) {
-          const copy = [...stops];
-          copy[selectedStopIndexForMap] = {
-            ...copy[selectedStopIndexForMap],
-            lat: parseFloat(lat.toFixed(6)),
-            lng: parseFloat(lng.toFixed(6)),
-          };
-          setStops(copy);
-
-          if (markerRef.current) {
-            markerRef.current.setLatLng([lat, lng]);
-          } else {
-            markerRef.current = L.marker([lat, lng]).addTo(map);
-          }
-        }
-      });
-
-      mapInstanceRef.current = map;
-    }
-  }, [stops, selectedStopIndexForMap]);
-
-  function handleSelectStopForPin(idx: number) {
-    setSelectedStopIndexForMap(idx);
-    const target = stops[idx];
-    if (target?.lat && target?.lng && mapInstanceRef.current && L) {
-      mapInstanceRef.current.setView([target.lat, target.lng], 15);
-      if (markerRef.current) {
-        markerRef.current.setLatLng([target.lat, target.lng]);
-      } else {
-        markerRef.current = L.marker([target.lat, target.lng]).addTo(mapInstanceRef.current);
-      }
-    }
-  }
-
   // ─── Save Route & Stops ───────────────────────────────────────────────────
 
   async function handleSaveRoute(e: React.FormEvent) {
@@ -345,8 +292,11 @@ export function RouteBuilderPage() {
       return;
     }
 
+    setToast({
+      type: "success",
+      message: `Route ${routeCode.trim().toUpperCase()} and ${stops.length} stop(s) saved successfully.`,
+    });
     await loadAll();
-    alert("Route and stops saved successfully!");
   }
 
   async function handleDeleteRoute() {
@@ -355,9 +305,16 @@ export function RouteBuilderPage() {
 
     const res = await deleteRoute(schoolId, activeRoute.id);
     if (!res.success) {
-      alert(res.error || "Cannot delete route.");
+      setToast({
+        type: "error",
+        message: res.error || "Cannot delete route.",
+      });
       return;
     }
+    setToast({
+      type: "success",
+      message: `Route ${activeRoute.code} deleted successfully.`,
+    });
     setActiveRoute(null);
     loadAll();
   }
@@ -383,6 +340,32 @@ export function RouteBuilderPage() {
 
   return (
     <div className="space-y-6">
+      {/* Toast Alert */}
+      {toast && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+            toast.type === "success"
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
+          <div className="flex items-center gap-2 text-xs font-bold">
+            {toast.type === "success" ? (
+              <CheckCircle className="w-4 h-4 text-green-600" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-red-600" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+          <button
+            onClick={() => setToast(null)}
+            className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -390,14 +373,14 @@ export function RouteBuilderPage() {
             Route Builder & Stops
           </h1>
           <p className="text-xs text-[#5B6478]">
-            Configure stop timeline sequences, time helpers, and seat allocations
+            Configure stop timeline sequences, automated schedules, and bus seat allocations
           </p>
         </div>
         <div className="flex items-center gap-2">
           {activeRoute && (
             <button
               onClick={() => setIsPrintMode(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50 shadow-sm"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               Print Route Sheet
@@ -405,7 +388,7 @@ export function RouteBuilderPage() {
           )}
           <button
             onClick={handleStartNewRoute}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             New Route
@@ -421,7 +404,7 @@ export function RouteBuilderPage() {
             <button
               key={r.id}
               onClick={() => selectRouteForEditing(r)}
-              className={`px-4 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+              className={`px-4 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 shrink-0 transition-all cursor-pointer ${
                 isSelected
                   ? "bg-[#2158E0] text-white border-[#2158E0] shadow-sm"
                   : "bg-white text-[#141A2E] border-[#E6EAF3] hover:bg-gray-50"
@@ -440,27 +423,32 @@ export function RouteBuilderPage() {
       {routeError && (
         <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          {routeError}
+          <span>{routeError}</span>
         </div>
       )}
 
-      {/* Main 2-Column Route Builder */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Main 2-Column Responsive Route Builder */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Route Details & Seat Meter */}
-        <div className="space-y-6">
+        <div className="lg:col-span-5 xl:col-span-4 space-y-6 lg:sticky lg:top-6">
           <form
             onSubmit={handleSaveRoute}
             className="bg-white rounded-xl border border-[#E6EAF3] p-5 shadow-sm space-y-4 text-xs"
           >
             <div className="flex items-center justify-between border-b border-[#E6EAF3] pb-3">
-              <h2 className="font-bold text-sm text-[#141A2E]">
-                {activeRoute ? `Route Details (${routeCode})` : "New Route Details"}
-              </h2>
+              <div>
+                <h2 className="font-bold text-sm text-[#141A2E]">
+                  {activeRoute ? `Route Details (${routeCode})` : "New Route Details"}
+                </h2>
+                <p className="text-[11px] text-[#5B6478]">
+                  {activeRoute ? "Modify route assignments and timings" : "Set up a new school transport route"}
+                </p>
+              </div>
               {activeRoute && (
                 <button
                   type="button"
                   onClick={handleDeleteRoute}
-                  className="text-gray-400 hover:text-red-600 p-1 rounded"
+                  className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors cursor-pointer"
                   title="Delete Route"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -476,7 +464,7 @@ export function RouteBuilderPage() {
                   placeholder="e.g. R-1"
                   value={routeCode}
                   onChange={(e) => setRouteCode(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] uppercase font-bold"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] uppercase font-bold text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                   required
                 />
               </div>
@@ -487,7 +475,7 @@ export function RouteBuilderPage() {
                   placeholder="e.g. Gomti Nagar Route"
                   value={routeName}
                   onChange={(e) => setRouteName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] font-medium"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                   required
                 />
               </div>
@@ -498,7 +486,7 @@ export function RouteBuilderPage() {
               <select
                 value={vehicleId}
                 onChange={(e) => setVehicleId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium"
+                className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
               >
                 <option value="">Unassigned</option>
                 {vehicles.map((v) => (
@@ -515,7 +503,7 @@ export function RouteBuilderPage() {
                 <select
                   value={driverId}
                   onChange={(e) => setDriverId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                 >
                   <option value="">Unassigned</option>
                   {staff
@@ -532,7 +520,7 @@ export function RouteBuilderPage() {
                 <select
                   value={attendantId}
                   onChange={(e) => setAttendantId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                 >
                   <option value="">Unassigned</option>
                   {staff
@@ -553,7 +541,7 @@ export function RouteBuilderPage() {
                   type="time"
                   value={pickupStart}
                   onChange={(e) => setPickupStart(e.target.value)}
-                  className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-mono font-bold"
+                  className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                   required
                 />
               </div>
@@ -563,7 +551,7 @@ export function RouteBuilderPage() {
                   type="time"
                   value={dropStart}
                   onChange={(e) => setDropStart(e.target.value)}
-                  className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-mono font-bold"
+                  className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                   required
                 />
               </div>
@@ -573,15 +561,18 @@ export function RouteBuilderPage() {
                   type="number"
                   min="15"
                   max="180"
-                  value={durationMin}
-                  onChange={(e) => setDurationMin(parseInt(e.target.value, 10))}
-                  className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-bold"
+                  value={Number.isNaN(durationMin) ? "" : (durationMin ?? "")}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    setDurationMin(isNaN(parsed) ? ("" as any) : parsed);
+                  }}
+                  className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-bold text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                   required
                 />
               </div>
             </div>
 
-            {/* Seat Meter (Spec C4.4) */}
+            {/* Seat Meter */}
             <div
               className={`p-3 rounded-xl border space-y-2 ${
                 isOverCapacity
@@ -615,53 +606,40 @@ export function RouteBuilderPage() {
             <button
               type="submit"
               disabled={isSaving}
-              className="w-full py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-colors cursor-pointer"
             >
               <Save className="w-4 h-4" />
               {isSaving ? "Saving..." : "Save Route & Stops"}
             </button>
           </form>
-
-          {/* Interactive OpenStreetMap Panel (Leaflet) */}
-          <div className="bg-white rounded-xl border border-[#E6EAF3] p-5 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-[#141A2E] flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-[#2158E0]" />
-                OpenStreetMap Pin Dropper
-              </h3>
-              {selectedStopIndexForMap !== null && (
-                <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-[#2158E0] font-bold">
-                  Editing Stop {selectedStopIndexForMap + 1}
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-[#5B6478]">
-              Click on the map to set latitude and longitude for the selected stop. Coordinates are optional.
-            </p>
-            <div
-              ref={mapContainerRef}
-              className="w-full h-52 rounded-lg border border-[#E6EAF3] bg-gray-100 z-0"
-            ></div>
-          </div>
         </div>
 
         {/* Right Column: Stops Vertical Timeline */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-7 xl:col-span-8 space-y-4">
           <div className="bg-white rounded-xl border border-[#E6EAF3] p-5 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E6EAF3] pb-4">
               <div>
-                <h2 className="font-bold text-sm text-[#141A2E]">
-                  Stops Timeline ({stops.length} Stops)
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-sm text-[#141A2E]">
+                    Stops Timeline
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-[#2158E0] text-[11px] font-bold">
+                    {stops.length} {stops.length === 1 ? "Stop" : "Stops"}
+                  </span>
+                </div>
                 <p className="text-xs text-[#5B6478]">
-                  Continuous sequence required. Times must strictly increase.
+                  Continuous sequence required. Pickup times must strictly increase.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setShowTimeHelper(!showTimeHelper)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
+                    showTimeHelper
+                      ? "bg-blue-50 border-blue-200 text-[#2158E0]"
+                      : "border-[#E6EAF3] text-[#141A2E] hover:bg-gray-50"
+                  }`}
                 >
                   <Clock className="w-3.5 h-3.5 text-[#2158E0]" />
                   Time Helper
@@ -669,7 +647,7 @@ export function RouteBuilderPage() {
                 <button
                   type="button"
                   onClick={handleGenerateDropTimes}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-bold text-[#141A2E] hover:bg-gray-50 transition-colors cursor-pointer"
                 >
                   <ArrowUpDown className="w-3.5 h-3.5 text-[#2158E0]" />
                   Reverse Drop Times
@@ -677,7 +655,7 @@ export function RouteBuilderPage() {
                 <button
                   type="button"
                   onClick={() => handleAddStop()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2158E0] text-white text-xs font-bold hover:bg-blue-600"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2158E0] text-white text-xs font-bold hover:bg-blue-600 transition-colors cursor-pointer shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Add Stop
@@ -698,13 +676,16 @@ export function RouteBuilderPage() {
                     type="number"
                     min="1"
                     max="30"
-                    value={helperIntervalMin}
-                    onChange={(e) => setHelperIntervalMin(parseInt(e.target.value, 10))}
+                    value={Number.isNaN(helperIntervalMin) ? "" : (helperIntervalMin ?? "")}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
+                      setHelperIntervalMin(isNaN(parsed) ? ("" as any) : parsed);
+                    }}
                     className="w-20 px-2 py-1 rounded border border-blue-300 bg-white font-bold"
                   />
                   <button
                     onClick={handleApplyTimeHelper}
-                    className="px-4 py-1 rounded bg-[#2158E0] text-white font-bold hover:bg-blue-600"
+                    className="px-4 py-1 rounded bg-[#2158E0] text-white font-bold hover:bg-blue-600 cursor-pointer transition-colors"
                   >
                     Apply Times
                   </button>
@@ -717,72 +698,76 @@ export function RouteBuilderPage() {
               {stops.map((st, idx) => (
                 <div
                   key={st.id || idx}
-                  onClick={() => handleSelectStopForPin(idx)}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
-                    selectedStopIndexForMap === idx
-                      ? "border-[#2158E0] bg-blue-50/20 shadow-sm"
-                      : "border-[#E6EAF3] bg-white hover:border-gray-300"
-                  }`}
+                  className="p-3.5 rounded-xl border border-[#E6EAF3] bg-white hover:border-[#CBD5E1] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
                 >
-                  <div className="flex items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
                     {/* Move controls & Sequence number */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <div className="flex flex-col">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveStop(idx, "up");
-                          }}
+                          onClick={() => handleMoveStop(idx, "up")}
                           disabled={idx === 0}
-                          className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-20"
+                          className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-20 cursor-pointer"
+                          title="Move Up"
                         >
                           <ChevronUp className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveStop(idx, "down");
-                          }}
+                          onClick={() => handleMoveStop(idx, "down")}
                           disabled={idx === stops.length - 1}
-                          className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-20"
+                          className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-20 cursor-pointer"
+                          title="Move Down"
                         >
                           <ChevronDown className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
-                      <span className="w-6 h-6 rounded-full bg-gray-100 text-[#141A2E] font-bold flex items-center justify-center shrink-0">
+                      <span className="w-7 h-7 rounded-xl bg-blue-50 text-[#2158E0] font-black text-xs flex items-center justify-center shrink-0 border border-blue-100">
                         {st.sequence}
                       </span>
                     </div>
 
                     {/* Inputs */}
-                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
-                      <input
-                        type="text"
-                        placeholder="Stop Name"
-                        value={st.name}
-                        onChange={(e) => {
-                          const copy = [...stops];
-                          copy[idx].name = e.target.value;
-                          setStops(copy);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg border border-[#E6EAF3] font-bold text-xs"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Landmark"
-                        value={st.landmark || ""}
-                        onChange={(e) => {
-                          const copy = [...stops];
-                          copy[idx].landmark = e.target.value;
-                          setStops(copy);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg border border-[#E6EAF3] text-xs"
-                      />
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-gray-500 font-semibold">Pick:</span>
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div className="sm:col-span-4">
+                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                          Stop Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Aliganj Chauraha"
+                          value={st.name}
+                          onChange={(e) => {
+                            const copy = [...stops];
+                            copy[idx].name = e.target.value;
+                            setStops(copy);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#E6EAF3] font-bold text-xs text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+                          required
+                        />
+                      </div>
+                      <div className="sm:col-span-4">
+                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                          Landmark (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Near Metro Station"
+                          value={st.landmark || ""}
+                          onChange={(e) => {
+                            const copy = [...stops];
+                            copy[idx].landmark = e.target.value;
+                            setStops(copy);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#E6EAF3] text-xs text-[#5B6478] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                          Pickup Time
+                        </label>
                         <input
                           type="time"
                           value={st.pickup_time}
@@ -791,11 +776,14 @@ export function RouteBuilderPage() {
                             copy[idx].pickup_time = e.target.value;
                             setStops(copy);
                           }}
-                          className="w-full px-2 py-1.5 rounded-lg border border-[#E6EAF3] font-mono font-bold text-xs"
+                          className="w-full px-2 py-1.5 rounded-lg border border-[#E6EAF3] font-mono font-bold text-xs text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+                          required
                         />
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-gray-500 font-semibold">Drop:</span>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                          Drop Time
+                        </label>
                         <input
                           type="time"
                           value={st.drop_time}
@@ -804,27 +792,18 @@ export function RouteBuilderPage() {
                             copy[idx].drop_time = e.target.value;
                             setStops(copy);
                           }}
-                          className="w-full px-2 py-1.5 rounded-lg border border-[#E6EAF3] font-mono font-bold text-xs"
+                          className="w-full px-2 py-1.5 rounded-lg border border-[#E6EAF3] font-mono font-bold text-xs text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+                          required
                         />
                       </div>
                     </div>
 
-                    {/* Coordinates & Delete */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {st.lat && st.lng ? (
-                        <span className="text-[10px] text-green-700 bg-green-50 px-2 py-0.5 rounded font-mono font-semibold">
-                          {st.lat}, {st.lng}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-gray-400 italic">No GPS</span>
-                      )}
+                    {/* Delete button */}
+                    <div className="flex sm:flex-col items-center justify-end sm:justify-center shrink-0 pt-1 sm:pt-4">
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveStop(idx);
-                        }}
-                        className="p-1 text-gray-300 hover:text-red-600 rounded transition-colors"
+                        onClick={() => handleRemoveStop(idx)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         title="Remove Stop"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -834,6 +813,16 @@ export function RouteBuilderPage() {
                 </div>
               ))}
             </div>
+
+            {/* Quick Add Next Stop Button */}
+            <button
+              type="button"
+              onClick={() => handleAddStop()}
+              className="w-full py-2.5 rounded-xl border border-dashed border-[#2158E0]/40 hover:border-[#2158E0] bg-blue-50/30 hover:bg-blue-50/60 text-[#2158E0] font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Add Next Stop
+            </button>
           </div>
         </div>
       </div>

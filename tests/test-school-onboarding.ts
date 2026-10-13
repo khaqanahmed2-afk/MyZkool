@@ -160,7 +160,29 @@ async function runTests() {
     "Rejects invalid email format"
   );
 
-  // Valid profile submission
+  // Invalid PIN code (not 6 digits)
+  const invalidPinRes = await saveSchoolProfile({
+    userId: testUserId1,
+    userEmail: testEmail1,
+    profileInput: {
+      name: "Greenwood Academy",
+      subdomain: "greenwood-academy",
+      school_type: "k12",
+      official_email: testEmail1,
+      contact_phone: "9876543210",
+      address: "123 Main St",
+      city: "Bangalore",
+      district: "Bangalore Urban",
+      state: "Karnataka",
+      pin_code: "5600",
+    },
+  });
+  assert(
+    invalidPinRes.success === false && invalidPinRes.error?.includes("PIN code"),
+    "Rejects invalid postal PIN code (less than 6 digits)"
+  );
+
+  // Valid profile submission with district
   const validProfile: SchoolProfileInput = {
     name: "Greenwood International School",
     subdomain: "greenwood-intl",
@@ -170,6 +192,7 @@ async function runTests() {
     contact_phone: "+91 98765 43210",
     address: "Campus 1, Whitefield Main Road",
     city: "Bangalore",
+    district: "Bangalore Urban",
     state: "Karnataka",
     pin_code: "560066",
   };
@@ -196,6 +219,10 @@ async function runTests() {
   assert(
     retrieved.school?.name === "Greenwood International School",
     "Loaded school record retains all saved fields"
+  );
+  assert(
+    retrieved.school?.district === "Bangalore Urban",
+    "Loaded school record retains district field"
   );
   assert(
     retrieved.school?.onboarding_step === 2,

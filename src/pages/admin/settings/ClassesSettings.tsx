@@ -487,7 +487,7 @@ export default function ClassesSettings() {
                                 type="number"
                                 min="1"
                                 max="100"
-                                value={capacity}
+                                value={Number.isNaN(capacity) ? "" : capacity}
                                 onChange={(e) =>
                                   handleCapacityChange(sec.id, parseInt(e.target.value, 10) || 40)
                                 }

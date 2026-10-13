@@ -238,7 +238,7 @@ export default function DayClosePage() {
                     type="number"
                     min="0"
                     disabled={summary?.is_closed}
-                    value={count || ""}
+                    value={typeof count === "number" && Number.isNaN(count) ? "" : (count || "")}
                     onChange={e => updateCount(item.key as any, e.target.value)}
                     placeholder="0"
                     className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white text-center font-bold focus:outline-none focus:border-[#2158E0]"

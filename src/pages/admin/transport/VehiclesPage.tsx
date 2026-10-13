@@ -407,8 +407,11 @@ export function VehiclesPage() {
                     type="number"
                     min="1"
                     max="100"
-                    value={capacity}
-                    onChange={(e) => setCapacity(parseInt(e.target.value, 10))}
+                    value={Number.isNaN(capacity) ? "" : (capacity ?? "")}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
+                      setCapacity(isNaN(parsed) ? ("" as any) : parsed);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] font-bold"
                     required
                   />

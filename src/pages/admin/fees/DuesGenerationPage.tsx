@@ -210,7 +210,7 @@ export default function DuesGenerationPage() {
               <div>
                 <label className="block text-xs font-medium text-[#141A2E] mb-1">Amount (₹) *</label>
                 <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                  value={manualForm.gross_paise / 100 || ""}
+                  value={Number.isFinite(manualForm.gross_paise) && manualForm.gross_paise > 0 ? manualForm.gross_paise / 100 : ""}
                   onChange={e => setManualForm(f => ({ ...f, gross_paise: (parseFloat(e.target.value) || 0) * 100 }))} />
               </div>
               <div>

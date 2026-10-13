@@ -215,14 +215,22 @@ export default function ConcessionRulesPage() {
                 <div className="w-28">
                   <label className="block text-xs font-medium text-[#141A2E] mb-1">Value *</label>
                   <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={form.value} onChange={e => setForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} />
+                    value={Number.isNaN(form.value) ? "" : (form.value ?? "")}
+                    onChange={e => {
+                      const val = parseFloat(e.target.value);
+                      setForm(f => ({ ...f, value: isNaN(val) ? 0 : val }));
+                    }} />
                 </div>
               </div>
               {form.basis === "sibling" && (
                 <div>
                   <label className="block text-xs font-medium text-[#141A2E] mb-1">Apply from sibling rank</label>
                   <input type="number" min={1} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={form.sibling_from_rank ?? 2} onChange={e => setForm(f => ({ ...f, sibling_from_rank: parseInt(e.target.value) || 2 }))} />
+                    value={Number.isNaN(form.sibling_from_rank) ? 2 : (form.sibling_from_rank ?? 2)}
+                    onChange={e => {
+                      const val = parseInt(e.target.value, 10);
+                      setForm(f => ({ ...f, sibling_from_rank: isNaN(val) ? 2 : val }));
+                    }} />
                   <p className="text-xs text-[#5B6478] mt-1">e.g. 2 = second and later children get the concession</p>
                 </div>
               )}

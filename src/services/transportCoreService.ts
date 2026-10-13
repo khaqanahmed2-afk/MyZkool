@@ -384,11 +384,26 @@ export async function deleteVehicleDocument(
 
 // ─── 4. Transport Staff (Drivers & Attendants) ───────────────────────────────
 
-export function maskIdProof(last4?: string | null): string {
-  if (!last4) return "Not provided";
-  const clean = last4.replace(/\D/g, "");
-  const suffix = clean.slice(-4) || "••••";
-  return `•••• •••• ${suffix}`;
+export function extract10DigitPhone(phoneStr?: string | null): string {
+  if (!phoneStr) return "";
+  const digits = phoneStr.replace(/\D/g, "");
+  if (digits.length >= 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
+export function formatPhoneWithCountryCode(rawPhone: string): string {
+  const digits = extract10DigitPhone(rawPhone);
+  return digits ? `+91${digits}` : "";
+}
+
+export function maskIdProof(last4OrAadhaar?: string | null): string {
+  if (!last4OrAadhaar) return "Not provided";
+  const clean = last4OrAadhaar.replace(/\D/g, "");
+  if (!clean) return "Not provided";
+  const suffix = clean.slice(-4);
+  return `XXXX XXXX ${suffix}`;
 }
 
 export async function getTransportStaff(
@@ -405,6 +420,8 @@ export async function getTransportStaff(
     if (staffType) q = q.eq("staff_type", staffType);
     const { data } = await q.order("created_at", { ascending: false });
     staffList = (data || []) as TransportStaff[];
+    // Keep local cache fresh so localStorage and Supabase remain synchronized
+    lsSet(`myzkool_transport_staff_${schoolId}`, staffList);
   } else {
     staffList = lsGet<TransportStaff>(`myzkool_transport_staff_${schoolId}`).filter(
       (s) => !s.deleted_at && (!staffType || s.staff_type === staffType)
@@ -452,21 +469,37 @@ export async function createTransportStaff(
   schoolId: string,
   input: Omit<TransportStaff, "id" | "school_id" | "created_at" | "updated_at">
 ): Promise<{ success: boolean; staff?: TransportStaff; error?: string }> {
-  const phone = input.phone.replace(/\s+/g, "");
-  if (!phone) {
-    return { success: false, error: "Staff phone number is required." };
+  const phone10 = extract10DigitPhone(input.phone);
+  if (!phone10 || phone10.length !== 10) {
+    return { success: false, error: "A valid 10-digit mobile number is required." };
   }
+  const phone = `+91${phone10}`;
 
-  // Unique phone per school
+  // Unique phone per school check in localStorage
   const allStaff = lsGet<TransportStaff>(`myzkool_transport_staff_${schoolId}`);
-  const duplicate = allStaff.find(
-    (s) => !s.deleted_at && s.phone.replace(/\s+/g, "") === phone
+  const duplicateLocal = allStaff.find(
+    (s) => !s.deleted_at && extract10DigitPhone(s.phone) === phone10
   );
-  if (duplicate) {
+  if (duplicateLocal) {
     return {
       success: false,
-      error: `Staff with phone '${phone}' is already registered in this school.`,
+      error: `Staff with mobile number '+91 ${phone10}' is already registered in this school.`,
     };
+  }
+
+  // Check duplicate in Supabase if configured
+  if (isSupabaseConfigured) {
+    const { data: dbDups } = await supabase
+      .from("transport_staff")
+      .select("id, phone")
+      .eq("school_id", schoolId)
+      .is("deleted_at", null);
+    if (dbDups && dbDups.some((d) => extract10DigitPhone(d.phone) === phone10)) {
+      return {
+        success: false,
+        error: `Staff with mobile number '+91 ${phone10}' is already registered in this school.`,
+      };
+    }
   }
 
   const record: TransportStaff = {
@@ -474,13 +507,41 @@ export async function createTransportStaff(
     id: crypto.randomUUID(),
     school_id: schoolId,
     phone,
+    id_proof_type: "Aadhaar",
     id_proof_last4: input.id_proof_last4 ? input.id_proof_last4.slice(-4) : null,
+    aadhaar_enc: input.aadhaar_enc || null,
     created_at: nowISO(),
     updated_at: nowISO(),
   };
 
   if (isSupabaseConfigured) {
-    const { error } = await supabase.from("transport_staff").insert(record);
+    const dbPayload = {
+      id: record.id,
+      school_id: record.school_id,
+      staff_type: record.staff_type,
+      full_name: record.full_name,
+      phone: record.phone,
+      photo_path: record.photo_path || null,
+      license_no: record.license_no || null,
+      license_class: record.license_class || null,
+      license_expires_on: record.license_expires_on || null,
+      badge_no: record.badge_no || null,
+      police_verified_on: record.police_verified_on || null,
+      medical_fit_on: record.medical_fit_on || null,
+      experience_years: record.experience_years || null,
+      address: record.address || null,
+      emergency_contact_name: record.emergency_contact_name || null,
+      emergency_contact_phone: record.emergency_contact_phone || null,
+      id_proof_type: "Aadhaar",
+      id_proof_last4: record.id_proof_last4,
+      aadhaar_enc: record.aadhaar_enc,
+      joined_on: record.joined_on,
+      status: record.status,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+    };
+
+    const { error } = await supabase.from("transport_staff").insert(dbPayload);
     if (error) return { success: false, error: error.message };
   }
 
@@ -494,40 +555,130 @@ export async function updateTransportStaff(
   staffId: string,
   input: Partial<TransportStaff>
 ): Promise<{ success: boolean; staff?: TransportStaff; error?: string }> {
+  let existingStaff: TransportStaff | null = null;
   const allStaff = lsGet<TransportStaff>(`myzkool_transport_staff_${schoolId}`);
   const idx = allStaff.findIndex((s) => s.id === staffId && !s.deleted_at);
+  if (idx !== -1) {
+    existingStaff = allStaff[idx];
+  }
 
-  if (idx === -1) {
+  // If not found in localStorage cache, fetch directly from Supabase
+  if (!existingStaff && isSupabaseConfigured) {
+    const { data: dbStaff } = await supabase
+      .from("transport_staff")
+      .select("*")
+      .eq("id", staffId)
+      .eq("school_id", schoolId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (dbStaff) {
+      existingStaff = dbStaff as TransportStaff;
+    }
+  }
+
+  if (!existingStaff) {
     return { success: false, error: "Staff member not found." };
   }
 
+  let phone = existingStaff.phone;
   if (input.phone) {
-    const phone = input.phone.replace(/\s+/g, "");
-    const duplicate = allStaff.find(
-      (s) => s.id !== staffId && !s.deleted_at && s.phone.replace(/\s+/g, "") === phone
-    );
-    if (duplicate) {
-      return { success: false, error: `Staff with phone '${phone}' is already registered.` };
+    const phone10 = extract10DigitPhone(input.phone);
+    if (!phone10 || phone10.length !== 10) {
+      return { success: false, error: "A valid 10-digit mobile number is required." };
     }
-    input.phone = phone;
+    phone = `+91${phone10}`;
+
+    // Check duplicate in local storage
+    const duplicateLocal = allStaff.find(
+      (s) => s.id !== staffId && !s.deleted_at && extract10DigitPhone(s.phone) === phone10
+    );
+    if (duplicateLocal) {
+      return { success: false, error: `Staff with mobile number '+91 ${phone10}' is already registered.` };
+    }
+
+    // Check duplicate in Supabase
+    if (isSupabaseConfigured) {
+      const { data: dbDups } = await supabase
+        .from("transport_staff")
+        .select("id, phone")
+        .eq("school_id", schoolId)
+        .neq("id", staffId)
+        .is("deleted_at", null);
+      if (dbDups && dbDups.some((d) => extract10DigitPhone(d.phone) === phone10)) {
+        return { success: false, error: `Staff with mobile number '+91 ${phone10}' is already registered.` };
+      }
+    }
   }
 
-  if (input.id_proof_last4) {
-    input.id_proof_last4 = input.id_proof_last4.slice(-4);
+  // Handle ID proof data
+  let id_proof_last4 = existingStaff.id_proof_last4;
+  let aadhaar_enc = existingStaff.aadhaar_enc;
+  if (input.id_proof_last4 !== undefined) {
+    id_proof_last4 = input.id_proof_last4 ? input.id_proof_last4.slice(-4) : null;
+  }
+  if (input.aadhaar_enc !== undefined) {
+    aadhaar_enc = input.aadhaar_enc;
+  }
+
+  // Handle license details if staff_type is attendant vs driver
+  const targetStaffType = input.staff_type || existingStaff.staff_type;
+  let license_no = input.license_no !== undefined ? input.license_no : existingStaff.license_no;
+  let license_expires_on = input.license_expires_on !== undefined ? input.license_expires_on : existingStaff.license_expires_on;
+  if (targetStaffType === "attendant") {
+    license_no = null;
+    license_expires_on = null;
   }
 
   const updated: TransportStaff = {
-    ...allStaff[idx],
+    ...existingStaff,
     ...input,
+    staff_type: targetStaffType,
+    phone,
+    id_proof_type: "Aadhaar",
+    id_proof_last4,
+    aadhaar_enc,
+    license_no,
+    license_expires_on,
     updated_at: nowISO(),
   };
 
+  // Clean payload for database update (exclude enriched and route-specific UI fields)
   if (isSupabaseConfigured) {
-    await supabase.from("transport_staff").update(updated).eq("id", staffId).eq("school_id", schoolId);
+    const dbPayload = {
+      full_name: updated.full_name,
+      staff_type: updated.staff_type,
+      phone: updated.phone,
+      photo_path: updated.photo_path || null,
+      license_no: updated.license_no || null,
+      license_class: updated.license_class || null,
+      license_expires_on: updated.license_expires_on || null,
+      badge_no: updated.badge_no || null,
+      police_verified_on: updated.police_verified_on || null,
+      medical_fit_on: updated.medical_fit_on || null,
+      id_proof_type: "Aadhaar",
+      id_proof_last4: updated.id_proof_last4 || null,
+      aadhaar_enc: updated.aadhaar_enc || null,
+      status: updated.status,
+      updated_at: updated.updated_at,
+    };
+
+    const { error: updErr } = await supabase
+      .from("transport_staff")
+      .update(dbPayload)
+      .eq("id", staffId)
+      .eq("school_id", schoolId);
+
+    if (updErr) {
+      return { success: false, error: updErr.message };
+    }
   }
 
-  allStaff[idx] = updated;
-  lsSet(`myzkool_transport_staff_${schoolId}`, allStaff);
+  if (idx !== -1) {
+    allStaff[idx] = updated;
+    lsSet(`myzkool_transport_staff_${schoolId}`, allStaff);
+  } else {
+    lsSet(`myzkool_transport_staff_${schoolId}`, [...allStaff, updated]);
+  }
 
   return { success: true, staff: updated };
 }
@@ -559,11 +710,14 @@ export async function deleteTransportStaff(
   }
 
   if (isSupabaseConfigured) {
-    await supabase
+    const { error } = await supabase
       .from("transport_staff")
       .update({ deleted_at: nowISO(), status: "inactive" })
       .eq("id", staffId)
       .eq("school_id", schoolId);
+    if (error) {
+      return { success: false, error: error.message };
+    }
   }
 
   return { success: true };

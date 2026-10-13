@@ -296,7 +296,7 @@ export default function ChequeRegisterPage() {
                 <input
                   type="number"
                   placeholder="500"
-                  value={bounceChargeRs}
+                  value={typeof bounceChargeRs === "number" && Number.isNaN(bounceChargeRs) ? "" : (bounceChargeRs ?? "")}
                   onChange={e => setBounceChargeRs(e.target.value)}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-red-500"
                 />

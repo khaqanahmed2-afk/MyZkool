@@ -89,9 +89,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
    */
   const resolveUserProfile = useCallback(
     async (authUser: User): Promise<UserProfile> => {
+      if (!authUser?.id) {
+        throw new Error("Cannot resolve profile for unauthenticated user.");
+      }
+
       try {
         if (isSupabaseConfigured) {
-          // Attempt query from application profiles table if available
+          // Attempt query from application profiles table by auth_id (the authenticated user's Auth UUID)
           const { data: dbProfile, error } = await supabase
             .from("profiles")
             .select("*")
@@ -111,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
                 await supabase
                   .from("profiles")
                   .update({ school_id: resolvedSchoolId })
-                  .eq("id", dbProfile.id);
+                  .eq("auth_id", authUser.id);
               } else if (authUser.user_metadata?.school_id) {
                 resolvedSchoolId = authUser.user_metadata.school_id;
               }
@@ -135,8 +139,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             };
           }
         }
-      } catch {
-        // Table may not yet be provisioned in this foundational phase
+      } catch (err) {
+        console.warn("Notice: resolving database profile encountered an issue:", err);
       }
 
       // Default safe fallback from Supabase user metadata
@@ -162,28 +166,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // Ensure a corresponding row exists in profiles table for RLS checks
-      if (isSupabaseConfigured && authUser.email) {
+      if (isSupabaseConfigured && authUser.id && authUser.email) {
         try {
-          await supabase.from("profiles").upsert(
-            {
-              auth_id: authUser.id,
-              email: authUser.email,
-              full_name:
-                authUser.user_metadata?.full_name ||
-                authUser.email.split("@")[0] ||
-                "School Administrator",
-              role: assignedRole,
-              school_id: fallbackSchoolId,
-              onboarding_completed: Boolean(
-                authUser.user_metadata?.onboarding_completed,
-              ),
+          const { data: createdProfile } = await supabase
+            .from("profiles")
+            .upsert(
+              {
+                auth_id: authUser.id,
+                email: authUser.email,
+                full_name:
+                  authUser.user_metadata?.full_name ||
+                  authUser.email.split("@")[0] ||
+                  "School Administrator",
+                role: assignedRole,
+                school_id: fallbackSchoolId,
+                onboarding_completed: Boolean(
+                  authUser.user_metadata?.onboarding_completed,
+                ),
+                current_onboarding_step:
+                  authUser.user_metadata?.current_onboarding_step ||
+                  "/onboarding/school",
+              },
+              { onConflict: "auth_id" },
+            )
+            .select()
+            .maybeSingle();
+
+          if (createdProfile) {
+            return {
+              id: createdProfile.id,
+              auth_id: createdProfile.auth_id,
+              email: createdProfile.email || authUser.email || "",
+              full_name: createdProfile.full_name,
+              role: (createdProfile.role || assignedRole) as UserRole,
+              school_id: createdProfile.school_id || fallbackSchoolId,
+              phone: createdProfile.phone,
+              onboarding_completed: Boolean(createdProfile.onboarding_completed),
               current_onboarding_step:
-                authUser.user_metadata?.current_onboarding_step ||
-                "/onboarding/school",
-            },
-            { onConflict: "auth_id" },
-          );
-        } catch {}
+                createdProfile.current_onboarding_step || "/onboarding/school",
+              created_at: createdProfile.created_at,
+            };
+          }
+        } catch (err) {
+          console.warn("Could not upsert fallback profile row:", err);
+        }
       }
 
       return {
@@ -260,6 +286,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!isMounted) return;
+
+      // Avoid redundant execution on INITIAL_SESSION as initializeAuth handles startup
+      if (event === "INITIAL_SESSION") {
+        return;
+      }
 
       setSession(newSession);
       setUser(newSession?.user ?? null);

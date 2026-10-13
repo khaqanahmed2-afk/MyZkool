@@ -293,6 +293,7 @@ export async function getSchoolForCurrentUser(
             contact_phone: data.contact_phone,
             address: data.address,
             city: data.city,
+            district: data.district || "",
             state: data.state,
             pin_code: data.pin_code,
             logo_url: data.logo_url,
@@ -433,7 +434,10 @@ export async function saveSchoolProfile({
     return { success: false, error: "Please enter a complete campus address." };
   }
   if (!profileInput.city?.trim()) {
-    return { success: false, error: "Please enter the city." };
+    return { success: false, error: "Please enter the city / village." };
+  }
+  if (profileInput.district !== undefined && !profileInput.district.trim()) {
+    return { success: false, error: "Please enter the district." };
   }
   if (!profileInput.state?.trim()) {
     return { success: false, error: "Please select or enter the state." };
@@ -474,6 +478,7 @@ export async function saveSchoolProfile({
   const timestamp = new Date().toISOString();
   const currentStep = existingUserSchool?.onboarding_step || 1;
   const nextStep = Math.max(currentStep, 2);
+  const resolvedDistrict = (profileInput.district !== undefined ? profileInput.district : profileInput.city).trim();
 
   const schoolRecord: School = {
     id: verifiedSchoolId,
@@ -485,6 +490,7 @@ export async function saveSchoolProfile({
     contact_phone: profileInput.contact_phone.trim(),
     address: profileInput.address.trim(),
     city: profileInput.city.trim(),
+    district: resolvedDistrict,
     state: profileInput.state.trim(),
     pin_code: cleanPin,
     onboarding_completed: existingUserSchool?.onboarding_completed || false,
@@ -510,6 +516,7 @@ export async function saveSchoolProfile({
             contact_phone: schoolRecord.contact_phone,
             address: schoolRecord.address,
             city: schoolRecord.city,
+            district: schoolRecord.district,
             state: schoolRecord.state,
             pin_code: schoolRecord.pin_code,
             onboarding_step: nextStep,
@@ -543,6 +550,7 @@ export async function saveSchoolProfile({
           contact_phone: schoolRecord.contact_phone,
           address: schoolRecord.address,
           city: schoolRecord.city,
+          district: schoolRecord.district,
           state: schoolRecord.state,
           pin_code: schoolRecord.pin_code,
           onboarding_completed: false,
@@ -567,20 +575,47 @@ export async function saveSchoolProfile({
         }
       }
 
-      // Upsert into profiles table
+      // Bind school_id to the user's profile
       try {
-        await supabase.from("profiles").upsert(
-          {
-            auth_id: userId,
-            school_id: schoolRecord.id,
-            onboarding_completed: false,
-            current_onboarding_step: "/onboarding/academics",
-            updated_at: timestamp,
-          },
-          { onConflict: "auth_id" }
-        );
-      } catch {
-        // Table might not exist yet
+        if (userId) {
+          const { error: updateErr, data: updatedRows } = await supabase
+            .from("profiles")
+            .update({
+              school_id: schoolRecord.id,
+              onboarding_completed: false,
+              current_onboarding_step: "/onboarding/academics",
+              updated_at: timestamp,
+            })
+            .eq("auth_id", userId)
+            .select();
+
+          if (updateErr) {
+            console.warn("Notice: profiles update error:", updateErr.message);
+          }
+
+          // If no row existed yet, safely upsert with full mandatory details
+          if (!updateErr && (!updatedRows || updatedRows.length === 0)) {
+            const { data: authData } = await supabase.auth.getUser();
+            const authUser = authData?.user;
+            await supabase.from("profiles").upsert(
+              {
+                auth_id: userId,
+                email: authUser?.email || profileInput.official_email || "",
+                full_name:
+                  authUser?.user_metadata?.full_name ||
+                  authUser?.email?.split("@")[0] ||
+                  "School Administrator",
+                school_id: schoolRecord.id,
+                onboarding_completed: false,
+                current_onboarding_step: "/onboarding/academics",
+                updated_at: timestamp,
+              },
+              { onConflict: "auth_id" }
+            );
+          }
+        }
+      } catch (profileErr) {
+        console.warn("Could not bind profile to school:", profileErr);
       }
 
       // Update auth user metadata so session has the link immediately

@@ -154,7 +154,11 @@ export default function FeeSettingsPage() {
             <div>
               <label className="block text-xs font-medium text-[#141A2E] mb-1">Minimum partial payment (₹, 0 = no minimum)</label>
               <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                value={(form.min_partial_paise ?? 0) / 100} onChange={e => setForm(f => ({ ...f, min_partial_paise: (parseFloat(e.target.value) || 0) * 100 }))} />
+                value={Number.isNaN(form.min_partial_paise) ? "" : ((form.min_partial_paise ?? 0) / 100)}
+                onChange={e => {
+                  const val = parseFloat(e.target.value);
+                  setForm(f => ({ ...f, min_partial_paise: isNaN(val) ? 0 : val * 100 }));
+                }} />
             </div>
           )}
           <label className="flex items-center gap-3 cursor-pointer">
@@ -181,13 +185,21 @@ export default function FeeSettingsPage() {
           <div>
             <label className="block text-xs font-medium text-[#141A2E] mb-1">Discount approval threshold (%)</label>
             <input type="number" min={0} max={100} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-              value={form.discount_approval_threshold_percent ?? 10} onChange={e => setForm(f => ({ ...f, discount_approval_threshold_percent: parseFloat(e.target.value) || 0 }))} />
+              value={Number.isNaN(form.discount_approval_threshold_percent) ? "" : (form.discount_approval_threshold_percent ?? 10)}
+              onChange={e => {
+                const val = parseFloat(e.target.value);
+                setForm(f => ({ ...f, discount_approval_threshold_percent: isNaN(val) ? 0 : val }));
+              }} />
             <p className="text-xs text-[#5B6478] mt-1">Concessions above this % need owner approval</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-[#141A2E] mb-1">Backdate limit (days, 0 = owner approval per case)</label>
             <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-              value={form.backdate_days_limit ?? 0} onChange={e => setForm(f => ({ ...f, backdate_days_limit: parseInt(e.target.value) || 0 }))} />
+              value={Number.isNaN(form.backdate_days_limit) ? "" : (form.backdate_days_limit ?? 0)}
+              onChange={e => {
+                const val = parseInt(e.target.value, 10);
+                setForm(f => ({ ...f, backdate_days_limit: isNaN(val) ? 0 : val }));
+              }} />
           </div>
         </section>
 

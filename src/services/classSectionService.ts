@@ -5,8 +5,9 @@
  * - Tenant-scoped classes and sections persistence (school_id + academic_year_id)
  * - Duplicate prevention (case-insensitive) at school and class level
  * - Class and section reordering (sort_order)
- * - Safe cascading deletion for onboarding stage
- * - Quick setup templates (K-12, 1-10, Primary, Pre-School)
+ * - Safe deletion guards (checking student_enrollments before deleting)
+ * - Deterministic Quick setup templates (Full School K-12, Class 1-10, Primary, Early Childhood)
+ * - Batch validation and persistence for onboarding flow
  * - Onboarding step progression (Step 3 -> Step 4)
  * - Resilient offline/preview caching
  */
@@ -112,6 +113,7 @@ export async function getClassesWithSections(
           name: s.name,
           display_name: s.display_name,
           sort_order: s.sort_order,
+          capacity: s.capacity !== undefined && s.capacity !== null ? Number(s.capacity) : 40,
           status: s.status || "active",
           created_at: s.created_at,
           updated_at: s.updated_at,
@@ -132,6 +134,7 @@ export async function getClassesWithSections(
             name: s.name,
             display_name: s.display_name,
             sort_order: s.sort_order,
+            capacity: s.capacity !== undefined && s.capacity !== null ? Number(s.capacity) : 40,
             status: s.status || "active",
             created_at: s.created_at,
             updated_at: s.updated_at,
@@ -194,6 +197,174 @@ export async function getClassesWithSections(
   });
 
   return { classes: classesWithSections };
+}
+
+/**
+ * Checks if a class can be safely deleted (fails if enrolled students exist)
+ */
+export async function canDeleteClass(
+  schoolId: string,
+  classId: string
+): Promise<{ canDelete: boolean; studentCount: number; error?: string }> {
+  if (isSupabaseConfigured) {
+    try {
+      const { count, error } = await supabase
+        .from("student_enrollments")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .eq("class_id", classId);
+
+      if (!error && count !== null && count > 0) {
+        return {
+          canDelete: false,
+          studentCount: count,
+          error: `Cannot delete this class because it has ${count} enrolled student(s).`,
+        };
+      }
+    } catch (err) {
+      console.warn("canDeleteClass check error:", err);
+    }
+  }
+  return { canDelete: true, studentCount: 0 };
+}
+
+/**
+ * Checks if a section can be safely deleted (fails if enrolled students exist)
+ */
+export async function canDeleteSection(
+  schoolId: string,
+  sectionId: string
+): Promise<{ canDelete: boolean; studentCount: number; error?: string }> {
+  if (isSupabaseConfigured) {
+    try {
+      const { count, error } = await supabase
+        .from("student_enrollments")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .eq("section_id", sectionId);
+
+      if (!error && count !== null && count > 0) {
+        return {
+          canDelete: false,
+          studentCount: count,
+          error: `Cannot delete this section because it has ${count} enrolled student(s).`,
+        };
+      }
+    } catch (err) {
+      console.warn("canDeleteSection check error:", err);
+    }
+  }
+  return { canDelete: true, studentCount: 0 };
+}
+
+/**
+ * Generates initial in-memory class & section structures from a template.
+ * Does NOT write directly to the database without user confirmation.
+ */
+export function generateClassesFromTemplate(
+  templateId: string,
+  schoolId: string,
+  academicYearId: string
+): SchoolClass[] {
+  const template = CLASS_STRUCTURE_TEMPLATES.find((t) => t.id === templateId);
+  if (!template) return [];
+
+  const timestamp = new Date().toISOString();
+
+  return template.classes.map((tClass, cIdx) => {
+    const classId = crypto.randomUUID();
+    const sections: SchoolSection[] = tClass.sections.map((secName, sIdx) => ({
+      id: crypto.randomUUID(),
+      school_id: schoolId,
+      academic_year_id: academicYearId,
+      class_id: classId,
+      name: secName.trim().toUpperCase(),
+      display_name: `Section ${secName.trim().toUpperCase()}`,
+      sort_order: sIdx + 1,
+      capacity: 40,
+      status: "active",
+      created_at: timestamp,
+      updated_at: timestamp,
+    }));
+
+    return {
+      id: classId,
+      school_id: schoolId,
+      academic_year_id: academicYearId,
+      name: tClass.name.trim(),
+      display_name: tClass.name.trim(),
+      sort_order: cIdx + 1,
+      status: "active",
+      sections,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+  });
+}
+
+/**
+ * Validates in-memory classes structure for duplicates, empty values, and section requirements
+ */
+export function validateClassesStructure(classes: SchoolClass[]): {
+  isValid: boolean;
+  error?: string;
+} {
+  if (!classes || classes.length === 0) {
+    return {
+      isValid: false,
+      error: "Please add at least one class for your school.",
+    };
+  }
+
+  const seenClassNames = new Set<string>();
+
+  for (let i = 0; i < classes.length; i++) {
+    const c = classes[i];
+    const trimmedClassName = (c.name || "").trim();
+    if (!trimmedClassName) {
+      return {
+        isValid: false,
+        error: `Class #${i + 1} has an empty name. Please specify a class name.`,
+      };
+    }
+
+    const lowerName = trimmedClassName.toLowerCase();
+    if (seenClassNames.has(lowerName)) {
+      return {
+        isValid: false,
+        error: `Duplicate class name "${trimmedClassName}" detected. Each class name must be unique.`,
+      };
+    }
+    seenClassNames.add(lowerName);
+
+    if (!c.sections || c.sections.length === 0) {
+      return {
+        isValid: false,
+        error: `Class "${trimmedClassName}" must have at least one section (e.g. Section A).`,
+      };
+    }
+
+    const seenSectionNames = new Set<string>();
+    for (let j = 0; j < c.sections.length; j++) {
+      const s = c.sections[j];
+      const trimmedSecName = (s.name || "").trim().toUpperCase();
+      if (!trimmedSecName) {
+        return {
+          isValid: false,
+          error: `A section in ${trimmedClassName} has an empty name.`,
+        };
+      }
+      if (seenSectionNames.has(trimmedSecName)) {
+        return {
+          isValid: false,
+          error: `Class "${trimmedClassName}" contains duplicate section "${trimmedSecName}".`,
+        };
+      }
+      seenSectionNames.add(trimmedSecName);
+    }
+  }
+
+  return { isValid: true };
 }
 
 /**
@@ -269,6 +440,7 @@ export async function createClass({
       name: secName.trim().toUpperCase(),
       display_name: `Section ${secName.trim().toUpperCase()}`,
       sort_order: idx + 1,
+      capacity: 40,
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,
@@ -280,7 +452,7 @@ export async function createClass({
   // Persist to Supabase
   if (isSupabaseConfigured) {
     try {
-      await supabase.from("classes").insert({
+      const { error: cErr } = await supabase.from("classes").insert({
         id: newClass.id,
         school_id: newClass.school_id,
         academic_year_id: newClass.academic_year_id,
@@ -290,8 +462,13 @@ export async function createClass({
         status: newClass.status,
       });
 
+      if (cErr) {
+        console.error("Supabase createClass insert error:", cErr);
+        return { success: false, error: cErr.message || "Failed to create class in database." };
+      }
+
       if (createdSections.length > 0) {
-        await supabase.from("sections").insert(
+        const { error: sErr } = await supabase.from("sections").insert(
           createdSections.map((s) => ({
             id: s.id,
             school_id: s.school_id,
@@ -300,12 +477,18 @@ export async function createClass({
             name: s.name,
             display_name: s.display_name,
             sort_order: s.sort_order,
+            capacity: s.capacity || 40,
             status: s.status,
           }))
         );
+
+        if (sErr) {
+          console.error("Supabase createClass sections insert error:", sErr);
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Supabase createClass error:", err);
+      return { success: false, error: err?.message || "Failed to create class." };
     }
   }
 
@@ -377,7 +560,7 @@ export async function updateClass({
   if (duplicate) {
     return {
       success: false,
-      error: `Another class named "${trimmedName}" already exists.`,
+      error: `Another class named "${trimmedName}" already exists for this academic year.`,
     };
   }
 
@@ -397,7 +580,7 @@ export async function updateClass({
 
   if (isSupabaseConfigured) {
     try {
-      await supabase
+      const { error: uErr } = await supabase
         .from("classes")
         .update({
           name: updatedClass.name,
@@ -406,8 +589,14 @@ export async function updateClass({
           updated_at: updatedClass.updated_at,
         })
         .eq("id", classId);
-    } catch (err) {
+
+      if (uErr) {
+        console.error("Supabase updateClass error:", uErr);
+        return { success: false, error: uErr.message || "Failed to update class in database." };
+      }
+    } catch (err: any) {
       console.warn("Supabase updateClass error:", err);
+      return { success: false, error: err?.message || "Failed to update class." };
     }
   }
 
@@ -425,7 +614,7 @@ export async function updateClass({
 }
 
 /**
- * Deletes a Class safely (removes sections and class_subject mappings in onboarding)
+ * Deletes a Class safely (guards against student enrollments, removes sections)
  */
 export async function deleteClass({
   schoolId,
@@ -436,13 +625,24 @@ export async function deleteClass({
   academicYearId: string;
   classId: string;
 }): Promise<{ success: boolean; error?: string }> {
+  // Check if class has student records
+  const check = await canDeleteClass(schoolId, classId);
+  if (!check.canDelete) {
+    return { success: false, error: check.error };
+  }
+
   if (isSupabaseConfigured) {
     try {
       await supabase.from("class_subjects").delete().eq("class_id", classId);
       await supabase.from("sections").delete().eq("class_id", classId);
-      await supabase.from("classes").delete().eq("id", classId);
-    } catch (err) {
+      const { error: dErr } = await supabase.from("classes").delete().eq("id", classId);
+      if (dErr) {
+        console.error("Supabase deleteClass error:", dErr);
+        return { success: false, error: dErr.message || "Failed to delete class." };
+      }
+    } catch (err: any) {
       console.warn("Supabase deleteClass error:", err);
+      return { success: false, error: err?.message || "Failed to delete class." };
     }
   }
 
@@ -577,6 +777,7 @@ export async function createSection({
     name: trimmedName,
     display_name: input.display_name?.trim() || `Section ${trimmedName}`,
     sort_order: nextSortOrder,
+    capacity: input.capacity !== undefined ? Number(input.capacity) : 40,
     status: "active",
     created_at: timestamp,
     updated_at: timestamp,
@@ -584,7 +785,7 @@ export async function createSection({
 
   if (isSupabaseConfigured) {
     try {
-      await supabase.from("sections").insert({
+      const { error: sErr } = await supabase.from("sections").insert({
         id: newSection.id,
         school_id: newSection.school_id,
         academic_year_id: newSection.academic_year_id,
@@ -592,10 +793,17 @@ export async function createSection({
         name: newSection.name,
         display_name: newSection.display_name,
         sort_order: newSection.sort_order,
+        capacity: newSection.capacity || 40,
         status: newSection.status,
       });
-    } catch (err) {
+
+      if (sErr) {
+        console.error("Supabase createSection error:", sErr);
+        return { success: false, error: sErr.message || "Failed to create section in database." };
+      }
+    } catch (err: any) {
       console.warn("Supabase createSection error:", err);
+      return { success: false, error: err?.message || "Failed to create section." };
     }
   }
 
@@ -615,7 +823,7 @@ export async function createSection({
 }
 
 /**
- * Updates a Section name
+ * Updates a Section name or capacity
  */
 export async function updateSection({
   schoolId,
@@ -665,21 +873,29 @@ export async function updateSection({
     ...existingSection,
     name: trimmedName,
     display_name: input.display_name?.trim() || `Section ${trimmedName}`,
+    capacity: input.capacity !== undefined ? Number(input.capacity) : (existingSection.capacity || 40),
     updated_at: new Date().toISOString(),
   };
 
   if (isSupabaseConfigured) {
     try {
-      await supabase
+      const { error: sErr } = await supabase
         .from("sections")
         .update({
           name: updatedSection.name,
           display_name: updatedSection.display_name,
+          capacity: updatedSection.capacity || 40,
           updated_at: updatedSection.updated_at,
         })
         .eq("id", sectionId);
-    } catch (err) {
+
+      if (sErr) {
+        console.error("Supabase updateSection error:", sErr);
+        return { success: false, error: sErr.message || "Failed to update section." };
+      }
+    } catch (err: any) {
       console.warn("Supabase updateSection error:", err);
+      return { success: false, error: err?.message || "Failed to update section." };
     }
   }
 
@@ -701,7 +917,7 @@ export async function updateSection({
 }
 
 /**
- * Deletes a Section
+ * Deletes a Section (guards against student enrollments)
  */
 export async function deleteSection({
   schoolId,
@@ -712,11 +928,21 @@ export async function deleteSection({
   academicYearId: string;
   sectionId: string;
 }): Promise<{ success: boolean; error?: string }> {
+  const check = await canDeleteSection(schoolId, sectionId);
+  if (!check.canDelete) {
+    return { success: false, error: check.error };
+  }
+
   if (isSupabaseConfigured) {
     try {
-      await supabase.from("sections").delete().eq("id", sectionId);
-    } catch (err) {
+      const { error: dErr } = await supabase.from("sections").delete().eq("id", sectionId);
+      if (dErr) {
+        console.error("Supabase deleteSection error:", dErr);
+        return { success: false, error: dErr.message || "Failed to delete section." };
+      }
+    } catch (err: any) {
       console.warn("Supabase deleteSection error:", err);
+      return { success: false, error: err?.message || "Failed to delete section." };
     }
   }
 
@@ -762,12 +988,11 @@ export async function applyClassTemplate({
   let createdCount = 0;
 
   for (const tClass of template.classes) {
-    // Check if class already exists
     const exists = existingClasses.some(
       (c) => c.name.trim().toLowerCase() === tClass.name.trim().toLowerCase()
     );
     if (!exists) {
-      await createClass({
+      const res = await createClass({
         schoolId,
         academicYearId,
         input: {
@@ -775,7 +1000,9 @@ export async function applyClassTemplate({
           initial_sections: tClass.sections,
         },
       });
-      createdCount++;
+      if (res.success) {
+        createdCount++;
+      }
     }
   }
 
@@ -783,40 +1010,173 @@ export async function applyClassTemplate({
 }
 
 /**
- * Advances Onboarding to Step 4 (Subjects)
+ * Saves all classes and sections in a coordinated atomic batch.
+ * Validates structure, reconciles deletions safely, updates profiles/schools, and advances onboarding to Step 4.
  */
-export async function saveClassesSetupProgress({
+export async function saveAllClassesAndSections({
   schoolId,
-  userId,
   academicYearId,
+  userId,
+  classes,
 }: {
   schoolId: string;
-  userId: string;
   academicYearId: string;
+  userId: string;
+  classes: SchoolClass[];
 }): Promise<{ success: boolean; error?: string }> {
-  const { classes } = await getClassesWithSections(schoolId, academicYearId);
-
-  if (classes.length === 0) {
-    return {
-      success: false,
-      error: "Please configure at least one class for your school.",
-    };
+  if (!schoolId) {
+    return { success: false, error: "School association required." };
+  }
+  if (!academicYearId) {
+    return { success: false, error: "Academic year association required." };
+  }
+  if (!userId) {
+    return { success: false, error: "Authentication session expired. Please log in again." };
   }
 
-  const hasMissingSections = classes.some(
-    (c) => !c.sections || c.sections.length === 0
-  );
-  if (hasMissingSections) {
-    return {
-      success: false,
-      error: "Every class must have at least one section (e.g. Section A).",
-    };
+  // 1. Validation
+  const validation = validateClassesStructure(classes);
+  if (!validation.isValid) {
+    return { success: false, error: validation.error };
   }
 
   const timestamp = new Date().toISOString();
 
+  // 2. Persist to Supabase
   if (isSupabaseConfigured) {
     try {
+      // Fetch existing classes & sections to detect any deletions
+      const { data: existingDbClasses } = await supabase
+        .from("classes")
+        .select("id, name")
+        .eq("school_id", schoolId)
+        .eq("academic_year_id", academicYearId);
+
+      const currentClassIds = new Set(classes.map((c) => c.id));
+      const deletedClasses = (existingDbClasses || []).filter(
+        (dbC) => !currentClassIds.has(dbC.id)
+      );
+
+      // Verify deletion safety for removed classes
+      for (const delClass of deletedClasses) {
+        const check = await canDeleteClass(schoolId, delClass.id);
+        if (!check.canDelete) {
+          return { success: false, error: check.error };
+        }
+      }
+
+      // Check section deletions
+      const { data: existingDbSections } = await supabase
+        .from("sections")
+        .select("id, name, class_id")
+        .eq("school_id", schoolId)
+        .eq("academic_year_id", academicYearId);
+
+      const currentSectionIds = new Set(
+        classes.flatMap((c) => (c.sections || []).map((s) => s.id))
+      );
+      const deletedSections = (existingDbSections || []).filter(
+        (dbS) => !currentSectionIds.has(dbS.id)
+      );
+
+      for (const delSec of deletedSections) {
+        const check = await canDeleteSection(schoolId, delSec.id);
+        if (!check.canDelete) {
+          return { success: false, error: check.error };
+        }
+      }
+
+      // Delete removed classes (CASCADE removes their sections)
+      if (deletedClasses.length > 0) {
+        const { error: dCErr } = await supabase
+          .from("classes")
+          .delete()
+          .in("id", deletedClasses.map((c) => c.id));
+
+        if (dCErr) {
+          console.error("Supabase delete removed classes error:", dCErr);
+        }
+      }
+
+      // Delete removed sections that belong to classes still present
+      if (deletedSections.length > 0) {
+        const { error: dSErr } = await supabase
+          .from("sections")
+          .delete()
+          .in("id", deletedSections.map((s) => s.id));
+
+        if (dSErr) {
+          console.error("Supabase delete removed sections error:", dSErr);
+        }
+      }
+
+      // Upsert classes
+      const classRows = classes.map((c, idx) => ({
+        id: c.id,
+        school_id: schoolId,
+        academic_year_id: academicYearId,
+        name: c.name.trim(),
+        display_name: c.display_name?.trim() || c.name.trim(),
+        sort_order: idx + 1,
+        status: c.status || "active",
+        updated_at: timestamp,
+      }));
+
+      const { error: cUpsertErr } = await supabase
+        .from("classes")
+        .upsert(classRows, { onConflict: "id" });
+
+      if (cUpsertErr) {
+        console.error("Supabase classes upsert error:", cUpsertErr);
+        if (cUpsertErr.code === "23505") {
+          return {
+            success: false,
+            error: "A class with this name already exists in this academic year.",
+          };
+        }
+        return {
+          success: false,
+          error: cUpsertErr.message || "Failed to save classes.",
+        };
+      }
+
+      // Upsert sections
+      const sectionRows = classes.flatMap((c) =>
+        (c.sections || []).map((s, idx) => ({
+          id: s.id,
+          school_id: schoolId,
+          academic_year_id: academicYearId,
+          class_id: c.id,
+          name: s.name.trim().toUpperCase(),
+          display_name: s.display_name?.trim() || `Section ${s.name.trim().toUpperCase()}`,
+          sort_order: idx + 1,
+          capacity: s.capacity ? Number(s.capacity) : 40,
+          status: s.status || "active",
+          updated_at: timestamp,
+        }))
+      );
+
+      if (sectionRows.length > 0) {
+        const { error: sUpsertErr } = await supabase
+          .from("sections")
+          .upsert(sectionRows, { onConflict: "id" });
+
+        if (sUpsertErr) {
+          console.error("Supabase sections upsert error:", sUpsertErr);
+          if (sUpsertErr.code === "23505") {
+            return {
+              success: false,
+              error: "Duplicate section name within a class is not permitted.",
+            };
+          }
+          return {
+            success: false,
+            error: sUpsertErr.message || "Failed to save sections.",
+          };
+        }
+      }
+
+      // Advance onboarding step to Step 4
       const { data: currentSchool } = await supabase
         .from("schools")
         .select("onboarding_step")
@@ -837,6 +1197,7 @@ export async function saveClassesSetupProgress({
       await supabase
         .from("profiles")
         .update({
+          school_id: schoolId,
           current_onboarding_step: "/onboarding/subscription",
           updated_at: timestamp,
         })
@@ -844,17 +1205,41 @@ export async function saveClassesSetupProgress({
 
       await supabase.auth.updateUser({
         data: {
+          school_id: schoolId,
           onboarding_step: newStep,
           current_onboarding_step: "/onboarding/subscription",
         },
       });
-    } catch (err) {
-      console.warn("Supabase progress save error:", err);
+    } catch (err: any) {
+      console.error("saveAllClassesAndSections exception:", err);
+      return {
+        success: false,
+        error: err?.message || "An unexpected database error occurred.",
+      };
     }
   }
 
-  // Update cached school profile
+  // Update local caches
   try {
+    localStorage.setItem(
+      getClassesCacheKey(schoolId, academicYearId),
+      JSON.stringify(classes)
+    );
+    localStorage.setItem(
+      `${CLASSES_CACHE_PREFIX}${schoolId}`,
+      JSON.stringify(classes)
+    );
+
+    const allSections = classes.flatMap((c) => c.sections || []);
+    localStorage.setItem(
+      getSectionsCacheKey(schoolId, academicYearId),
+      JSON.stringify(allSections)
+    );
+    localStorage.setItem(
+      `${SECTIONS_CACHE_PREFIX}${schoolId}`,
+      JSON.stringify(allSections)
+    );
+
     const schoolKey = `myzkool_school_profile_${userId}`;
     const raw = localStorage.getItem(schoolKey);
     if (raw) {
@@ -867,4 +1252,26 @@ export async function saveClassesSetupProgress({
   }
 
   return { success: true };
+}
+
+/**
+ * Advances Onboarding to Step 4 (backward compatible wrapper around saveAllClassesAndSections)
+ */
+export async function saveClassesSetupProgress({
+  schoolId,
+  userId,
+  academicYearId,
+}: {
+  schoolId: string;
+  userId: string;
+  academicYearId: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const { classes } = await getClassesWithSections(schoolId, academicYearId);
+
+  return saveAllClassesAndSections({
+    schoolId,
+    academicYearId,
+    userId,
+    classes,
+  });
 }

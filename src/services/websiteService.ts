@@ -9,7 +9,18 @@ import {
   type SchoolWebsite,
   type WebsitePage,
   type WebsiteSettingsInput,
+  type HomePageContent,
+  type SocialLinks,
+  type HeroSectionConfig,
+  type PrincipalSectionConfig,
+  type FacilityItem,
+  type GalleryImageItem,
+  type StatItem,
+  type TestimonialItem,
+  type AnnouncementItem,
+  type WebsiteSectionToggle,
   DEFAULT_WEBSITE_PAGES,
+  DEFAULT_WEBSITE_SECTIONS,
 } from "../types/website";
 
 export const WEBSITE_CACHE_KEY_PREFIX = "myzkool_website_";
@@ -816,4 +827,365 @@ export async function saveWebsiteSetupProgress({
   }
 
   return { success: true };
+}
+
+export const ALLOWED_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/jpg",
+];
+export const MAX_IMAGE_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+/**
+ * Uploads a school image asset to Supabase Storage (bucket: 'school-assets')
+ * with graceful fallback to secure client object URL.
+ */
+export async function uploadWebsiteAsset({
+  schoolId,
+  file,
+  category = "general",
+}: {
+  schoolId: string;
+  file: File;
+  category?: "logo" | "hero" | "principal" | "gallery" | "facilities" | "general" | string;
+}): Promise<{ success: boolean; url?: string; error?: string }> {
+  if (!schoolId) {
+    return { success: false, error: "school_id is required for asset uploads." };
+  }
+  if (!file) {
+    return { success: false, error: "No file was selected for upload." };
+  }
+  if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.type.toLowerCase())) {
+    return {
+      success: false,
+      error: `Invalid file format (${file.type}). Allowed formats: JPG, JPEG, PNG, WebP.`,
+    };
+  }
+  if (file.size > MAX_IMAGE_FILE_SIZE_BYTES) {
+    const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      success: false,
+      error: `File size (${sizeInMb}MB) exceeds the 5MB maximum limit.`,
+    };
+  }
+
+  const ext = file.name.split(".").pop() || "png";
+  const sanitizedName = file.name
+    .replace(/\.[^/.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .substring(0, 30);
+  const filePath = `${schoolId}/${category}/${Date.now()}_${sanitizedName}.${ext}`;
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.storage
+        .from("school-assets")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (error) {
+        console.warn("Supabase storage upload error:", error);
+      } else if (data) {
+        const { data: publicUrlData } = supabase.storage
+          .from("school-assets")
+          .getPublicUrl(filePath);
+
+        if (publicUrlData?.publicUrl) {
+          return { success: true, url: publicUrlData.publicUrl };
+        }
+      }
+    } catch (err) {
+      console.warn("Storage upload exception:", err);
+    }
+  }
+
+  // Graceful client preview fallback
+  const clientUrl = URL.createObjectURL(file);
+  return { success: true, url: clientUrl };
+}
+
+/**
+ * Constructs realistic, authentic default content for a school home page
+ */
+export function getDefaultHomePageContent(school?: Partial<School>): HomePageContent {
+  const schoolName = school?.name || "Our School";
+  return {
+    hero: {
+      headline: `Welcome to ${schoolName}`,
+      description: `Committed to academic rigor, character development, and future-ready excellence. Empowering every learner to reach their highest potential.`,
+      ctaText: "Apply for Admission",
+      backgroundImageUrl: "",
+    },
+    principal: {
+      name: "Principal's Desk",
+      title: "Principal & Head of School",
+      message: `At ${schoolName}, we foster a dynamic culture of curiosity, moral discipline, and intellectual pursuit. We welcome prospective parents to visit our campus and join our growing family.`,
+      photoUrl: "",
+    },
+    facilities: [
+      {
+        id: "fac-1",
+        title: "Digital Smart Classrooms",
+        description: "Interactive display boards and multimedia-enabled learning spaces.",
+      },
+      {
+        id: "fac-2",
+        title: "Modern Science & Computer Labs",
+        description: "Hands-on physics, chemistry, biology, and digital computing facilities.",
+      },
+      {
+        id: "fac-3",
+        title: "Central Library & Resource Hub",
+        description: "Vast collection of reference volumes, journals, and quiet reading zones.",
+      },
+      {
+        id: "fac-4",
+        title: "Sports Grounds & Play Arena",
+        description: "Dedicated athletic track, football field, cricket net, and indoor sports hall.",
+      },
+    ],
+    gallery: [],
+    stats: [
+      { id: "stat-1", label: "Years of Academic Service", value: "20+" },
+      { id: "stat-2", label: "Board Exam Success", value: "100%" },
+      { id: "stat-3", label: "Student-Teacher Ratio", value: "20:1" },
+      { id: "stat-4", label: "Activity Clubs & Sports", value: "15+" },
+    ],
+    testimonials: [],
+    announcements: [
+      {
+        id: "ann-1",
+        title: "Admissions Open for Academic Year",
+        date: "Current Session",
+        description: "Online applications and campus enquiry registration are now open.",
+      },
+      {
+        id: "ann-2",
+        title: "Annual Sports & Cultural Meet",
+        date: "Upcoming",
+        description: "Annual celebrations featuring student athletics, arts, and science exhibition.",
+      },
+    ],
+    socialLinks: {
+      facebook: "",
+      twitter: "",
+      instagram: "",
+      youtube: "",
+      linkedin: "",
+    },
+    sections: [...DEFAULT_WEBSITE_SECTIONS],
+  };
+}
+
+/**
+ * Loads the structured home page content from website_pages (slug: 'home')
+ */
+export async function getHomePageContent(
+  websiteId: string,
+  school?: Partial<School>
+): Promise<HomePageContent> {
+  const defaults = getDefaultHomePageContent(school);
+  if (!websiteId) return defaults;
+
+  const { pages } = await getWebsitePages(websiteId);
+  const homePage = pages.find((p) => p.slug === "home");
+
+  if (!homePage || !homePage.content || typeof homePage.content !== "object") {
+    return defaults;
+  }
+
+  const raw = homePage.content as Record<string, unknown>;
+
+  return {
+    hero: (raw.hero as HeroSectionConfig) || defaults.hero,
+    principal: (raw.principal as PrincipalSectionConfig) || defaults.principal,
+    facilities: Array.isArray(raw.facilities) ? (raw.facilities as FacilityItem[]) : defaults.facilities,
+    gallery: Array.isArray(raw.gallery) ? (raw.gallery as GalleryImageItem[]) : defaults.gallery,
+    stats: Array.isArray(raw.stats) ? (raw.stats as StatItem[]) : defaults.stats,
+    testimonials: Array.isArray(raw.testimonials) ? (raw.testimonials as TestimonialItem[]) : defaults.testimonials,
+    announcements: Array.isArray(raw.announcements) ? (raw.announcements as AnnouncementItem[]) : defaults.announcements,
+    socialLinks: (raw.socialLinks as SocialLinks) || defaults.socialLinks,
+    sections: Array.isArray(raw.sections) ? (raw.sections as WebsiteSectionToggle[]) : defaults.sections,
+  };
+}
+
+/**
+ * Saves the structured home page content to website_pages (slug: 'home')
+ */
+export async function saveHomePageContent({
+  schoolId,
+  websiteId,
+  content,
+  userRole = "school_admin",
+}: {
+  schoolId: string;
+  websiteId: string;
+  content: HomePageContent;
+  userRole?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!schoolId || !websiteId) {
+    return { success: false, error: "schoolId and websiteId are required." };
+  }
+
+  if (userRole && !["school_admin", "super_admin"].includes(userRole)) {
+    return { success: false, error: "Unauthorized." };
+  }
+
+  const { pages } = await getWebsitePages(websiteId);
+  const homePage = pages.find((p) => p.slug === "home");
+  const now = new Date().toISOString();
+
+  const contentJson = content as unknown as Record<string, unknown>;
+
+  if (homePage) {
+    homePage.content = contentJson;
+    homePage.updated_at = now;
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase
+          .from("website_pages")
+          .update({
+            content: contentJson,
+            updated_at: now,
+          })
+          .eq("id", homePage.id)
+          .eq("school_id", schoolId);
+      } catch (err) {
+        console.warn("Supabase saveHomePageContent error:", err);
+      }
+    }
+  } else {
+    // Create home page if missing
+    await createWebsitePage({
+      schoolId,
+      websiteId,
+      slug: "home",
+      title: "Home",
+      pageType: "home",
+      content: contentJson,
+      isEnabled: true,
+      sortOrder: 1,
+      userRole,
+    });
+  }
+
+  // Update local cache
+  try {
+    localStorage.setItem(
+      `${WEBSITE_PAGES_CACHE_KEY_PREFIX}${websiteId}`,
+      JSON.stringify(pages)
+    );
+  } catch {
+    // Non-fatal
+  }
+
+  return { success: true };
+}
+
+/**
+ * Extracts school subdomain from a browser hostname (e.g. greenwood.myzkool.com -> greenwood)
+ */
+export function getSubdomainFromHost(hostname: string): string | null {
+  if (!hostname || hostname === "localhost" || hostname === "127.0.0.1") return null;
+  const parts = hostname.toLowerCase().split(".");
+  // Standard *.myzkool.com or *.domain.com
+  if (parts.length >= 3 && parts[0] !== "www" && parts[0] !== "app") {
+    return parts[0];
+  }
+  return null;
+}
+
+/**
+ * Submits an authentic admission enquiry to the database
+ */
+export async function submitAdmissionEnquiry({
+  schoolId,
+  parentName,
+  phone,
+  email,
+  classGrade,
+  message,
+}: {
+  schoolId: string;
+  parentName: string;
+  phone: string;
+  email?: string;
+  classGrade: string;
+  message?: string;
+}): Promise<{ success: boolean; enquiryId?: string; error?: string }> {
+  if (!schoolId) {
+    return { success: false, error: "School ID is required." };
+  }
+  if (!parentName || !parentName.trim()) {
+    return { success: false, error: "Parent's full name is required." };
+  }
+  if (!phone || !phone.trim()) {
+    return { success: false, error: "Contact phone number is required." };
+  }
+  if (!classGrade || !classGrade.trim()) {
+    return { success: false, error: "Please select the seeking class / grade." };
+  }
+
+  const now = new Date().toISOString();
+  const generatedId =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `enq-${Date.now()}`;
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from("admission_enquiries")
+        .insert({
+          id: generatedId,
+          school_id: schoolId,
+          parent_name: parentName.trim(),
+          phone: phone.trim(),
+          email: email?.trim() || null,
+          class_grade: classGrade.trim(),
+          message: message?.trim() || null,
+          status: "new",
+          created_at: now,
+          updated_at: now,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.warn("Supabase admission_enquiries insert warning:", error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, enquiryId: data?.id || generatedId };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Submission error";
+      return { success: false, error: msg };
+    }
+  }
+
+  // Local storage fallback for offline/test environments
+  try {
+    const key = `myzkool_enquiries_${schoolId}`;
+    const existing = JSON.parse(localStorage.getItem(key) || "[]");
+    existing.push({
+      id: generatedId,
+      school_id: schoolId,
+      parent_name: parentName.trim(),
+      phone: phone.trim(),
+      email: email?.trim() || null,
+      class_grade: classGrade.trim(),
+      message: message?.trim() || null,
+      created_at: now,
+    });
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch {
+    // Non-fatal
+  }
+
+  return { success: true, enquiryId: generatedId };
 }

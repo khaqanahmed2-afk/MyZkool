@@ -18,11 +18,19 @@ import {
   isValidHexColor,
   isValidEmail,
   normalizePageSlug,
+  getHomePageContent,
+  saveHomePageContent,
+  getDefaultHomePageContent,
+  uploadWebsiteAsset,
+  getSubdomainFromHost,
+  submitAdmissionEnquiry,
+  ALLOWED_IMAGE_MIME_TYPES,
+  MAX_IMAGE_FILE_SIZE_BYTES,
   WEBSITE_CACHE_KEY_PREFIX,
   WEBSITE_PAGES_CACHE_KEY_PREFIX,
 } from "../src/services/websiteService";
 import type { School } from "../src/types/school";
-import type { SchoolWebsite, WebsitePage } from "../src/types/website";
+import type { SchoolWebsite, WebsitePage, HomePageContent } from "../src/types/website";
 
 // Polyfill localStorage in Node test environment
 if (typeof globalThis.localStorage === "undefined") {
@@ -495,6 +503,171 @@ async function runTests() {
     cachedSchoolNonReg.onboarding_step === 6,
     "Non-regression: Step 6 does not decrease when re-saving Website Setup"
   );
+
+  // -----------------------------------------------------------------
+  // 10. Rich Homepage Content & Image Upload Validation
+  // -----------------------------------------------------------------
+  console.log("\n10. Rich Homepage Content & Image Upload Validation:");
+
+  const defaultContent = getDefaultHomePageContent(mockSchool1);
+  assert(
+    defaultContent.hero.headline.includes("Greenwood International Academy"),
+    "Generates realistic hero headline incorporating school name"
+  );
+  assert(
+    defaultContent.facilities.length >= 4,
+    "Provides realistic initial campus facilities (labs, library, sports)"
+  );
+  assert(
+    defaultContent.stats.length >= 4,
+    "Provides authentic institutional key statistics"
+  );
+  assert(
+    defaultContent.sections.length === 12,
+    "Initializes all 12 supported website sections"
+  );
+  assert(
+    defaultContent.sections.find((s) => s.key === "hero")?.canDisable === false,
+    "Guards hero section from being disabled"
+  );
+
+  // Save customized home page content
+  const customContent: HomePageContent = {
+    ...defaultContent,
+    hero: {
+      ...defaultContent.hero,
+      headline: "Excellence in Global Education",
+      ctaText: "Inquire for Admission 2026-27",
+    },
+    gallery: [
+      {
+        id: "img-01",
+        imageUrl: "https://example.com/sports-day.jpg",
+        title: "Annual Sports Day",
+        category: "Sports",
+      },
+    ],
+  };
+
+  const saveHomeRes = await saveHomePageContent({
+    schoolId: mockSchool1.id,
+    websiteId: initResult1.website!.id,
+    content: customContent,
+  });
+  assert(saveHomeRes.success, "Saves customized rich home page content");
+
+  const reloadedHome = await getHomePageContent(initResult1.website!.id, mockSchool1);
+  assert(
+    reloadedHome.hero.headline === "Excellence in Global Education",
+    "Persists customized hero headline"
+  );
+  assert(
+    reloadedHome.hero.ctaText === "Inquire for Admission 2026-27",
+    "Persists customized hero CTA text"
+  );
+  assert(
+    reloadedHome.gallery.length === 1 && reloadedHome.gallery[0].id === "img-01",
+    "Persists uploaded photo gallery items"
+  );
+
+  // Asset Upload Validation
+  assert(
+    ALLOWED_IMAGE_MIME_TYPES.includes("image/jpeg") &&
+    ALLOWED_IMAGE_MIME_TYPES.includes("image/png") &&
+    ALLOWED_IMAGE_MIME_TYPES.includes("image/webp"),
+    "Supports standard image formats (JPG, JPEG, PNG, WebP)"
+  );
+  assert(
+    MAX_IMAGE_FILE_SIZE_BYTES === 5 * 1024 * 1024,
+    "Enforces 5MB maximum file size limit"
+  );
+
+  // Test invalid file type upload rejection
+  const invalidFile = {
+    name: "document.pdf",
+    type: "application/pdf",
+    size: 1024,
+  } as unknown as File;
+  const badUploadRes = await uploadWebsiteAsset({
+    schoolId: mockSchool1.id,
+    file: invalidFile,
+  });
+  assert(!badUploadRes.success, "Rejects unsupported non-image file uploads (PDF)");
+
+  // Test oversized file upload rejection (>5MB)
+  const oversizedFile = {
+    name: "huge-photo.jpg",
+    type: "image/jpeg",
+    size: 6 * 1024 * 1024,
+  } as unknown as File;
+  const bigUploadRes = await uploadWebsiteAsset({
+    schoolId: mockSchool1.id,
+    file: oversizedFile,
+  });
+  assert(!bigUploadRes.success, "Rejects oversized images exceeding 5MB");
+
+  // -----------------------------------------------------------------
+  // 11. Public Subdomain Resolution & Admission Enquiries
+  // -----------------------------------------------------------------
+  console.log("\n11. Public Subdomain Resolution & Admission Enquiries:");
+
+  assert(
+    getSubdomainFromHost("greenwood.myzkool.com") === "greenwood",
+    "Resolves school tenant subdomain from FQDN hostname"
+  );
+  assert(
+    getSubdomainFromHost("localhost") === null,
+    "Ignores localhost hostname for subdomain extraction"
+  );
+  assert(
+    getSubdomainFromHost("www.myzkool.com") === null,
+    "Ignores www prefix for tenant subdomain extraction"
+  );
+  assert(
+    getSubdomainFromHost("delhi-academy.staging.school.edu") === "delhi-academy",
+    "Resolves multi-level subdomain accurately"
+  );
+
+  // Test admission enquiry persistence
+  const validEnquiryRes = await submitAdmissionEnquiry({
+    schoolId: mockSchool1.id,
+    parentName: "Vikram Malhotra",
+    phone: "+91 98765 12345",
+    email: "vikram@example.com",
+    classGrade: "Class 5",
+    message: "Seeking admission for academic year 2026-27.",
+  });
+  assert(
+    validEnquiryRes.success && Boolean(validEnquiryRes.enquiryId),
+    "Submits admission enquiry successfully and returns enquiry ID"
+  );
+
+  // Test admission enquiry validations
+  const emptyNameEnquiry = await submitAdmissionEnquiry({
+    schoolId: mockSchool1.id,
+    parentName: "",
+    phone: "+91 98765 12345",
+    classGrade: "Class 1",
+  });
+  assert(!emptyNameEnquiry.success, "Rejects admission enquiry with empty parent name");
+
+  const emptyPhoneEnquiry = await submitAdmissionEnquiry({
+    schoolId: mockSchool1.id,
+    parentName: "Sita Sharma",
+    phone: "",
+    classGrade: "Class 1",
+  });
+  assert(!emptyPhoneEnquiry.success, "Rejects admission enquiry with missing contact phone");
+
+  const emptyGradeEnquiry = await submitAdmissionEnquiry({
+    schoolId: mockSchool1.id,
+    parentName: "Sita Sharma",
+    phone: "+91 98765 12345",
+    classGrade: "",
+  });
+  assert(!emptyGradeEnquiry.success, "Rejects admission enquiry with missing grade");
+
+
 
   // -----------------------------------------------------------------
   // Summary

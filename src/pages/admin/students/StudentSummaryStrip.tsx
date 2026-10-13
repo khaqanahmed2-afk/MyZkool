@@ -12,11 +12,11 @@ export interface StudentSummaryData {
   totalStudents: number;
   enrolledCount: number;
   newAdmissionsCount: number;
-  boysCount: number;
-  girlsCount: number;
-  documentsPending: number;
   feePendingCount: number;
-  transportCount: number;
+  boysCount?: number;
+  girlsCount?: number;
+  documentsPending?: number;
+  transportCount?: number;
 }
 
 interface StudentSummaryStripProps {
@@ -34,6 +34,7 @@ interface MetricCardConfig {
   iconBg: string;
   activeRing: string;
   activeBg: string;
+  description: string;
 }
 
 export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: StudentSummaryStripProps) {
@@ -46,17 +47,19 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
       iconColor: "text-[#2158E0]",
       iconBg: "bg-blue-50",
       activeRing: "ring-[#2158E0]",
-      activeBg: "bg-blue-50/60",
+      activeBg: "bg-blue-50/50",
+      description: "All registered students",
     },
     {
       key: "active",
-      label: "Active / Enrolled",
+      label: "Active Students",
       count: data.enrolledCount,
       icon: UserCheck,
       iconColor: "text-emerald-600",
       iconBg: "bg-emerald-50",
       activeRing: "ring-emerald-500",
-      activeBg: "bg-emerald-50/60",
+      activeBg: "bg-emerald-50/50",
+      description: "Currently enrolled",
     },
     {
       key: "new_admissions",
@@ -66,62 +69,24 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
       iconColor: "text-indigo-600",
       iconBg: "bg-indigo-50",
       activeRing: "ring-indigo-500",
-      activeBg: "bg-indigo-50/60",
-    },
-    {
-      key: "boys",
-      label: "Boys",
-      count: data.boysCount,
-      icon: Users,
-      iconColor: "text-sky-600",
-      iconBg: "bg-sky-50",
-      activeRing: "ring-sky-500",
-      activeBg: "bg-sky-50/60",
-    },
-    {
-      key: "girls",
-      label: "Girls",
-      count: data.girlsCount,
-      icon: Users,
-      iconColor: "text-pink-600",
-      iconBg: "bg-pink-50",
-      activeRing: "ring-pink-500",
-      activeBg: "bg-pink-50/60",
-    },
-    {
-      key: "docs_pending",
-      label: "Docs Pending",
-      count: data.documentsPending,
-      icon: FileText,
-      iconColor: "text-amber-600",
-      iconBg: "bg-amber-50",
-      activeRing: "ring-amber-500",
-      activeBg: "bg-amber-50/60",
+      activeBg: "bg-indigo-50/50",
+      description: "This academic year",
     },
     {
       key: "fee_pending",
-      label: "Fee Pending",
+      label: "Pending Fees",
       count: data.feePendingCount,
       icon: CreditCard,
-      iconColor: "text-orange-600",
-      iconBg: "bg-orange-50",
-      activeRing: "ring-orange-500",
-      activeBg: "bg-orange-50/60",
-    },
-    {
-      key: "transport",
-      label: "Transport",
-      count: data.transportCount,
-      icon: Bus,
-      iconColor: "text-cyan-600",
-      iconBg: "bg-cyan-50",
-      activeRing: "ring-cyan-500",
-      activeBg: "bg-cyan-50/60",
+      iconColor: "text-amber-600",
+      iconBg: "bg-amber-50",
+      activeRing: "ring-amber-500",
+      activeBg: "bg-amber-50/50",
+      description: "With outstanding dues",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mb-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {cards.map((card) => {
         const Icon = card.icon;
         const isActive = activeFilter === card.key;
@@ -132,24 +97,29 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
             type="button"
             onClick={() => onFilterClick(card.key)}
             aria-pressed={isActive}
-            className={`p-3 bg-white border rounded-xl text-left transition-all duration-150 cursor-pointer shadow-2xs hover:shadow-xs group flex flex-col justify-between ${
+            className={`p-4 bg-white border rounded-2xl text-left transition-all duration-150 cursor-pointer shadow-2xs hover:shadow-xs group flex flex-col justify-between ${
               isActive
                 ? `border-transparent ring-2 ${card.activeRing} ${card.activeBg}`
-                : "border-[#E6EAF3] hover:border-slate-300 hover:bg-slate-50/60"
+                : "border-[#E6EAF3] hover:border-slate-300 hover:bg-slate-50/50"
             }`}
           >
-            <div className="flex items-center justify-between gap-1 mb-2">
-              <span className="text-[11px] font-medium text-slate-500 group-hover:text-slate-700 truncate">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs font-medium text-slate-500 group-hover:text-slate-700 truncate">
                 {card.label}
               </span>
               <div
-                className={`w-6 h-6 rounded-lg ${card.iconBg} ${card.iconColor} flex items-center justify-center shrink-0`}
+                className={`w-8 h-8 rounded-xl ${card.iconBg} ${card.iconColor} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-xl font-bold text-slate-900 font-display tracking-tight">
-              {card.count}
+            <div>
+              <div className="text-2xl font-bold text-slate-900 tracking-tight font-display">
+                {card.count.toLocaleString()}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                {card.description}
+              </p>
             </div>
           </button>
         );

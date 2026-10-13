@@ -56,9 +56,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
 
             {/* LEFT — Marketing Content */}
             <div
-              className={`lg:col-span-5 xl:col-span-5 space-y-6 lg:space-y-7 transition-all duration-700 ease-out ${
-                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-              }`}
+              className={`lg:col-span-5 xl:col-span-5 space-y-6 lg:space-y-7 transition-all duration-700 ease-out ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+                }`}
             >
               {/* Badge */}
               <div
@@ -149,9 +148,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
 
             {/* RIGHT — Product Showcase Image */}
             <div
-              className={`lg:col-span-7 xl:col-span-7 flex items-center justify-center lg:justify-end transition-all duration-700 ease-out delay-150 ${
-                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-              }`}
+              className={`lg:col-span-7 xl:col-span-7 flex items-center justify-center lg:justify-end transition-all duration-700 ease-out delay-150 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+                }`}
             >
               <div className="relative w-full max-w-[720px] xl:max-w-[780px] flex items-center justify-center">
                 {/* Clean soft ambient glow behind the mockup */}

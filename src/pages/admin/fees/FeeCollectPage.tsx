@@ -1023,7 +1023,7 @@ export default function FeeCollectPage() {
                             step="0.01"
                             placeholder="0.00"
                             className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0] tabular-nums"
-                            value={p.amount}
+                            value={typeof p.amount === "number" && Number.isNaN(p.amount) ? "" : (p.amount ?? "")}
                             onChange={e => updatePayment(p.id, { amount: e.target.value })}
                           />
                         </div>
@@ -1044,7 +1044,7 @@ export default function FeeCollectPage() {
                               min="0"
                               placeholder="0.00"
                               className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0] tabular-nums"
-                              value={p.received ?? ""}
+                              value={typeof p.received === "number" && Number.isNaN(p.received) ? "" : (p.received ?? "")}
                               onChange={e => updatePayment(p.id, { received: e.target.value })}
                             />
                           </div>
@@ -1190,7 +1190,7 @@ export default function FeeCollectPage() {
                   </label>
                   <input
                     type="number"
-                    value={concessionVal}
+                    value={typeof concessionVal === "number" && Number.isNaN(concessionVal) ? "" : (concessionVal ?? "")}
                     onChange={e => setConcessionVal(e.target.value)}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
                     placeholder="10"

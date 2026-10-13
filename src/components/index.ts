@@ -1,5 +1,6 @@
 // Common
 export * from "./common/MyZkoolLogo";
+export * from "./common/ErrorBoundary";
 
 // Layout
 export * from "./layout/Navbar";

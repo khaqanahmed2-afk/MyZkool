@@ -576,10 +576,10 @@ export default function FeeTermsPage() {
                       type="number"
                       min={1}
                       max={28}
-                      value={defaultDueDay}
+                      value={Number.isNaN(defaultDueDay) ? "" : (defaultDueDay ?? 10)}
                       onChange={e => {
-                        const val = parseInt(e.target.value) || 10;
-                        setDefaultDueDay(val);
+                        const val = parseInt(e.target.value, 10);
+                        setDefaultDueDay(isNaN(val) ? ("" as any) : val);
                       }}
                       className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm text-[#141A2E] outline-none focus:border-[#2158E0]"
                     />
@@ -592,10 +592,10 @@ export default function FeeTermsPage() {
                       type="number"
                       min={0}
                       max={30}
-                      value={defaultGraceDays}
+                      value={Number.isNaN(defaultGraceDays) ? "" : (defaultGraceDays ?? 0)}
                       onChange={e => {
-                        const val = parseInt(e.target.value) || 0;
-                        setDefaultGraceDays(val);
+                        const val = parseInt(e.target.value, 10);
+                        setDefaultGraceDays(isNaN(val) ? ("" as any) : val);
                       }}
                       className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm text-[#141A2E] outline-none focus:border-[#2158E0]"
                     />
@@ -691,8 +691,11 @@ export default function FeeTermsPage() {
                             <input
                               type="number"
                               min={0}
-                              value={term.late_grace_days ?? 0}
-                              onChange={e => handleUpdateTerm(i, "late_grace_days", parseInt(e.target.value) || 0)}
+                              value={Number.isNaN(term.late_grace_days) ? 0 : (term.late_grace_days ?? 0)}
+                              onChange={e => {
+                                const val = parseInt(e.target.value, 10);
+                                handleUpdateTerm(i, "late_grace_days", isNaN(val) ? 0 : val);
+                              }}
                               className="w-16 border border-gray-200 focus:border-[#2158E0] rounded-lg px-2 py-1.5 text-xs text-[#141A2E] outline-none text-center bg-white"
                             />
                           </td>

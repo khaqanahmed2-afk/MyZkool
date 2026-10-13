@@ -239,7 +239,7 @@ export default function RefundsPage() {
                 <input
                   type="number"
                   placeholder="0.00"
-                  value={amountRs}
+                  value={typeof amountRs === "number" && Number.isNaN(amountRs) ? "" : (amountRs ?? "")}
                   onChange={e => setAmountRs(e.target.value)}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
                 />

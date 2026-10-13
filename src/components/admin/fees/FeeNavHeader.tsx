@@ -88,7 +88,7 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
             <Link to="/admin" className="hover:text-[#2158E0] transition-colors">Admin</Link>
             <span>/</span>
             <Link to="/admin/fees" className="hover:text-[#2158E0] transition-colors">Fees</Link>
-            {title && (
+            {title && title !== "Fees" && (
               <>
                 <span>/</span>
                 <span className="text-[#141A2E] font-semibold">{title}</span>
@@ -96,7 +96,7 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
             )}
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-[#141A2E] font-display">
-            {title || "Fee Operations"}
+            {title || "Fees"}
           </h1>
           {subtitle && <p className="text-xs text-[#5B6478] mt-0.5">{subtitle}</p>}
         </div>
@@ -105,31 +105,31 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <div className="flex items-center gap-2 flex-wrap">
           {action}
 
-          {/* Quick Setup Button */}
-          <Link
-            to="/admin/fees/setup"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${isSetup
-                ? "bg-blue-50 border-blue-200 text-[#2158E0]"
-                : "border-[#E6EAF3] bg-white text-slate-700 hover:bg-slate-50 hover:border-blue-200"
-              }`}
-          >
-            <Settings className="w-3.5 h-3.5 text-[#2158E0]" />
-            <span>Fee Setup</span>
-          </Link>
-
-          {/* Assign Dues / Invoices Button */}
+          {/* Secondary Action: Assign Dues */}
           <Link
             to="/admin/fees/dues"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${isDues
-                ? "bg-blue-50 border-blue-200 text-[#2158E0]"
-                : "border-[#E6EAF3] bg-white text-slate-700 hover:bg-slate-50 hover:border-blue-200"
+              ? "bg-blue-50 border-blue-200 text-[#2158E0]"
+              : "border-[#E6EAF3] bg-white text-slate-700 hover:bg-slate-50 hover:border-blue-200"
               }`}
           >
             <PlusCircle className="w-3.5 h-3.5 text-blue-600" />
             <span>Assign Dues</span>
           </Link>
 
-          {/* Collect Fee Button (Primary Action) */}
+          {/* Secondary Action: Fee Settings */}
+          <Link
+            to="/admin/fees/setup"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${isSetup
+              ? "bg-blue-50 border-blue-200 text-[#2158E0]"
+              : "border-[#E6EAF3] bg-white text-slate-700 hover:bg-slate-50 hover:border-blue-200"
+              }`}
+          >
+            <Settings className="w-3.5 h-3.5 text-[#2158E0]" />
+            <span>Fee Settings</span>
+          </Link>
+
+          {/* Primary Action: Collect Fee */}
           <Link
             to="/admin/fees/collect"
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1A46B8] transition-colors cursor-pointer shadow-xs"
@@ -146,8 +146,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <Link
           to="/admin/fees"
           className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all shrink-0 ${isOverview
-              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+            ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+            : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
             }`}
         >
           <LayoutDashboard className="w-3.5 h-3.5" />
@@ -160,8 +160,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
             type="button"
             onClick={() => setSetupDropdownOpen(!setupDropdownOpen)}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${isSetup
-                ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-                : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
               }`}
           >
             <Settings className="w-3.5 h-3.5" />
@@ -183,8 +183,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
                     to={item.href}
                     onClick={() => setSetupDropdownOpen(false)}
                     className={`flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-xs transition-colors ${active
-                        ? "bg-blue-50 text-[#2158E0] font-semibold"
-                        : "text-slate-700 hover:bg-slate-50"
+                      ? "bg-blue-50 text-[#2158E0] font-semibold"
+                      : "text-slate-700 hover:bg-slate-50"
                       }`}
                   >
                     <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${active ? "text-[#2158E0]" : "text-slate-400"}`} />
@@ -203,8 +203,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <Link
           to="/admin/fees/dues"
           className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all shrink-0 ${isDues
-              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+            ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+            : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
             }`}
         >
           <FileCheck2 className="w-3.5 h-3.5" />
@@ -215,8 +215,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <Link
           to="/admin/fees/collect"
           className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all shrink-0 ${isCollect
-              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+            ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+            : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
             }`}
         >
           <CreditCard className="w-3.5 h-3.5" />
@@ -227,8 +227,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <Link
           to="/admin/fees/receipts"
           className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all shrink-0 ${isReceipts
-              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+            ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+            : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
             }`}
         >
           <Receipt className="w-3.5 h-3.5" />
@@ -239,8 +239,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <Link
           to="/admin/fees/defaulters"
           className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all shrink-0 ${isDefaulters
-              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+            ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+            : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
             }`}
         >
           <Bell className="w-3.5 h-3.5" />
@@ -251,8 +251,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
         <Link
           to="/admin/fees/reports"
           className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all shrink-0 ${isReports
-              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+            ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+            : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
             }`}
         >
           <BarChart3 className="w-3.5 h-3.5" />
@@ -265,8 +265,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
             type="button"
             onClick={() => setMoreDropdownOpen(!moreDropdownOpen)}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${isMore
-                ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-                : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
+              ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
+              : "border-transparent text-[#5B6478] hover:text-[#141A2E] hover:border-slate-300"
               }`}
           >
             <span>More</span>
@@ -287,8 +287,8 @@ export function FeeNavHeader({ title, subtitle, action }: FeeNavHeaderProps) {
                     to={item.href}
                     onClick={() => setMoreDropdownOpen(false)}
                     className={`flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-xs transition-colors ${active
-                        ? "bg-blue-50 text-[#2158E0] font-semibold"
-                        : "text-slate-700 hover:bg-slate-50"
+                      ? "bg-blue-50 text-[#2158E0] font-semibold"
+                      : "text-slate-700 hover:bg-slate-50"
                       }`}
                   >
                     <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${active ? "text-[#2158E0]" : "text-slate-400"}`} />

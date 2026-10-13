@@ -158,9 +158,6 @@ export const WEBSITE_COLOR_PRESETS: WebsiteColorPreset[] = [
   },
 ];
 
-/**
- * Standard Default Pages initialized for every new school website
- */
 export const DEFAULT_WEBSITE_PAGES: Array<{
   slug: string;
   title: string;
@@ -203,4 +200,142 @@ export const DEFAULT_WEBSITE_PAGES: Array<{
     sort_order: 5,
     description: "Campus address, interactive map, office hours, and telephone directory",
   },
+];
+
+/**
+ * Social Media Profile Links
+ */
+export interface SocialLinks {
+  facebook?: string;
+  twitter?: string;
+  instagram?: string;
+  youtube?: string;
+  linkedin?: string;
+}
+
+/**
+ * Hero Banner Section Configuration
+ */
+export interface HeroSectionConfig {
+  headline: string;
+  description: string;
+  ctaText: string;
+  backgroundImageUrl?: string;
+}
+
+/**
+ * Principal Welcome Section Configuration
+ */
+export interface PrincipalSectionConfig {
+  name: string;
+  title: string;
+  message: string;
+  photoUrl?: string;
+}
+
+/**
+ * Campus Facility Item
+ */
+export interface FacilityItem {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl?: string;
+}
+
+/**
+ * Gallery Image Item
+ */
+export interface GalleryImageItem {
+  id: string;
+  imageUrl: string;
+  title?: string;
+  category?: string;
+}
+
+/**
+ * Key Statistic / Highlight Item
+ */
+export interface StatItem {
+  id: string;
+  label: string;
+  value: string;
+}
+
+/**
+ * Genuine Parent/Student Testimonial Item
+ */
+export interface TestimonialItem {
+  id: string;
+  quote: string;
+  author: string;
+  role: string;
+}
+
+/**
+ * News / Announcement Item
+ */
+export interface AnnouncementItem {
+  id: string;
+  title: string;
+  date: string;
+  description: string;
+}
+
+/**
+ * Website Section Keys
+ */
+export type WebsiteSectionKey =
+  | "hero"
+  | "about"
+  | "academics"
+  | "facilities"
+  | "gallery"
+  | "principal"
+  | "stats"
+  | "faculty"
+  | "news"
+  | "testimonials"
+  | "admission_cta"
+  | "contact_footer";
+
+/**
+ * Configurable Section Visibility & Order
+ */
+export interface WebsiteSectionToggle {
+  key: WebsiteSectionKey;
+  label: string;
+  description: string;
+  isEnabled: boolean;
+  canDisable?: boolean;
+}
+
+/**
+ * Complete Home Page Content Payload
+ */
+export interface HomePageContent {
+  hero: HeroSectionConfig;
+  principal: PrincipalSectionConfig;
+  facilities: FacilityItem[];
+  gallery: GalleryImageItem[];
+  stats: StatItem[];
+  testimonials: TestimonialItem[];
+  announcements: AnnouncementItem[];
+  socialLinks: SocialLinks;
+  sections: WebsiteSectionToggle[];
+}
+
+export const DEFAULT_WEBSITE_SECTIONS: WebsiteSectionToggle[] = [
+  { key: "hero", label: "Hero Banner & Admissions CTA", description: "Top banner with headline, campus background, and direct enquiry button", isEnabled: true, canDisable: false },
+  { key: "about", label: "About the School", description: "School mission, overview, and values", isEnabled: true, canDisable: true },
+  { key: "principal", label: "Principal's Welcome Message", description: "Personal note from school leadership with portrait", isEnabled: true, canDisable: true },
+  { key: "academics", label: "Academic Programs & Classes", description: "Curriculum boards, grades, and educational pedagogy", isEnabled: true, canDisable: true },
+  { key: "facilities", label: "Campus Infrastructure & Facilities", description: "Smart classrooms, library, labs, and sports amenities", isEnabled: true, canDisable: true },
+  { key: "gallery", label: "Photo Gallery", description: "Photographs of campus life, annual events, and activities", isEnabled: true, canDisable: true },
+  { key: "stats", label: "Key Achievements & Numbers", description: "Student count, years of service, and academic track record", isEnabled: true, canDisable: true },
+  { key: "faculty", label: "Faculty & Staff Overview", description: "Qualified educators and faculty dedication", isEnabled: false, canDisable: true },
+  { key: "news", label: "Announcements & Notices", description: "Upcoming events, circulars, and latest news", isEnabled: true, canDisable: true },
+  { key: "testimonials", label: "Parent & Alumni Testimonials", description: "Genuine quotes from school community members", isEnabled: false, canDisable: true },
+  { key: "admission_cta", label: "Admission Enquiry Section", description: "Interactive enquiry trigger for prospective families", isEnabled: true, canDisable: true },
+  { key: "contact_footer", label: "Contact Details & Campus Footer", description: "Address, interactive phone/email, map link, and copyright", isEnabled: true, canDisable: false },
 ];

@@ -13,6 +13,11 @@ import {
   deleteSection,
   applyClassTemplate,
   saveClassesSetupProgress,
+  generateClassesFromTemplate,
+  validateClassesStructure,
+  saveAllClassesAndSections,
+  canDeleteClass,
+  canDeleteSection,
 } from "../src/services/classSectionService";
 import {
   getSubjects,
@@ -544,6 +549,97 @@ async function runTests() {
     reloadedSub.subjects.length === 3,
     "Resumed subjects library contains exact count without duplicate items"
   );
+
+  // 10. IN-MEMORY TEMPLATE GENERATION & STRUCTURE VALIDATION
+  console.log("\n10. In-Memory Template Generation & Structure Validation:");
+
+  // Test all 4 templates
+  const k12Gen = generateClassesFromTemplate("k12", schoolA, academicYearA1);
+  assert(k12Gen.length === 15, "Generates 15 classes for K-12 template (Nursery, LKG, UKG + Class 1-12)");
+  assert(k12Gen[0].name === "Nursery" && k12Gen[0].sections?.length === 1, "Nursery class has section A");
+  assert(k12Gen[14].name === "Class 12" && k12Gen[14].sections?.length === 2, "Class 12 has sections A and B");
+  assert(k12Gen[0].sections?.[0].capacity === 40, "Default section capacity is 40");
+
+  const c1to10Gen = generateClassesFromTemplate("class_1_10", schoolA, academicYearA1);
+  assert(c1to10Gen.length === 10, "Generates 10 classes for Class 1-10 template");
+
+  const primaryGen = generateClassesFromTemplate("primary_1_5", schoolA, academicYearA1);
+  assert(primaryGen.length === 5, "Generates 5 classes for Primary Wing template");
+
+  const preSchoolGen = generateClassesFromTemplate("preschool", schoolA, academicYearA1);
+  assert(preSchoolGen.length === 4, "Generates 4 classes for Early Childhood template");
+  assert(preSchoolGen[0].name === "Playgroup", "Includes Playgroup");
+
+  // In-memory generation does NOT write to database
+  const classesBeforeSave = await getClassesWithSections("unused-school-id-temp", "unused-ay-id-temp");
+  assert(classesBeforeSave.classes.length === 0, "Template generation is purely in-memory and does not mutate database");
+
+  // Validation: empty list
+  const vEmpty = validateClassesStructure([]);
+  assert(vEmpty.isValid === false, "Rejects empty classes list");
+
+  // Validation: empty class name
+  const vEmptyName = validateClassesStructure([
+    { id: "c1", school_id: "s1", academic_year_id: "ay1", name: "", sort_order: 1, status: "active", sections: [] },
+  ]);
+  assert(vEmptyName.isValid === false, "Rejects class with empty name");
+
+  // Validation: duplicate class names
+  const vDupClass = validateClassesStructure([
+    { id: "c1", school_id: "s1", academic_year_id: "ay1", name: "Class 1", sort_order: 1, status: "active", sections: [{ id: "s1", school_id: "s1", academic_year_id: "ay1", class_id: "c1", name: "A", sort_order: 1, status: "active" }] },
+    { id: "c2", school_id: "s1", academic_year_id: "ay1", name: "class 1", sort_order: 2, status: "active", sections: [{ id: "s2", school_id: "s1", academic_year_id: "ay1", class_id: "c2", name: "A", sort_order: 1, status: "active" }] },
+  ]);
+  assert(vDupClass.isValid === false, "Rejects duplicate class name (case-insensitive)");
+
+  // Validation: missing sections
+  const vNoSec = validateClassesStructure([
+    { id: "c1", school_id: "s1", academic_year_id: "ay1", name: "Class 1", sort_order: 1, status: "active", sections: [] },
+  ]);
+  assert(vNoSec.isValid === false, "Rejects class with zero sections");
+
+  // Validation: duplicate section in same class
+  const vDupSec = validateClassesStructure([
+    {
+      id: "c1",
+      school_id: "s1",
+      academic_year_id: "ay1",
+      name: "Class 1",
+      sort_order: 1,
+      status: "active",
+      sections: [
+        { id: "s1", school_id: "s1", academic_year_id: "ay1", class_id: "c1", name: "A", sort_order: 1, status: "active" },
+        { id: "s2", school_id: "s1", academic_year_id: "ay1", class_id: "c1", name: "a", sort_order: 2, status: "active" },
+      ],
+    },
+  ]);
+  assert(vDupSec.isValid === false, "Rejects duplicate section in same class");
+
+  // 11. BATCH PERSISTENCE (saveAllClassesAndSections) & DELETION GUARDS
+  console.log("\n11. Batch Persistence & Deletion Guards:");
+
+  const testBatchSchool = "school-batch-test";
+  const testBatchAy = "ay-batch-test";
+  const testBatchUser = "user-batch-test";
+
+  const batchClasses = generateClassesFromTemplate("primary_1_5", testBatchSchool, testBatchAy);
+  const saveBatchRes = await saveAllClassesAndSections({
+    schoolId: testBatchSchool,
+    academicYearId: testBatchAy,
+    userId: testBatchUser,
+    classes: batchClasses,
+  });
+  assert(saveBatchRes.success === true, "Saves batch classes and sections successfully");
+
+  const loadedBatch = await getClassesWithSections(testBatchSchool, testBatchAy);
+  assert(loadedBatch.classes.length === 5, "Persisted all 5 classes");
+  assert(loadedBatch.classes[0].sections?.length === 2, "Persisted sections with default capacity");
+
+  // Safety checks
+  const delCheckClass = await canDeleteClass(testBatchSchool, "non-existent-id");
+  assert(delCheckClass.canDelete === true, "canDeleteClass allows deletion when no students enrolled");
+
+  const delCheckSec = await canDeleteSection(testBatchSchool, "non-existent-id");
+  assert(delCheckSec.canDelete === true, "canDeleteSection allows deletion when no students enrolled");
 
   console.log("\n----------------------------------------------------------");
   console.log(`TEST SUMMARY: ${testsPassed} Passed, ${testsFailed} Failed.`);

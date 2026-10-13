@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
@@ -26,13 +26,15 @@ import {
   AlertCircle,
   Loader2,
   Users,
-  Sparkles,
+  Building2,
   Receipt,
   Clock,
+  Sparkles,
+  X,
 } from "lucide-react";
 
 export default function Subscription() {
-  const { user, profile, refreshSession } = useAuth();
+  const { user, profile, refreshSession, signOut } = useAuth();
   const navigate = useNavigate();
 
   // Core Data State
@@ -41,13 +43,14 @@ export default function Subscription() {
   const [existingSubscription, setExistingSubscription] = useState<SchoolSubscription | null>(null);
 
   // Form State
-  const [selectedPlanSlug, setSelectedPlanSlug] = useState<string>("pro"); // Pro is default popular
+  const [selectedPlanSlug, setSelectedPlanSlug] = useState<string>("pro"); // Pro is default recommended
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const [startTrial, setStartTrial] = useState<boolean>(true);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
 
   // UI State
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isSavingAndExiting, setIsSavingAndExiting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [prerequisiteError, setPrerequisiteError] = useState<{
@@ -56,7 +59,15 @@ export default function Subscription() {
     linkText: string;
   } | null>(null);
 
-  const loadData = React.useCallback(async () => {
+  // Redirect if onboarding already finished
+  useEffect(() => {
+    if (profile?.onboarding_completed) {
+      navigate("/admin", { replace: true });
+    }
+  }, [profile?.onboarding_completed, navigate]);
+
+  // Load School, Plans & Existing Subscription
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
     setPlansError(null);
@@ -67,7 +78,7 @@ export default function Subscription() {
         return;
       }
 
-      // Fetch Current School
+      // 1. Fetch Current School
       const { school: currentSchool, error: schoolErr } = await getSchoolForCurrentUser(
         user.id,
         profile?.school_id
@@ -85,7 +96,7 @@ export default function Subscription() {
 
       setSchool(currentSchool);
 
-      // Fetch Plans
+      // 2. Fetch Subscription Plans Catalog
       const { plans: loadedPlans, error: plansErr } = await getSubscriptionPlans();
 
       if (plansErr || !loadedPlans || loadedPlans.length === 0) {
@@ -94,7 +105,7 @@ export default function Subscription() {
         setPlans(loadedPlans);
       }
 
-      // Fetch Existing Subscription if user is resuming
+      // 3. Fetch Existing Subscription if resuming
       const { subscription: currentSub } = await getCurrentSchoolSubscription(currentSchool.id);
 
       if (currentSub) {
@@ -114,32 +125,74 @@ export default function Subscription() {
     }
   }, [user, profile?.school_id]);
 
-  // 1. Initial Load: Fetch School & Subscription Plans
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Selected Plan Object & Pricing Calculation (Select by slug 'pro', not array index)
-  const selectedPlan =
-    plans.find((p) => p.slug === selectedPlanSlug) ||
-    plans.find((p) => p.slug === "pro") ||
-    plans[0];
-  const pricingCalculation: PlanPriceCalculation | null = selectedPlan
-    ? calculatePlanPricing(selectedPlan, billingCycle)
-    : null;
+  // Selected Plan Object & Pricing Calculation
+  const selectedPlan = useMemo(() => {
+    return (
+      plans.find((p) => p.slug === selectedPlanSlug) ||
+      plans.find((p) => p.slug === "pro") ||
+      plans[0]
+    );
+  }, [plans, selectedPlanSlug]);
 
-  // Trial end date calculation (14 days from now)
-  const trialEndFormatted = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + (selectedPlan?.trial_days || 14));
-    return d.toLocaleDateString("en-IN", {
+  const pricingCalculation: PlanPriceCalculation | null = useMemo(() => {
+    if (!selectedPlan) return null;
+    return calculatePlanPricing(selectedPlan, billingCycle);
+  }, [selectedPlan, billingCycle]);
+
+  // Trial end date calculation (14 days from trial start or now)
+  const { trialEndFormatted, daysRemainingInTrial, isExistingTrialActive } = useMemo(() => {
+    const now = Date.now();
+    let trialEndMs: number;
+    let isTrialActive = false;
+    let daysRemaining = 14;
+
+    if (existingSubscription?.status === "trialing" && existingSubscription.trial_ends_at) {
+      trialEndMs = new Date(existingSubscription.trial_ends_at).getTime();
+      isTrialActive = trialEndMs > now;
+      daysRemaining = Math.max(0, Math.ceil((trialEndMs - now) / (1000 * 60 * 60 * 24)));
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + (selectedPlan?.trial_days || 14));
+      trialEndMs = d.getTime();
+      daysRemaining = selectedPlan?.trial_days || 14;
+    }
+
+    const formattedDate = new Date(trialEndMs).toLocaleDateString("en-IN", {
       day: "numeric",
       month: "short",
       year: "numeric",
     });
-  })();
 
-  // Submit Handler: Confirm Plan Selection & Proceed
+    return {
+      trialEndFormatted: formattedDate,
+      daysRemainingInTrial: daysRemaining,
+      isExistingTrialActive: isTrialActive,
+    };
+  }, [existingSubscription, selectedPlan]);
+
+  // Plan Selection Handler
+  const handleSelectPlan = (slug: string) => {
+    if (slug !== selectedPlanSlug) {
+      setSelectedPlanSlug(slug);
+      setIsDirty(true);
+      setErrorMessage(null);
+    }
+  };
+
+  // Billing Cycle Switcher Handler
+  const handleSelectBillingCycle = (cycle: BillingCycle) => {
+    if (cycle !== billingCycle) {
+      setBillingCycle(cycle);
+      setIsDirty(true);
+      setErrorMessage(null);
+    }
+  };
+
+  // Form Submit Handler: Proceed to Step 5 (Website Setup)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!school || !user) {
@@ -161,8 +214,8 @@ export default function Subscription() {
         userId: user.id,
         planSlug: selectedPlanSlug,
         billingCycle,
-        startTrial,
-        notes: `Selected during onboarding by ${user.email}`,
+        startTrial: true,
+        notes: `Configured during Onboarding Step 4 by ${user.email}`,
       });
 
       if (!result.success) {
@@ -171,62 +224,66 @@ export default function Subscription() {
         return;
       }
 
-      // Refresh auth session so that onboarding step is updated globally
+      setIsDirty(false);
+
+      // Refresh auth session so that updated onboarding progress is reflected
       if (refreshSession) {
         await refreshSession();
       }
 
-      // Smooth progression to Step 6 (Website Setup)
+      // Smooth progression to Step 5 (Website Setup)
       navigate("/onboarding/website");
-    } catch (err) {
+    } catch (err: any) {
       console.error("selectSchoolPlan error:", err);
-      setErrorMessage("Failed to process subscription selection. Please try again.");
+      setErrorMessage(err?.message || "Failed to process subscription selection. Please try again.");
       setIsSubmitting(false);
     }
   };
 
-  // Loading State
+  // Save & Exit Handler
+  const handleSaveAndExit = async () => {
+    if (!school || !user) {
+      await signOut();
+      navigate("/login");
+      return;
+    }
+
+    if (isDirty && selectedPlan) {
+      setIsSavingAndExiting(true);
+      try {
+        await selectSchoolPlan({
+          schoolId: school.id,
+          userId: user.id,
+          planSlug: selectedPlanSlug,
+          billingCycle,
+          startTrial: true,
+          notes: `Saved on exit by ${user.email}`,
+        });
+      } catch (err) {
+        console.warn("Background save on exit note:", err);
+      }
+    }
+
+    await signOut();
+    navigate("/login");
+  };
+
+  // Initial Loading State
   if (isLoading) {
     return (
       <OnboardingLayout
         currentStepNumber={4}
         completedStepNumbers={[1, 2, 3]}
-        title="Select school plan"
-        subtitle="Choose your school subscription tier and billing cycle."
+        title=""
+        subtitle=""
+        maxWidth="max-w-4xl"
+        showCardWrapper={false}
       >
-        <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
-          <Loader2 className="w-8 h-8 text-[#2158E0] animate-spin" />
-          <div>
-            <p className="text-sm font-semibold text-[#141A2E]">Loading subscription tiers...</p>
-            <p className="text-xs text-[#5B6478] mt-1">Retrieving official plans and GST pricing for Indian schools</p>
-          </div>
-        </div>
-      </OnboardingLayout>
-    );
-  }
-
-  // Plans Error State with Try Again
-  if (plansError && plans.length === 0) {
-    return (
-      <OnboardingLayout
-        currentStepNumber={4}
-        completedStepNumbers={[1, 2, 3]}
-        title="Select school plan"
-        subtitle="Choose your school subscription tier and billing cycle."
-      >
-        <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-center space-y-4">
-          <AlertCircle className="w-10 h-10 text-rose-600 mx-auto" />
-          <div>
-            <h2 className="text-base font-bold text-rose-900">Failed to load subscription plans</h2>
-            <p className="text-xs text-rose-700 mt-1">{plansError}</p>
-          </div>
-          <button
-            type="button"
-            onClick={loadData}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1a4ec4] transition-colors cursor-pointer"
-          >
-            <span>Try again</span>
-          </button>
+        <div className="py-20 text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-medium text-[#5B6478]">
+            Loading subscription plans...
+          </p>
         </div>
       </OnboardingLayout>
     );
@@ -238,19 +295,29 @@ export default function Subscription() {
       <OnboardingLayout
         currentStepNumber={4}
         completedStepNumbers={[]}
-        title="Select school plan"
+        title="Choose your school plan"
         subtitle="Step 1 required before selecting subscription."
+        maxWidth="max-w-2xl"
       >
-        <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center space-y-4">
-          <AlertCircle className="w-10 h-10 text-amber-600 mx-auto" />
-          <h2 className="text-base font-bold text-amber-900">{prerequisiteError.msg}</h2>
-          <Link
-            to={prerequisiteError.route}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1a4ec4] transition-colors"
-          >
-            <span>{prerequisiteError.linkText}</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+        <div className="py-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-[#141A2E]">
+            Previous Step Required
+          </h2>
+          <p className="text-sm text-[#5B6478] max-w-md mx-auto">
+            {prerequisiteError.msg}
+          </p>
+          <div className="pt-2">
+            <Link
+              to={prerequisiteError.route}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#2158E0] text-white rounded-lg text-sm font-medium hover:bg-[#1A46B8] transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>{prerequisiteError.linkText}</span>
+            </Link>
+          </div>
         </div>
       </OnboardingLayout>
     );
@@ -260,49 +327,117 @@ export default function Subscription() {
     <OnboardingLayout
       currentStepNumber={4}
       completedStepNumbers={[1, 2, 3]}
-      title="Select school plan"
-      subtitle="Activate your 14-day free trial on any tier. Zero upfront payment or credit card required."
+      title=""
+      subtitle=""
+      maxWidth="max-w-4xl"
+      showCardWrapper={false}
+      onSaveAndExit={handleSaveAndExit}
+      isSavingAndExiting={isSavingAndExiting}
     >
-      <form onSubmit={handleSubmit} className="space-y-8" id="subscription-selection-form">
-        {/* Existing Active Subscription Notice (Resume Support) */}
-        {existingSubscription && (
-          <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#2158E0] shrink-0" />
-              <span>
-                <strong>Current selection saved:</strong> You have selected the{" "}
-                <strong>{existingSubscription.plan?.name || existingSubscription.plan_id}</strong> tier (
-                {existingSubscription.status === "trialing" ? "14-day free trial" : existingSubscription.status}). You can change tiers or continue to website setup.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Error Alert */}
-        {errorMessage && (
-          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Billing Cycle Switcher */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#F8FAFC] border border-[#E6EAF3]">
+      <form onSubmit={handleSubmit} className="space-y-6" id="subscription-selection-form">
+        {/* Page Title & Context Header */}
+        <div className="space-y-3">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#5B6478]">
-              Billing Period
-            </span>
-            <p className="text-xs text-[#5B6478] mt-0.5">
-              Select monthly or prepay to unlock institutional discounts.
+            <h1 className="text-2xl sm:text-3xl font-bold text-[#141A2E] tracking-tight">
+              Choose your school plan
+            </h1>
+            <p className="text-sm text-[#5B6478] mt-1">
+              Select the plan that best fits your institution. All tiers include a 14-day free trial with zero upfront charge.
             </p>
           </div>
 
-          <div className="inline-flex items-center p-1 bg-[#E2E8F0]/70 rounded-xl w-full sm:w-auto">
+          {/* School & Active Plan Context Summary */}
+          {school && (
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 py-2.5 px-3.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#5B6478] shadow-xs">
+              <div className="flex items-center gap-1.5 font-medium text-[#141A2E]">
+                <Building2 className="w-4 h-4 text-[#2158E0]" />
+                <span>{school.name}</span>
+              </div>
+              <span className="text-[#CBD5E1] hidden sm:inline">•</span>
+
+              {existingSubscription && (
+                <div className="flex items-center gap-1.5 font-medium text-[#141A2E]">
+                  <Sparkles className="w-3.5 h-3.5 text-[#2158E0]" />
+                  <span>
+                    Current: {existingSubscription.plan?.name || "Pro"} (
+                    {isExistingTrialActive ? `${daysRemainingInTrial} days left` : existingSubscription.status}
+                    )
+                  </span>
+                </div>
+              )}
+
+              {isDirty && (
+                <div className="sm:ml-auto flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  Unsaved plan selection
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Error Alert */}
+        {errorMessage && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm"
+          >
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold">Unable to proceed</p>
+              <p className="text-xs sm:text-sm mt-0.5 text-red-600">{errorMessage}</p>
+            </div>
             <button
               type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-red-400 hover:text-red-600 p-1"
+              aria-label="Dismiss error"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Plans Error with Retry */}
+        {plansError && (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{plansError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={loadData}
+              className="font-semibold text-[#2158E0] hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Billing Period Selector */}
+        <div className="bg-white border border-[#E6EAF3] rounded-xl p-3.5 sm:p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#5B6478]">
+              Billing Period
+            </h2>
+            <p className="text-xs text-[#5B6478] mt-0.5">
+              Choose monthly or prepay 6 / 12 months for institutional discounts.
+            </p>
+          </div>
+
+          <div
+            role="radiogroup"
+            aria-label="Billing cycle"
+            className="inline-flex items-center p-1 bg-[#F1F4F9] rounded-lg border border-[#E6EAF3] w-full sm:w-auto"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={billingCycle === "monthly"}
               id="billing-monthly-btn"
-              onClick={() => setBillingCycle("monthly")}
-              className={`flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              onClick={() => handleSelectBillingCycle("monthly")}
+              className={`flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all ${
                 billingCycle === "monthly"
                   ? "bg-white text-[#141A2E] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -310,41 +445,51 @@ export default function Subscription() {
             >
               Monthly
             </button>
+
             <button
               type="button"
+              role="radio"
+              aria-checked={billingCycle === "six_months"}
               id="billing-six-months-btn"
-              onClick={() => setBillingCycle("six_months")}
-              className={`flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
+              onClick={() => handleSelectBillingCycle("six_months")}
+              className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
                 billingCycle === "six_months"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
               }`}
             >
               <span>6 Months</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold">
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">
                 5% off
               </span>
             </button>
+
             <button
               type="button"
+              role="radio"
+              aria-checked={billingCycle === "yearly"}
               id="billing-yearly-btn"
-              onClick={() => setBillingCycle("yearly")}
-              className={`flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
+              onClick={() => handleSelectBillingCycle("yearly")}
+              className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
                 billingCycle === "yearly"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
               }`}
             >
               <span>12 Months</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold">
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">
                 10% off
               </span>
             </button>
           </div>
         </div>
 
-        {/* Plan Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch" role="radiogroup" aria-label="School Plans">
+        {/* 3 Comparison Plan Cards */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch"
+          role="radiogroup"
+          aria-label="School Plans"
+        >
           {plans.map((plan) => {
             const isSelected = selectedPlanSlug === plan.slug;
             const pricing = calculatePlanPricing(plan, billingCycle);
@@ -356,35 +501,35 @@ export default function Subscription() {
                 role="radio"
                 aria-checked={isSelected}
                 tabIndex={0}
-                onClick={() => setSelectedPlanSlug(plan.slug)}
+                onClick={() => handleSelectPlan(plan.slug)}
                 onKeyDown={(e) => {
                   if (e.key === " " || e.key === "Enter") {
                     e.preventDefault();
-                    setSelectedPlanSlug(plan.slug);
+                    handleSelectPlan(plan.slug);
                   }
                 }}
-                className={`relative rounded-2xl border-2 p-5 flex flex-col justify-between cursor-pointer transition-all duration-200 outline-none ${
+                className={`relative rounded-xl border p-4 sm:p-5 flex flex-col justify-between cursor-pointer transition-all outline-none ${
                   isSelected
-                    ? "border-[#2158E0] bg-blue-50/20 shadow-md ring-2 ring-[#2158E0]/15"
-                    : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1] hover:shadow-xs"
-                } ${plan.is_popular ? "md:-translate-y-1" : ""}`}
+                    ? "border-[#2158E0] bg-blue-50/20 shadow-sm ring-1 ring-[#2158E0]"
+                    : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
+                }`}
               >
-                {/* Popular Badge */}
+                {/* Recommended Badge on Pro */}
                 {plan.is_popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#1FAE7A] text-white px-3 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase shadow-xs whitespace-nowrap">
-                    Most Popular for K-12
+                  <div className="absolute -top-2.5 right-4 bg-[#2158E0] text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase shadow-xs">
+                    Recommended
                   </div>
                 )}
 
                 <div>
-                  {/* Card Header & Radio Checkmark */}
-                  <div className="flex items-start justify-between gap-2 mb-3">
+                  {/* Card Header & Radio Check */}
+                  <div className="flex items-start justify-between gap-2 mb-2.5">
                     <div>
-                      <h3 className="text-lg font-bold font-heading text-[#141A2E]">
+                      <h3 className="text-base font-bold text-[#141A2E]">
                         {plan.name}
                       </h3>
-                      <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5B6478] mt-0.5">
-                        <Users className="w-3 h-3 text-[#5B6478]" />
+                      <div className="inline-flex items-center gap-1 text-xs text-[#5B6478] mt-0.5">
+                        <Users className="w-3.5 h-3.5 text-[#94A3B8]" />
                         <span>{plan.student_capacity_label}</span>
                       </div>
                     </div>
@@ -401,33 +546,32 @@ export default function Subscription() {
                   </div>
 
                   {/* Price Section */}
-                  <div className="py-3 border-y border-[#F1F5F9] my-3">
+                  <div className="py-3 border-y border-[#F1F4F9] my-2.5">
                     {pricing.isCustomQuote ? (
                       <div>
-                        <div className="text-2xl font-extrabold font-heading text-[#141A2E]">
+                        <div className="text-xl font-bold text-[#141A2E]">
                           Custom Quote
                         </div>
                         <div className="text-[11px] text-[#5B6478] mt-0.5">
-                          Multi-branch &amp; institutions 1,800+
+                          Institutions with 1,800+ students or multi-branch campuses
                         </div>
                       </div>
                     ) : (
                       <div>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-extrabold font-heading text-[#141A2E]">
+                          <span className="text-2xl sm:text-3xl font-extrabold text-[#141A2E]">
                             ₹{pricing.effectiveMonthlyRate?.toLocaleString("en-IN")}
                           </span>
                           <span className="text-xs text-[#5B6478]">/ month</span>
                         </div>
 
-                        {billingCycle !== "monthly" && (
-                          <div className="text-[11px] text-emerald-600 font-semibold mt-1">
-                            {pricing.formattedSubtotal} billed every {pricing.durationMonths} mos ({pricing.discountPercent}% off)
+                        {billingCycle !== "monthly" ? (
+                          <div className="text-[11px] text-emerald-700 font-medium mt-1">
+                            Billed {pricing.formattedSubtotal} every {pricing.durationMonths} mos ({pricing.discountPercent}% off)
                           </div>
-                        )}
-                        {billingCycle === "monthly" && (
+                        ) : (
                           <div className="text-[11px] text-[#5B6478] mt-1">
-                            Standard monthly billing
+                            Billed monthly
                           </div>
                         )}
                       </div>
@@ -436,35 +580,35 @@ export default function Subscription() {
 
                   {/* Features List */}
                   <div className="space-y-2 text-xs text-[#141A2E] mt-3">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#5B6478] block">
-                      Includes:
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] block">
+                      Capabilities Included:
                     </span>
                     {plan.features.slice(0, 5).map((feat, idx) => (
                       <div key={idx} className="flex items-start gap-2">
                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                        <span className="leading-tight">{feat}</span>
+                        <span className="leading-tight text-xs text-[#334155]">{feat}</span>
                       </div>
                     ))}
                     {plan.features.length > 5 && (
-                      <div className="text-[11px] text-[#2158E0] font-medium pt-1">
-                        + {plan.features.length - 5} more capabilities
+                      <div className="text-[11px] text-[#2158E0] font-medium pt-0.5">
+                        + {plan.features.length - 5} additional modules
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Card Action Button */}
-                <div className="mt-5 pt-3 border-t border-[#F1F5F9]">
+                {/* Card Select Button */}
+                <div className="mt-4 pt-3 border-t border-[#F1F4F9]">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedPlanSlug(plan.slug);
+                      handleSelectPlan(plan.slug);
                     }}
-                    className={`w-full py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
+                    className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
                       isSelected
                         ? "bg-[#2158E0] text-white shadow-xs"
-                        : "bg-[#F1F5F9] text-[#141A2E] hover:bg-[#E2E8F0]"
+                        : "bg-[#F1F4F9] text-[#141A2E] hover:bg-[#E2E8F0]"
                     }`}
                   >
                     {isSelected ? "Selected Plan" : "Select Plan"}
@@ -475,87 +619,116 @@ export default function Subscription() {
           })}
         </div>
 
-        {/* Selected Plan Summary & 14-Day Free Trial Notice */}
+        {/* Selected Plan Summary & Pricing Breakdown */}
         {selectedPlan && pricingCalculation && (
-          <div className="rounded-2xl border border-[#E6EAF3] bg-[#F8FAFC] p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E6EAF3] pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 text-[#2158E0] flex items-center justify-center">
+          <div className="rounded-xl border border-[#E6EAF3] bg-white p-4 sm:p-5 shadow-xs space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F1F4F9]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center shrink-0">
                   <Receipt className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-[#141A2E]">
-                    Order Summary: {selectedPlan.name} Plan ({billingCycle === "monthly" ? "Monthly" : billingCycle === "six_months" ? "6 Months" : "12 Months"})
-                  </h4>
+                  <h3 className="text-sm font-bold text-[#141A2E]">
+                    Order Summary: {selectedPlan.name} Plan (
+                    {billingCycle === "monthly"
+                      ? "Monthly"
+                      : billingCycle === "six_months"
+                      ? "6 Months"
+                      : "12 Months"}
+                    )
+                  </h3>
                   <p className="text-xs text-[#5B6478]">
                     {selectedPlan.student_capacity_label} • Dedicated tenant for {school?.name || "your school"}
                   </p>
                 </div>
               </div>
 
-              {/* Free Trial Pill */}
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
-                <Clock className="w-3.5 h-3.5" />
-                <span>14-Day Free Trial Activated</span>
+              {/* Free Trial Status Badge */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold self-start sm:self-auto">
+                <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  {isExistingTrialActive
+                    ? `14-Day Trial Active (${daysRemainingInTrial} days left)`
+                    : "14-Day Free Trial Included"}
+                </span>
               </div>
             </div>
 
             {/* Trial Zero-Charge Banner */}
-            <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2.5">
+            <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2.5">
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold">₹0 Due Today: </span>
-                Your 14-day fully-featured trial is completely free through <strong>{trialEndFormatted}</strong>. You will not be charged today and no credit card is required upfront. You can upgrade, downgrade, or cancel anytime from your School Admin portal.
+              <div className="leading-relaxed">
+                <strong className="font-semibold">₹0 Due Today: </strong>
+                Your 14-day fully featured trial is active through <strong>{trialEndFormatted}</strong>. No payment or credit card is required today. You can upgrade, change billing periods, or cancel anytime from your School Admin settings.
               </div>
             </div>
 
             {/* Financial Breakdown (Itemized) */}
             {!pricingCalculation.isCustomQuote && (
-              <div className="bg-white rounded-xl border border-[#E6EAF3] p-4 text-xs space-y-2">
+              <div className="bg-[#F8FAFC] rounded-lg border border-[#E6EAF3] p-3.5 text-xs space-y-2">
                 <div className="flex justify-between text-[#5B6478]">
-                  <span>Base Subscription ({pricingCalculation.durationMonths} month{pricingCalculation.durationMonths > 1 ? "s" : ""})</span>
-                  <span>{pricingCalculation.formattedSubtotal}</span>
+                  <span>
+                    Base Subscription ({pricingCalculation.durationMonths} month
+                    {pricingCalculation.durationMonths > 1 ? "s" : ""})
+                  </span>
+                  <span>
+                    {pricingCalculation.savingsAmount > 0
+                      ? formatINR(pricingCalculation.baseMonthlyRate! * pricingCalculation.durationMonths)
+                      : pricingCalculation.formattedSubtotal}
+                  </span>
                 </div>
 
                 {pricingCalculation.savingsAmount > 0 && (
-                  <div className="flex justify-between text-emerald-600 font-semibold">
+                  <div className="flex justify-between text-emerald-700 font-medium">
                     <span>Prepay Discount ({pricingCalculation.discountPercent}% off)</span>
                     <span>-₹{pricingCalculation.savingsAmount.toLocaleString("en-IN")}</span>
                   </div>
                 )}
 
-                <div className="flex justify-between text-[#5B6478] pt-1 border-t border-[#F1F5F9]">
+                <div className="flex justify-between text-[#5B6478] pt-1.5 border-t border-[#E6EAF3]">
+                  <span>Subtotal (excluding GST)</span>
+                  <span className="font-medium text-[#141A2E]">{pricingCalculation.formattedSubtotal}</span>
+                </div>
+
+                <div className="flex justify-between text-[#5B6478]">
                   <span>Statutory 18% GST</span>
                   <span>{pricingCalculation.formattedGst}</span>
                 </div>
 
                 <div className="flex justify-between text-sm font-bold text-[#141A2E] pt-2 border-t border-[#E6EAF3]">
-                  <span>Total Amount (after 14-day trial)</span>
+                  <span>Total Amount (after trial)</span>
                   <div className="text-right">
-                    <span className="text-base text-[#2158E0]">{pricingCalculation.formattedTotal}</span>
-                    <div className="text-[10px] font-normal text-[#5B6478]">₹0.00 charged today</div>
+                    <span className="text-base font-extrabold text-[#2158E0]">
+                      {pricingCalculation.formattedTotal}
+                    </span>
+                    <div className="text-[11px] font-normal text-[#5B6478]">
+                      ₹0.00 charged today
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Custom Quote Box */}
+            {/* Custom Quote Message */}
             {pricingCalculation.isCustomQuote && (
-              <div className="bg-white rounded-xl border border-[#E6EAF3] p-4 text-xs space-y-2">
-                <p className="text-[#141A2E] font-medium">
-                  Schools with more than 1,800 students or multiple branches get a custom quote. Our team will contact you. You can continue setting up today.
+              <div className="bg-[#F8FAFC] rounded-lg border border-[#E6EAF3] p-3.5 text-xs space-y-1.5 text-[#5B6478]">
+                <p className="font-semibold text-[#141A2E]">
+                  Tailored Institutional Proposal
+                </p>
+                <p>
+                  For institutions with more than 1,800 students or multi-branch requirements, our enterprise team provides customized SLA terms and volume licensing. You can continue onboarding today with full 14-day trial access.
                 </p>
               </div>
             )}
           </div>
         )}
 
-        {/* Navigation Buttons */}
-        <div className="pt-4 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-center justify-between gap-3">
+        {/* Bottom Actions Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
           <Link
             to="/onboarding/classes"
             id="back-to-classes-btn"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] transition-colors py-2.5 px-3 rounded-lg"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#E6EAF3] bg-white text-[#5B6478] hover:text-[#141A2E] hover:border-[#CBD5E1] rounded-lg text-sm font-medium transition-colors shadow-xs"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back to classes</span>
@@ -565,19 +738,21 @@ export default function Subscription() {
             type="submit"
             id="continue-to-website-btn"
             disabled={isSubmitting}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 text-xs sm:text-sm font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:bg-[#94A3B8] rounded-full transition-all shadow-sm cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Activating 14-day free trial...</span>
+                <span>Saving plan...</span>
               </>
             ) : (
               <>
                 <span>
                   {pricingCalculation?.isCustomQuote
-                    ? "Confirm custom plan and continue to website"
-                    : "Activate 14-day free trial and continue to website"}
+                    ? "Continue with Custom Plan"
+                    : isExistingTrialActive
+                    ? "Continue to Website Setup"
+                    : "Start 14-Day Free Trial"}
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </>

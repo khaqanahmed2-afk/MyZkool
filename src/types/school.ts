@@ -33,6 +33,7 @@ export interface School {
   contact_phone: string;
   address: string;
   city: string;
+  district?: string;
   state: string;
   pin_code: string;
   logo_url?: string;
@@ -55,6 +56,7 @@ export interface SchoolProfileInput {
   contact_phone: string;
   address: string;
   city: string;
+  district?: string;
   state: string;
   pin_code: string;
 }

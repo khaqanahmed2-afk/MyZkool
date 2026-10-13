@@ -1,16 +1,55 @@
+# Dependencies
 node_modules/
-build/
+.pnp
+.pnp.js
+
+# Build outputs & caches
 dist/
-coverage/
-.DS_Store
-*.log
-.env*
+build/
+out/
+.vite/
+*.tsbuildinfo
+
+# Environment & secrets
 .env
+.env.*
 .env.local
 .env.*.local
 !.env.example
+*.pem
+*.key
+
+# Testing & coverage
+coverage/
+*.lcov
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# IDE & editors
 .vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Python cache & virtual environments
 venv/
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+
+# Scratch & temporary directories
+scratch/
+tmp/
+temp/

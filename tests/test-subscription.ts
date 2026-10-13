@@ -290,6 +290,41 @@ async function runTests() {
   assert(formatINR(null) === "Custom Quote", "Null amount formats as 'Custom Quote'");
   assert(formatINRCents(1178.82).includes("1,178.82"), "Formats cents accurately for GST invoices");
 
+  // 9. Trial Anti-Abuse & Non-Rolling Timestamp Preservation
+  console.log("\n9. Trial Anti-Abuse & Timestamp Preservation:");
+  const testSchoolIdAntiAbuse = "school-anti-abuse-99";
+  const testUserAntiAbuse = "user-anti-abuse-99";
+
+  const initialSub = await selectSchoolPlan({
+    schoolId: testSchoolIdAntiAbuse,
+    userId: testUserAntiAbuse,
+    planSlug: "pro",
+    billingCycle: "monthly",
+    startTrial: true,
+  });
+
+  const originalTrialStart = initialSub.subscription?.trial_starts_at;
+  const originalTrialEnd = initialSub.subscription?.trial_ends_at;
+  assert(Boolean(originalTrialStart && originalTrialEnd), "Initial trial record has start and end timestamps");
+
+  // User subsequently switches to basic yearly plan
+  const switchedSub = await selectSchoolPlan({
+    schoolId: testSchoolIdAntiAbuse,
+    userId: testUserAntiAbuse,
+    planSlug: "basic",
+    billingCycle: "yearly",
+    startTrial: true,
+  });
+
+  assert(
+    switchedSub.subscription?.trial_starts_at === originalTrialStart,
+    "Preserves original trial_starts_at when updating plan (prevents rolling trial abuse)"
+  );
+  assert(
+    switchedSub.subscription?.trial_ends_at === originalTrialEnd,
+    "Preserves original trial_ends_at when updating plan (trial expiry date does not reset)"
+  );
+
   console.log("\n----------------------------------------------------------");
   console.log(`TEST SUMMARY: ${testsPassed} Passed, ${testsFailed} Failed.`);
   console.log("----------------------------------------------------------\n");

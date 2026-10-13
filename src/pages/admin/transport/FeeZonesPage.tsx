@@ -369,8 +369,11 @@ export function FeeZonesPage() {
                 <input
                   type="number"
                   min="0"
-                  value={feeBothWays}
-                  onChange={(e) => setFeeBothWays(Number(e.target.value))}
+                  value={Number.isNaN(feeBothWays) ? "" : (feeBothWays ?? "")}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value);
+                    setFeeBothWays(isNaN(parsed) ? ("" as any) : parsed);
+                  }}
                   className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] font-bold"
                   required
                 />
@@ -382,8 +385,11 @@ export function FeeZonesPage() {
                   <input
                     type="number"
                     min="0"
-                    value={feePickupOnly}
-                    onChange={(e) => setFeePickupOnly(Number(e.target.value))}
+                    value={Number.isNaN(feePickupOnly) ? "" : (feePickupOnly ?? "")}
+                    onChange={(e) => {
+                      const parsed = parseFloat(e.target.value);
+                      setFeePickupOnly(isNaN(parsed) ? ("" as any) : parsed);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3]"
                     required
                   />
@@ -393,8 +399,11 @@ export function FeeZonesPage() {
                   <input
                     type="number"
                     min="0"
-                    value={feeDropOnly}
-                    onChange={(e) => setFeeDropOnly(Number(e.target.value))}
+                    value={Number.isNaN(feeDropOnly) ? "" : (feeDropOnly ?? "")}
+                    onChange={(e) => {
+                      const parsed = parseFloat(e.target.value);
+                      setFeeDropOnly(isNaN(parsed) ? ("" as any) : parsed);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3]"
                     required
                   />

@@ -167,18 +167,26 @@ export default function LateFeeRulesPage() {
                   </label>
                   <input type="number" min={0} step={form.method === "percent_once" ? 0.1 : 1}
                     className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={form.value} onChange={e => setForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} />
+                    value={Number.isNaN(form.value) ? "" : (form.value ?? "")}
+                    onChange={e => {
+                      const val = parseFloat(e.target.value);
+                      setForm(f => ({ ...f, value: isNaN(val) ? 0 : val }));
+                    }} />
                 </div>
                 <div className="w-28">
                   <label className="block text-xs font-medium text-[#141A2E] mb-1">Grace Days</label>
                   <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={form.grace_days ?? 0} onChange={e => setForm(f => ({ ...f, grace_days: parseInt(e.target.value) || 0 }))} />
+                    value={Number.isNaN(form.grace_days) ? 0 : (form.grace_days ?? 0)}
+                    onChange={e => {
+                      const val = parseInt(e.target.value, 10);
+                      setForm(f => ({ ...f, grace_days: isNaN(val) ? 0 : val }));
+                    }} />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-[#141A2E] mb-1">Maximum cap (₹, optional)</label>
                 <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                  value={form.max_cap_paise ? form.max_cap_paise / 100 : ""}
+                  value={form.max_cap_paise && !Number.isNaN(form.max_cap_paise) ? form.max_cap_paise / 100 : ""}
                   onChange={e => setForm(f => ({ ...f, max_cap_paise: e.target.value ? parseFloat(e.target.value) * 100 : undefined }))}
                   placeholder="No cap" />
               </div>
