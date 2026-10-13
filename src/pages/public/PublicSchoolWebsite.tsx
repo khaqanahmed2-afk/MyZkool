@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, Navigate } from "react-router-dom";
 import { getSchoolBySubdomain } from "../../services/schoolService";
 import {
   getSchoolWebsite,
   getHomePageContent,
   submitAdmissionEnquiry,
+  getSubdomainFromHost,
 } from "../../services/websiteService";
+import { isReservedSubdomain } from "../../constants/subdomains";
 import type { School } from "../../types/school";
 import type {
   SchoolWebsite,
@@ -44,8 +46,13 @@ export default function PublicSchoolWebsite() {
   const effectiveSubdomain =
     paramSubdomain ||
     (typeof window !== "undefined" && window.location.hostname
-      ? window.location.hostname.split(".")[0]
+      ? getSubdomainFromHost(window.location.hostname) || ""
       : "");
+
+  // If accessed without a school subdomain or on the main application domain, redirect to landing page
+  if (!effectiveSubdomain || isReservedSubdomain(effectiveSubdomain)) {
+    return <Navigate to="/" replace />;
+  }
 
   const [school, setSchool] = useState<School | null>(null);
   const [website, setWebsite] = useState<SchoolWebsite | null>(null);
@@ -202,12 +209,18 @@ export default function PublicSchoolWebsite() {
             </code>
             .
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               to="/"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#14284b] text-white text-xs font-bold hover:bg-[#1f3763] transition-colors"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-[#14284b] text-white text-xs font-bold hover:bg-[#1f3763] transition-colors"
             >
               Return to MyZkool
+            </Link>
+            <Link
+              to="/register"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full border border-[#eadfd3] text-[#14213d] text-xs font-bold hover:bg-slate-50 transition-colors"
+            >
+              Register a School
             </Link>
           </div>
         </div>

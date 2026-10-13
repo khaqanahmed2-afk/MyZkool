@@ -627,6 +627,18 @@ async function runTests() {
     getSubdomainFromHost("delhi-academy.staging.school.edu") === "delhi-academy",
     "Resolves multi-level subdomain accurately"
   );
+  assert(
+    getSubdomainFromHost("my-zkool.vercel.app") === null,
+    "Correctly ignores my-zkool.vercel.app root application domain (returns null for LandingPage)"
+  );
+  assert(
+    getSubdomainFromHost("myzkool.in") === null,
+    "Correctly ignores myzkool.in root application domain"
+  );
+  assert(
+    getSubdomainFromHost("greenwood.my-zkool.vercel.app") === "greenwood",
+    "Resolves school tenant on custom preview deployment (greenwood.my-zkool.vercel.app)"
+  );
 
   // Test admission enquiry persistence
   const validEnquiryRes = await submitAdmissionEnquiry({

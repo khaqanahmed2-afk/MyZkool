@@ -19,6 +19,7 @@ export const RESERVED_SUBDOMAINS = [
   'dev',
   'demo',
   'myzkool',
+  'my-zkool',
   'portal',
   'parent',
   'test',

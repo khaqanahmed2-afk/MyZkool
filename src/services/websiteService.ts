@@ -22,6 +22,7 @@ import {
   DEFAULT_WEBSITE_PAGES,
   DEFAULT_WEBSITE_SECTIONS,
 } from "../types/website";
+import { isReservedSubdomain } from "../constants/subdomains";
 
 export const WEBSITE_CACHE_KEY_PREFIX = "myzkool_website_";
 export const WEBSITE_PAGES_CACHE_KEY_PREFIX = "myzkool_website_pages_";
@@ -1088,15 +1089,107 @@ export async function saveHomePageContent({
 }
 
 /**
- * Extracts school subdomain from a browser hostname (e.g. greenwood.myzkool.com -> greenwood)
+ * Extracts school subdomain from a browser hostname.
+ * 
+ * Accurately differentiates between:
+ * - The main application domain (e.g. my-zkool.vercel.app, myzkool.in, myzkool.com)
+ * - School tenant subdomains (e.g. greenwood.myzkool.in, oakridge.myzkool.com, oakridge.my-zkool.vercel.app)
+ * - Preview / dev environments (e.g. *.run.app, *.aistudio.dev, localhost)
  */
 export function getSubdomainFromHost(hostname: string): string | null {
-  if (!hostname || hostname === "localhost" || hostname === "127.0.0.1") return null;
-  const parts = hostname.toLowerCase().split(".");
-  // Standard *.myzkool.com or *.domain.com
-  if (parts.length >= 3 && parts[0] !== "www" && parts[0] !== "app") {
-    return parts[0];
+  if (!hostname) return null;
+
+  // Normalize: lower-case, remove trailing spaces and port
+  const host = hostname.toLowerCase().split(":")[0].trim();
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
+    return null;
   }
+
+  // Check against optional configured public base domain (e.g. VITE_PUBLIC_DOMAIN)
+  const envBaseDomain =
+    typeof import.meta !== "undefined" && import.meta.env?.VITE_PUBLIC_DOMAIN
+      ? import.meta.env.VITE_PUBLIC_DOMAIN.toLowerCase().split(":")[0].trim()
+      : null;
+
+  if (envBaseDomain) {
+    if (host === envBaseDomain) return null;
+    if (host.endsWith("." + envBaseDomain)) {
+      const prefix = host.slice(0, -(envBaseDomain.length + 1));
+      const candidate = prefix.split(".")[0];
+      if (candidate && !isReservedSubdomain(candidate)) {
+        return candidate;
+      }
+      return null;
+    }
+  }
+
+  // Handle known PaaS / serverless hosting suffixes where the root app is already 3 parts
+  // (e.g. "my-zkool.vercel.app", "my-zkool.netlify.app", "my-zkool.pages.dev")
+  const multiLevelPlatforms = [
+    "vercel.app",
+    "netlify.app",
+    "pages.dev",
+    "onrender.com",
+    "github.io",
+    "up.railway.app",
+  ];
+
+  for (const platform of multiLevelPlatforms) {
+    if (host.endsWith("." + platform)) {
+      const platformParts = platform.split(".");
+      const hostParts = host.split(".");
+      // If hostParts length is exactly platformParts.length + 1:
+      // (e.g. "my-zkool.vercel.app" -> 1 + 2 = 3 parts)
+      // This is the root app deployment on that platform, NOT a school tenant!
+      if (hostParts.length <= platformParts.length + 1) {
+        return null;
+      }
+      // If there are more labels (e.g. "greenwood.my-zkool.vercel.app" -> 4 parts):
+      const candidate = hostParts[0];
+      if (candidate && !isReservedSubdomain(candidate)) {
+        return candidate;
+      }
+      return null;
+    }
+  }
+
+  // Ignore Cloud Run and AI Studio container preview hosts (e.g. *.run.app, *.aistudio.dev)
+  if (
+    host.endsWith(".run.app") ||
+    host.endsWith(".aistudio.dev") ||
+    host.endsWith(".web.app") ||
+    host.endsWith(".firebaseapp.com")
+  ) {
+    return null;
+  }
+
+  const parts = host.split(".");
+
+  // Handle common two-level country code domains (e.g. .co.in, .org.in, .ac.in, .edu.in)
+  const twoLevelCcTlds = ["co.in", "org.in", "ac.in", "net.in", "edu.in", "gov.in"];
+  const lastTwo = parts.slice(-2).join(".");
+  if (twoLevelCcTlds.includes(lastTwo)) {
+    // e.g. "myzkool.co.in" (3 parts) -> main apex domain
+    if (parts.length <= 3) return null;
+    // e.g. "greenwood.myzkool.co.in" (4 parts) -> "greenwood"
+    const candidate = parts[0];
+    if (candidate && !isReservedSubdomain(candidate)) {
+      return candidate;
+    }
+    return null;
+  }
+
+  // Standard apex domains (e.g. "myzkool.com", "myzkool.in", "my-zkool.com") -> 2 parts
+  if (parts.length <= 2) {
+    return null;
+  }
+
+  // Multi-tenant subdomain (e.g. "greenwood.myzkool.com", "delhi-academy.staging.school.edu")
+  const candidate = parts[0];
+  if (candidate && !isReservedSubdomain(candidate)) {
+    return candidate;
+  }
+
   return null;
 }
 

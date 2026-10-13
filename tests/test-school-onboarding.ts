@@ -98,8 +98,9 @@ async function runTests() {
     validateSubdomainFormat("www").isValid === false &&
       validateSubdomainFormat("admin").isValid === false &&
       validateSubdomainFormat("api").isValid === false &&
-      validateSubdomainFormat("myzkool").isValid === false,
-    "Rejects reserved platform hostnames (www, admin, api, myzkool)"
+      validateSubdomainFormat("myzkool").isValid === false &&
+      validateSubdomainFormat("my-zkool").isValid === false,
+    "Rejects reserved platform hostnames (www, admin, api, myzkool, my-zkool)"
   );
 
   // 3. SUBDOMAIN AVAILABILITY

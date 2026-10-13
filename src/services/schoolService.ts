@@ -33,6 +33,7 @@ export const RESERVED_SUBDOMAINS = new Set([
   "portal",
   "mail",
   "myzkool",
+  "my-zkool",
   "dev",
   "staging",
   "demo",
@@ -337,7 +338,18 @@ export async function getSchoolBySubdomain(
     return { school: null, error: "Subdomain is required." };
   }
 
-  // 1. Supabase lookup
+  // 0. Guard against reserved platform subdomains (e.g. my-zkool, myzkool, app, www)
+  if (
+    RESERVED_SUBDOMAINS.has(cleanSubdomain) ||
+    cleanSubdomain === "my-zkool" ||
+    cleanSubdomain === "myzkool" ||
+    cleanSubdomain.startsWith("my-zkool-") ||
+    cleanSubdomain.startsWith("myzkool-")
+  ) {
+    return { school: null, error: "Reserved system address." };
+  }
+
+  // 1. Supabase lookup on schools table
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
@@ -350,7 +362,42 @@ export async function getSchoolBySubdomain(
         return { school: data as unknown as School };
       }
     } catch (err: any) {
-      console.warn("getSchoolBySubdomain Supabase error:", err);
+      console.warn("getSchoolBySubdomain Supabase schools error:", err);
+    }
+
+    // 1b. Fallback to published school_websites table (accessible by public/unauthenticated visitors)
+    try {
+      const { data: webData, error: webErr } = await supabase
+        .from("school_websites")
+        .select("*")
+        .ilike("subdomain", cleanSubdomain)
+        .eq("published", true)
+        .maybeSingle();
+
+      if (!webErr && webData) {
+        return {
+          school: {
+            id: webData.school_id,
+            name: webData.site_name,
+            subdomain: webData.subdomain,
+            school_type: "k12",
+            affiliation_board: "CBSE",
+            official_email: webData.contact_email || "",
+            contact_phone: webData.contact_phone || "",
+            address: webData.address || "",
+            city: webData.city || "",
+            state: webData.state || "",
+            pin_code: webData.postal_code || "",
+            logo_url: webData.logo_url || null,
+            onboarding_completed: true,
+            onboarding_step: 6,
+            created_at: webData.created_at,
+            updated_at: webData.updated_at,
+          } as School,
+        };
+      }
+    } catch (webErr: any) {
+      console.warn("getSchoolBySubdomain school_websites error:", webErr);
     }
   }
 
