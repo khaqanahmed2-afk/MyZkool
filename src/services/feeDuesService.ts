@@ -484,58 +484,80 @@ export async function assignFeeStructure(
   yearId: string,
   structureId: string,
   prorateOption?: ProrateOption,
-  actorId?: string
-): Promise<{ assignment?: StudentFeeAssignment; error?: string }> {
-  // Mark any existing assignment as replaced
-  if (isSupabaseConfigured) {
-    await supabase.from("student_fee_assignments")
-      .update({ status: "replaced", updated_at: now() })
-      .eq("student_id", studentId).eq("academic_year_id", yearId).eq("status", "active");
-  } else {
-    const all = lsGet<StudentFeeAssignment>(ASSIGNMENTS_KEY(schoolId));
-    lsSet(ASSIGNMENTS_KEY(schoolId), all.map(a =>
-      a.student_id === studentId && a.academic_year_id === yearId && a.status === "active"
-        ? { ...a, status: "replaced" as const }
-        : a
-    ));
-  }
-
+  actorId?: string,
+  isRte: boolean = false,
+  _admissionDate?: string
+): Promise<{ assignment?: StudentFeeAssignment; error?: string; createdDuesCount?: number }> {
   // Get structure info
   const structures = await getStructuresForSchool(schoolId);
   const structure = structures.find(s => s.id === structureId);
   if (!structure) return { error: "Structure not found" };
 
+  // Resolve effective academic year
+  let effectiveYearId = yearId;
+  if (!effectiveYearId) {
+    if (structure.academic_year_id) {
+      effectiveYearId = structure.academic_year_id;
+    } else if (isSupabaseConfigured) {
+      const { data } = await supabase.from("academic_years").select("id").eq("school_id", schoolId).eq("is_current", true).maybeSingle();
+      effectiveYearId = data?.id ?? "";
+    } else {
+      const years = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+      effectiveYearId = years.find((y: any) => y.is_current)?.id ?? "";
+    }
+  }
+
+  // Mark any existing assignment as replaced
+  if (isSupabaseConfigured) {
+    await supabase.from("student_fee_assignments")
+      .update({ status: "replaced", updated_at: now() })
+      .eq("student_id", studentId).eq("academic_year_id", effectiveYearId).eq("status", "active");
+  } else {
+    const all = lsGet<StudentFeeAssignment>(ASSIGNMENTS_KEY(schoolId));
+    lsSet(ASSIGNMENTS_KEY(schoolId), all.map(a =>
+      a.student_id === studentId && a.academic_year_id === effectiveYearId && a.status === "active"
+        ? { ...a, status: "replaced" as const }
+        : a
+    ));
+  }
+
   const assignment: StudentFeeAssignment = {
     id: uuid(), school_id: schoolId, student_id: studentId,
-    academic_year_id: yearId, structure_id: structureId,
+    academic_year_id: effectiveYearId, structure_id: structureId,
     structure_version: structure.version, assigned_at: now(),
     assigned_by: actorId ?? null, status: "active",
   };
 
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase.from("student_fee_assignments").insert(assignment).select().single();
-    if (error) return { error: error.message };
-    return { assignment: data as StudentFeeAssignment };
+    const { error: insErr } = await supabase.from("student_fee_assignments").insert(assignment);
+    if (insErr) return { error: insErr.message };
+  } else {
+    const all = lsGet<StudentFeeAssignment>(ASSIGNMENTS_KEY(schoolId));
+    lsSet(ASSIGNMENTS_KEY(schoolId), [...all, assignment]);
   }
-  const all = lsGet<StudentFeeAssignment>(ASSIGNMENTS_KEY(schoolId));
-  lsSet(ASSIGNMENTS_KEY(schoolId), [...all, assignment]);
 
   // Generate dues
   const { heads: feeHeads } = await getFeeHeads(schoolId, true);
-  const { terms } = await getFeeTerms(schoolId, yearId);
-  const existingDues = lsGet<StudentDue>(DUES_KEY(schoolId)).filter(d => d.student_id === studentId && d.academic_year_id === yearId);
-  const isRte = false; // caller should pass this; stub false for now
+  const { terms } = await getFeeTerms(schoolId, effectiveYearId);
+
+  let existingDues: StudentDue[] = [];
+  if (isSupabaseConfigured) {
+    const { data } = await supabase.from("student_dues").select("*").eq("school_id", schoolId).eq("student_id", studentId).eq("academic_year_id", effectiveYearId);
+    existingDues = (data || []) as StudentDue[];
+  } else {
+    existingDues = lsGet<StudentDue>(DUES_KEY(schoolId)).filter(d => d.student_id === studentId && d.academic_year_id === effectiveYearId);
+  }
 
   const prorateFrom = prorateOption?.mode === "from_term" ? prorateOption.from_term_id
     : prorateOption?.mode === "from_current_term" ? terms.find(t => new Date(t.due_date) >= new Date())?.id
     : undefined;
 
-  await generateDuesForStudent(
-    schoolId, studentId, yearId, isRte,
+  const { created } = await generateDuesForStudent(
+    schoolId, studentId, effectiveYearId, isRte,
     [assignment], existingDues, feeHeads, terms, actorId, prorateFrom
   );
 
-  return { assignment };
+  return { assignment, createdDuesCount: created };
 }
 
 // ─── Auto-assign on admission (replaces Phase 1b stub) ──────────────────────
@@ -546,19 +568,22 @@ export async function autoAssignOnAdmission(
   isRte: boolean,
   classId: string,
   admissionType: "new" | "re_admission" | "transfer_in",
-  actorId?: string
-): Promise<{ assigned: boolean; error?: string }> {
+  actorId?: string,
+  academicYearId?: string
+): Promise<{ assigned: boolean; error?: string; assignmentIds?: string[] }> {
   const { settings } = await getFeeSettings(schoolId);
   if (!settings.auto_assign_fee_on_admission) return { assigned: false };
 
   // Get current academic year
-  let yearId: string | null = null;
-  if (isSupabaseConfigured) {
-    const { data } = await supabase.from("academic_years").select("id").eq("school_id", schoolId).eq("is_current", true).maybeSingle();
-    yearId = data?.id ?? null;
-  } else {
-    const years = lsGet<any>(`myzkool_academic_years_${schoolId}`);
-    yearId = years.find((y: any) => y.is_current)?.id ?? null;
+  let yearId: string | null = academicYearId || null;
+  if (!yearId) {
+    if (isSupabaseConfigured) {
+      const { data } = await supabase.from("academic_years").select("id").eq("school_id", schoolId).eq("is_current", true).maybeSingle();
+      yearId = data?.id ?? null;
+    } else {
+      const years = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+      yearId = years.find((y: any) => y.is_current)?.id ?? null;
+    }
   }
   if (!yearId) return { assigned: false, error: "No current academic year" };
 
@@ -575,6 +600,7 @@ export async function autoAssignOnAdmission(
 
   const { heads: feeHeads } = await getFeeHeads(schoolId, true);
   const { terms } = await getFeeTerms(schoolId, yearId);
+  const createdAssignmentIds: string[] = [];
 
   for (const structure of matching) {
     const assignment: StudentFeeAssignment = {
@@ -589,14 +615,23 @@ export async function autoAssignOnAdmission(
       const all = lsGet<StudentFeeAssignment>(ASSIGNMENTS_KEY(schoolId));
       lsSet(ASSIGNMENTS_KEY(schoolId), [...all, assignment]);
     }
-    const existingDues = lsGet<StudentDue>(DUES_KEY(schoolId)).filter(d => d.student_id === studentId && d.academic_year_id === yearId);
+    createdAssignmentIds.push(assignment.id);
+
+    let existingDues: StudentDue[] = [];
+    if (isSupabaseConfigured) {
+      const { data } = await supabase.from("student_dues").select("*").eq("school_id", schoolId).eq("student_id", studentId).eq("academic_year_id", yearId);
+      existingDues = (data || []) as StudentDue[];
+    } else {
+      existingDues = lsGet<StudentDue>(DUES_KEY(schoolId)).filter(d => d.student_id === studentId && d.academic_year_id === yearId);
+    }
+
     await generateDuesForStudent(
       schoolId, studentId, yearId, isRte,
       [assignment], existingDues, feeHeads, terms, actorId
     );
   }
 
-  return { assigned: true };
+  return { assigned: true, assignmentIds: createdAssignmentIds };
 }
 
 // ─── Manual due ───────────────────────────────────────────────────────────────
@@ -661,31 +696,112 @@ export async function cancelFutureDues(
   studentId: string,
   effectiveDate: string,
   actorId?: string
-): Promise<{ cancelled: number; error?: string }> {
+): Promise<{ cancelled: number; totalCreditPaise: number; error?: string }> {
   const { dues } = await getStudentDues(schoolId, studentId);
   const toCancel = dues.filter(d =>
     d.due_date > effectiveDate &&
-    (d.status === "pending") &&
-    d.paid_paise === 0
+    d.source !== "transport" &&
+    d.status !== "cancelled" &&
+    d.status !== "waived"
   );
 
   let cancelled = 0;
+  let totalCreditPaise = 0;
+
   for (const due of toCancel) {
-    if (isSupabaseConfigured) {
-      await supabase.from("student_dues").update({ status: "cancelled", updated_at: now() }).eq("id", due.id);
+    if (due.paid_paise === 0) {
+      // 1. Unpaid future due: cancel due and write cancel_due entry to reduce ledger balance
+      if (isSupabaseConfigured) {
+        await supabase
+          .from("student_dues")
+          .update({ status: "cancelled", balance_paise: 0, updated_at: now() })
+          .eq("id", due.id);
+      } else {
+        const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+        lsSet(
+          DUES_KEY(schoolId),
+          all.map(d => (d.id === due.id ? { ...d, status: "cancelled" as const, balance_paise: 0, updated_at: now() } : d))
+        );
+      }
+
+      await writeLedger(schoolId, {
+        school_id: schoolId,
+        student_id: studentId,
+        academic_year_id: due.academic_year_id,
+        due_id: due.id,
+        receipt_id: null,
+        entry_type: "cancel_due",
+        amount_paise: -due.balance_paise,
+        note: `Academic due cancelled (status change effective ${effectiveDate})`,
+        created_by: actorId ?? null,
+      });
+      cancelled++;
     } else {
-      const all = lsGet<StudentDue>(DUES_KEY(schoolId));
-      lsSet(DUES_KEY(schoolId), all.map(d => d.id === due.id ? { ...d, status: "cancelled" as const, updated_at: now() } : d));
+      // 2. Partially paid or prepaid future due:
+      // Convert collected future fees to FeeCredit advance balance so it can be refunded or reallocated
+      const creditPaise = due.paid_paise;
+      totalCreditPaise += creditPaise;
+
+      const creditRecord: FeeCredit = {
+        id: uuid(),
+        school_id: schoolId,
+        student_id: due.student_id,
+        academic_year_id: due.academic_year_id,
+        amount_paise: creditPaise,
+        remaining_paise: creditPaise,
+        created_at: now(),
+      };
+
+      if (isSupabaseConfigured) {
+        await supabase.from("fee_credits").insert(creditRecord);
+        await supabase
+          .from("student_dues")
+          .update({ status: "cancelled", balance_paise: 0, updated_at: now() })
+          .eq("id", due.id);
+      } else {
+        const credits = lsGet<FeeCredit>(`myzkool_fee_credits_${schoolId}`);
+        lsSet(`myzkool_fee_credits_${schoolId}`, [...credits, creditRecord]);
+
+        const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+        lsSet(
+          DUES_KEY(schoolId),
+          all.map(d => (d.id === due.id ? { ...d, status: "cancelled" as const, balance_paise: 0, updated_at: now() } : d))
+        );
+      }
+
+      // If there was an unpaid remaining portion, cancel that balance in ledger
+      if (due.balance_paise > 0) {
+        await writeLedger(schoolId, {
+          school_id: schoolId,
+          student_id: due.student_id,
+          academic_year_id: due.academic_year_id,
+          due_id: due.id,
+          receipt_id: null,
+          entry_type: "cancel_due",
+          amount_paise: -due.balance_paise,
+          note: `Future academic due balance cancelled on withdrawal (effective ${effectiveDate})`,
+          created_by: actorId ?? null,
+        });
+      }
+
+      // Record adjustment entry reflecting advance credit creation
+      await writeLedger(schoolId, {
+        school_id: schoolId,
+        student_id: due.student_id,
+        academic_year_id: due.academic_year_id,
+        due_id: due.id,
+        receipt_id: null,
+        entry_type: "adjustment",
+        amount_paise: 0,
+        note: `Future paid fee of ₹${(creditPaise / 100).toFixed(2)} converted to credit advance (withdrawal effective ${effectiveDate})`,
+        created_by: actorId ?? null,
+      });
+
+      cancelled++;
     }
-    await writeLedger(schoolId, {
-      school_id: schoolId, student_id: studentId, academic_year_id: due.academic_year_id,
-      due_id: due.id, receipt_id: null,
-      entry_type: "cancel_due", amount_paise: -due.balance_paise,
-      note: `Due cancelled (status change effective ${effectiveDate})`, created_by: actorId ?? null,
-    });
-    cancelled++;
   }
-  return { cancelled };
+
+  return { cancelled, totalCreditPaise };
 }
 
 // ─── Apply RTE concession ─────────────────────────────────────────────────────

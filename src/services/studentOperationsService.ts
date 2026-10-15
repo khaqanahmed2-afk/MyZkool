@@ -46,6 +46,7 @@ import {
   BulkDeleteStudentsResult,
 } from "../types/students";
 import { createFeeService } from "./feeService";
+import { cancelFutureDues } from "./feeDuesService";
 import { transportService } from "./transportService";
 import {
   getNextCounter,
@@ -1100,8 +1101,16 @@ export async function commitImportBatch(
   const nowIso = new Date().toISOString();
   const currentYear = new Date().getFullYear();
 
-  // Reserve sequence block in one shot
-  const { startValue: counterStart } = await reserveCounters(schoolId, "admission_no", validRows.length);
+  // Reserve sequence block in one shot only for rows needing auto-generated admission numbers
+  const rowsNeedingCounter = validRows.filter((r) => !r.data.admission_no?.trim()).length;
+  let counterStart = 1;
+  if (rowsNeedingCounter > 0) {
+    const res = await reserveCounters(schoolId, "admission_no", rowsNeedingCounter);
+    if (res.error) {
+      throw new Error(`Failed to allocate admission numbers: ${res.error}`);
+    }
+    counterStart = res.startValue;
+  }
   let counterOffset = 0;
 
   const createdStudentIds: string[] = [];
@@ -1124,8 +1133,9 @@ export async function commitImportBatch(
     const studentId = crypto.randomUUID();
     createdStudentIds.push(studentId);
 
-    const admissionNo = r.admission_no || `ADM/${currentYear}/${String(counterStart + counterOffset).padStart(4, "0")}`;
-    if (!r.admission_no) counterOffset++;
+    const customAdmNo = r.admission_no?.trim();
+    const admissionNo = customAdmNo || `ADM-${currentYear}-${String(counterStart + counterOffset).padStart(4, "0")}`;
+    if (!customAdmNo) counterOffset++;
 
     const classIdResolved = classNameToId.get((r.class_name || "").trim().toLowerCase()) || null;
     const sectionIdResolved = classIdResolved && r.section_name
@@ -1901,7 +1911,20 @@ export async function changeStudentStatus(
 
   // Handle transport termination (Spec C7.8: automatic on withdrawn or transferred, or if requested)
   if (input.end_transport || input.new_status === "withdrawn" || input.new_status === "transferred") {
-    await transportService.endAssignment(studentId, input.effective_date, input.reason, schoolId);
+    try {
+      await transportService.endAssignment(studentId, input.effective_date, input.reason, schoolId);
+    } catch (err: any) {
+      console.warn("Notice: transport endAssignment non-fatal error:", err.message);
+    }
+  }
+
+  // Handle future academic fee dues cancellation (Spec B1, B6: automatic on withdrawn or transferred, or if requested)
+  if (input.new_status === "withdrawn" || input.new_status === "transferred" || (input as any).cancel_future_dues) {
+    try {
+      await cancelFutureDues(schoolId, studentId, input.effective_date, actorId);
+    } catch (err: any) {
+      console.warn("Notice: cancelFutureDues non-fatal error:", err.message);
+    }
   }
 
   let updatedStudent: Student | null = null;

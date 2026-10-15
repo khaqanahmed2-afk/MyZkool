@@ -34,10 +34,10 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
       type="button"
       onClick={handleClick}
       disabled={disabled || isLoading}
-      className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white border border-[#D8DEE9] hover:bg-[#F8FAFC] active:bg-[#EDF2F7] text-[#141A2E] text-sm font-medium rounded-xl transition-all shadow-xs hover:shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+      className="w-full flex items-center justify-center gap-3 py-2.5 sm:py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-700 hover:text-slate-900 text-sm font-semibold rounded-xl transition-all duration-150 shadow-2xs hover:shadow-xs focus:ring-3 focus:ring-slate-200/50 outline-hidden disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
     >
       {isLoading ? (
-        <div className="w-4 h-4 border-2 border-[#5B6478] border-t-transparent rounded-full animate-spin" />
+        <div className="w-4 h-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
       ) : (
         <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
           <path

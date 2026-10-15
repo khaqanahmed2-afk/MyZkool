@@ -26,6 +26,7 @@ interface AuthContextType {
     email: string,
     password: string,
     fullName: string,
+    phone?: string,
   ) => Promise<AuthActionResult>;
   signInWithGoogle: () => Promise<AuthActionResult>;
   signOut: () => Promise<void>;
@@ -366,6 +367,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     email: string,
     password: string,
     fullName: string,
+    phone?: string,
   ): Promise<AuthActionResult> => {
     if (!isSupabaseConfigured) {
       return {
@@ -385,6 +387,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           data: {
             full_name: fullName.trim(),
             role: "school_admin",
+            phone: phone ? phone.trim() : undefined,
             onboarding_completed: false,
             current_onboarding_step: "/onboarding/school",
           },

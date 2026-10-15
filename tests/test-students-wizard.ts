@@ -147,6 +147,66 @@ async function runStage3Tests() {
   // -------------------------------------------------------------------------
   console.log("\n3. Single-Transaction Atomic Admission (Spec A4.2):");
 
+  // Seed school Pro plan for transport and fixtures for route and fee structure
+  localStorage.setItem(`myzkool_school_plans_${schoolId}`, JSON.stringify({
+    plan_slug: "pro",
+    features: ["transport", "students", "fees", "attendance", "admissions"],
+    billing_status: "active",
+  }));
+  localStorage.setItem(`myzkool_transport_routes_${schoolId}`, JSON.stringify([{
+    id: "route-1",
+    school_id: schoolId,
+    name: "Route 1 - Gomti Nagar",
+    code: "R1",
+    status: "active",
+  }]));
+  localStorage.setItem(`myzkool_route_stops_${schoolId}`, JSON.stringify([{
+    id: "Patrakarpuram Chauraha",
+    route_id: "route-1",
+    school_id: schoolId,
+    name: "Patrakarpuram Chauraha",
+    stop_order: 1,
+    monthly_fee_paise: 120000,
+  }]));
+  localStorage.setItem(`myzkool_fee_structures_${schoolId}`, JSON.stringify([{
+    id: "standard-class-1",
+    school_id: schoolId,
+    name: "Standard Class 1",
+    class_id: "class-1",
+    academic_year_id: "ay-2026",
+    version: 1,
+    status: "active",
+    applies_to: "all",
+  }]));
+  localStorage.setItem(`myzkool_fee_terms_${schoolId}`, JSON.stringify([{
+    id: "term-1",
+    school_id: schoolId,
+    academic_year_id: "ay-2026",
+    name: "Term 1",
+    sort_order: 1,
+    due_date: "2026-04-10",
+  }]));
+  localStorage.setItem(`myzkool_fee_heads_${schoolId}`, JSON.stringify([{
+    id: "head-tuition",
+    school_id: schoolId,
+    name: "Tuition Fee",
+    code: "tuition_fee",
+    category: "recurring",
+    is_active: true,
+  }]));
+  localStorage.setItem(`myzkool_fee_structure_items_${schoolId}`, JSON.stringify([{
+    id: "item-tuition",
+    structure_id: "standard-class-1",
+    fee_head_id: "head-tuition",
+  }]));
+  localStorage.setItem(`myzkool_fee_item_terms_${schoolId}`, JSON.stringify([{
+    id: "term-amount-1",
+    structure_id: "standard-class-1",
+    item_id: "item-tuition",
+    term_id: "term-1",
+    amount_paise: 500000,
+  }]));
+
   const fullPayload: AdmissionWizardPayload = {
     step1_basic: {
       first_name: "Aarav",

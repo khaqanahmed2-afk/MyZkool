@@ -34,7 +34,7 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
           setRoutes(res || []);
           if (res && res.length > 0 && !transport.route_id) {
             const firstRoute = res[0];
-            const firstStop = firstRoute.stops?.[0]?.name || "";
+            const firstStop = firstRoute.stops?.[0]?.id || "";
             onChange({ route_id: firstRoute.id, stop_id: firstStop });
           }
         }
@@ -123,7 +123,7 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
                       onChange={(e) => {
                         const newRouteId = e.target.value;
                         const r = routes.find((rt) => rt.id === newRouteId);
-                        const firstStop = r?.stops?.[0]?.name || "";
+                        const firstStop = r?.stops?.[0]?.id || "";
                         onChange({ route_id: newRouteId, stop_id: firstStop });
                       }}
                       className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -139,13 +139,13 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Bus Stop</label>
                     <select
-                      value={transport.stop_id || availableStops[0]?.name || ""}
+                      value={transport.stop_id || availableStops[0]?.id || ""}
                       onChange={(e) => onChange({ stop_id: e.target.value })}
                       className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                     >
                       {availableStops.length > 0 ? (
                         availableStops.map((stop) => (
-                          <option key={stop.id} value={stop.name}>
+                          <option key={stop.id} value={stop.id}>
                             {stop.name}
                           </option>
                         ))

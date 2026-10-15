@@ -6,6 +6,7 @@
 
 import {
   getStudentBalance as _getBalance,
+  assignFeeStructure as _assignFeeStructure,
   autoAssignOnAdmission,
   cancelFutureDues as _cancelFutureDues,
   createTransportDues as _createTransportDues,
@@ -13,11 +14,24 @@ import {
   cancelTransportDues as _cancelTransportDues,
 } from "./feeDuesService";
 
+export interface AssignStructureOptions {
+  structureId?: string;
+  classId?: string;
+  academicYearId?: string;
+  isRte?: boolean;
+  admissionType?: "new" | "re_admission" | "transfer_in";
+  admissionDate?: string;
+  actorId?: string;
+}
+
 export interface FeeService {
   /** Get student's fee balance in paise */
   getStudentBalance(studentId: string): Promise<{ balance: number; error?: string }>;
-  /** Assign fee structure at admission (replaced by autoAssignOnAdmission) */
-  assignStructure(studentId: string): Promise<{ success: boolean; error?: string }>;
+  /** Assign fee structure at admission (or auto-assign if structureId omitted) */
+  assignStructure(
+    studentId: string,
+    options?: AssignStructureOptions
+  ): Promise<{ success: boolean; error?: string; assignmentId?: string; createdDuesCount?: number }>;
   /** Create transport dues (stub — Phase 7) */
   createTransportDues(assignmentId: string): Promise<{ success: boolean; error?: string }>;
   /** Change transport dues (stub — Phase 7) */
@@ -45,13 +59,41 @@ export class RealFeeService implements FeeService {
     return _getBalance(this.schoolId, studentId);
   }
 
-  async assignStructure(studentId: string): Promise<{ success: boolean; error?: string }> {
+  async assignStructure(
+    studentId: string,
+    options?: AssignStructureOptions
+  ): Promise<{ success: boolean; error?: string; assignmentId?: string; createdDuesCount?: number }> {
     try {
-      // autoAssignOnAdmission needs isRte and classId which aren't available at this level;
-      // callers that have full context should call autoAssignOnAdmission directly.
-      // This method provides the interface bridge required by D1.
-      await autoAssignOnAdmission(this.schoolId, studentId, false, "", "new");
-      return { success: true };
+      if (options?.structureId) {
+        const res = await _assignFeeStructure(
+          this.schoolId,
+          studentId,
+          options.academicYearId || "",
+          options.structureId,
+          undefined,
+          options.actorId,
+          options.isRte ?? false,
+          options.admissionDate
+        );
+        if (res.error) {
+          return { success: false, error: res.error };
+        }
+        return { success: true, assignmentId: res.assignment?.id, createdDuesCount: res.createdDuesCount };
+      } else {
+        const res = await autoAssignOnAdmission(
+          this.schoolId,
+          studentId,
+          options?.isRte ?? false,
+          options?.classId ?? "",
+          options?.admissionType ?? "new",
+          options?.actorId,
+          options?.academicYearId
+        );
+        if (res.error) {
+          return { success: false, error: res.error };
+        }
+        return { success: true, assignmentId: res.assignmentIds?.[0] };
+      }
     } catch (e: any) {
       return { success: false, error: e.message };
     }
@@ -89,7 +131,10 @@ export class StubFeeService implements FeeService {
   async getStudentBalance(_studentId: string): Promise<{ balance: number; error?: string }> {
     return { balance: 0 };
   }
-  async assignStructure(_studentId: string): Promise<{ success: boolean; error?: string }> {
+  async assignStructure(
+    _studentId: string,
+    _options?: AssignStructureOptions
+  ): Promise<{ success: boolean; error?: string; assignmentId?: string; createdDuesCount?: number }> {
     return { success: true };
   }
   async createTransportDues(_assignmentId: string): Promise<{ success: boolean; error?: string }> {

@@ -71,7 +71,9 @@ import type { AcademicYear } from "../types/academic";
 import type { SchoolClass, SchoolSection } from "../types/curriculum";
 import { encryptSensitive, decryptSensitive, hashAadhaar } from "../utils/sensitiveCrypto";
 import { cleanAadhaar, maskAadhaar } from "../utils/aadhaarValidation";
-import { feeService } from "./feeService";
+import { feeService, createFeeService } from "./feeService";
+import { createAssignment } from "./transportAssignmentService";
+import type { ServiceType } from "../types/transport";
 import { checkSchoolStudentLimit } from "./studentOperationsService";
 
 // Local storage fallbacks
@@ -256,6 +258,43 @@ async function hasPermission(permission: StudentPermissionKey): Promise<boolean>
   }
 }
 
+export function formatAdmissionNumber(year: number | string, seq: number): string {
+  return `ADM-${year}-${String(seq).padStart(4, "0")}`;
+}
+
+export function parseCountersCache(cached: string | null): Record<string, number> {
+  if (!cached) return {};
+  try {
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed)) {
+      const map: Record<string, number> = {};
+      for (const item of parsed) {
+        if (item && item.key) {
+          map[item.key] = typeof item.next_value === "number" ? item.next_value : Number(item.value || 1);
+        }
+      }
+      return map;
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+      const map: Record<string, number> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === "number") {
+          map[k] = v;
+        } else if (v && typeof v === "object" && "next_value" in v) {
+          map[k] = Number((v as any).next_value);
+        } else if (v && typeof v === "object" && "value" in v) {
+          map[k] = Number((v as any).value);
+        } else {
+          const num = Number(v);
+          map[k] = isNaN(num) ? 1 : num;
+        }
+      }
+      return map;
+    }
+  } catch {}
+  return {};
+}
+
 /**
  * Get next counter value (gap-free sequence)
  */
@@ -285,11 +324,14 @@ export async function getNextCounter(schoolId: string, key: string): Promise<{ v
   // Local storage fallback
   try {
     const cacheKey = getCountersCacheKey(schoolId);
-    const cached = localStorage.getItem(cacheKey);
-    const counters: Record<string, number> = cached ? JSON.parse(cached) : {};
-    const nextValue = (counters[key] || 1);
+    const cached = typeof localStorage !== "undefined" ? localStorage.getItem(cacheKey) : null;
+    const counters = parseCountersCache(cached);
+    const rawVal = counters[key];
+    const nextValue = typeof rawVal === "number" && !isNaN(rawVal) ? rawVal : 1;
     counters[key] = nextValue + 1;
-    localStorage.setItem(cacheKey, JSON.stringify(counters));
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(cacheKey, JSON.stringify(counters));
+    }
     return { value: nextValue };
   } catch {
     return { value: 0, error: "Failed to get next counter value" };
@@ -330,11 +372,14 @@ export async function reserveCounters(
   // Local storage fallback
   try {
     const cacheKey = getCountersCacheKey(schoolId);
-    const cached = localStorage.getItem(cacheKey);
-    const counters: Record<string, number> = cached ? JSON.parse(cached) : {};
-    const startValue = counters[key] || 1;
+    const cached = typeof localStorage !== "undefined" ? localStorage.getItem(cacheKey) : null;
+    const counters = parseCountersCache(cached);
+    const rawVal = counters[key];
+    const startValue = typeof rawVal === "number" && !isNaN(rawVal) ? rawVal : 1;
     counters[key] = startValue + count;
-    localStorage.setItem(cacheKey, JSON.stringify(counters));
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(cacheKey, JSON.stringify(counters));
+    }
     return { startValue };
   } catch {
     return { startValue: 0, error: "Failed to reserve counter values" };
@@ -361,14 +406,17 @@ export async function createStudent(
     return { error: "Insufficient permissions to create student" };
   }
 
-  // Get admission number from counter
-  const { value: admissionNo, error: counterError } = await getNextCounter(schoolId, "admission_no");
-  if (counterError) {
-    return { error: counterError };
+  // Get admission number from counter if not provided
+  let admissionNoStr = input.admission_no;
+  if (!admissionNoStr) {
+    const { value: admissionNo, error: counterError } = await getNextCounter(schoolId, "admission_no");
+    if (counterError) {
+      return { error: counterError };
+    }
+    admissionNoStr = `ADM-${new Date().getFullYear()}-${String(admissionNo).padStart(4, "0")}`;
   }
 
   const timestamp = new Date().toISOString();
-  const admissionNoStr = `ADM/${new Date().getFullYear()}/${String(admissionNo).padStart(4, "0")}`;
 
   const newStudent: Student = {
     id: crypto.randomUUID(),
@@ -2631,7 +2679,7 @@ export async function admitStudentTransactional(
   actorId: string,
   actorRole: string,
   options?: {
-    forceFailAtStep?: "counter" | "student" | "enrollment" | "address" | "parent" | "sensitive" | "medical" | "document" | "outbox";
+    forceFailAtStep?: "counter" | "student" | "enrollment" | "address" | "parent" | "sensitive" | "medical" | "document" | "transport" | "fee" | "outbox";
   }
 ): Promise<{ student?: Student; error?: string; rolledBack?: boolean }> {
   if (!schoolId) {
@@ -2663,26 +2711,15 @@ export async function admitStudentTransactional(
     }
 
     // STEP 1: Counter & Admission Number
-    const counterRes = await getNextCounter(schoolId, "student_admission_no");
-    if (counterRes.error) {
-      throw new Error(`Failed to generate admission number: ${counterRes.error}`);
+    let admissionNo = payload.step1_basic.admission_no;
+    if (!admissionNo) {
+      const counterRes = await getNextCounter(schoolId, "admission_no");
+      if (counterRes.error) {
+        throw new Error(`Failed to generate admission number: ${counterRes.error}`);
+      }
+      const admissionSeq = counterRes.value;
+      admissionNo = `ADM-${new Date().getFullYear()}-${String(admissionSeq).padStart(4, "0")}`;
     }
-    const admissionSeq = counterRes.value;
-    const admissionNo = `ADM-${new Date().getFullYear()}-${String(admissionSeq).padStart(4, "0")}`;
-
-    rollbackStack.push(async () => {
-      // Revert counter if needed
-      try {
-        const cKey = getCountersCacheKey(schoolId);
-        const cCached = localStorage.getItem(cKey);
-        const counters: Counter[] = cCached ? JSON.parse(cCached) : [];
-        const cIdx = counters.findIndex(c => c.key === "student_admission_no");
-        if (cIdx !== -1 && counters[cIdx].next_value > 1) {
-          counters[cIdx].next_value -= 1;
-          localStorage.setItem(cKey, JSON.stringify(counters));
-        }
-      } catch { }
-    });
 
     if (options?.forceFailAtStep === "counter") {
       throw new Error("Forced failure at counter step");
@@ -3174,13 +3211,178 @@ export async function admitStudentTransactional(
       });
     }
 
-    // STEP 10: Transport & Fee stubs
+    // STEP 10: Transport Assignment (Spec C5.1, C7)
+    let transportAssignmentId: string | null = null;
     if (payload.step7_transport?.opt_in) {
-      // Opted into transport route
+      const tPayload = payload.step7_transport;
+      if (!tPayload.route_id || !tPayload.stop_id) {
+        throw new Error("Transport route and stop are required when opting into transport");
+      }
+      const academicYearId = payload.step3_academic?.academic_year_id;
+      if (!academicYearId) {
+        throw new Error("Academic year is required for transport assignment");
+      }
+
+      const pickup = tPayload.pickup !== false;
+      const dropoff = tPayload.dropoff !== false;
+      let serviceType: ServiceType = "both";
+      if (pickup && !dropoff) {
+        serviceType = "pickup_only";
+      } else if (!pickup && dropoff) {
+        serviceType = "drop_only";
+      }
+
+      const effectiveFrom = payload.step3_academic?.admission_date || new Date().toISOString().split("T")[0];
+
+      const assignRes = await createAssignment(schoolId, {
+        student_id: studentId,
+        academic_year_id: academicYearId,
+        route_id: tPayload.route_id,
+        pickup_stop_id: tPayload.stop_id,
+        drop_stop_id: tPayload.stop_id,
+        service_type: serviceType,
+        effective_from: effectiveFrom,
+        actor_id: actorId,
+        actor_role: actorRole,
+      });
+
+      if (!assignRes.success || !assignRes.assignment) {
+        throw new Error(assignRes.error || "Failed to create transport assignment");
+      }
+
+      transportAssignmentId = assignRes.assignment.id;
+
+      rollbackStack.push(async () => {
+        if (transportAssignmentId) {
+          if (isSupabaseConfigured) {
+            const { data: createdDues } = await supabase
+              .from("student_dues")
+              .select("id")
+              .eq("school_id", schoolId)
+              .eq("student_id", studentId)
+              .eq("source", "transport")
+              .eq("source_ref", transportAssignmentId);
+            const dueIds = (createdDues || []).map((d: any) => d.id);
+            if (dueIds.length > 0) {
+              await supabase.from("fee_ledger").delete().eq("school_id", schoolId).in("due_id", dueIds);
+              await supabase.from("student_dues").delete().eq("school_id", schoolId).in("id", dueIds);
+            }
+            await supabase.from("transport_assignments").delete().eq("id", transportAssignmentId).eq("school_id", schoolId);
+          } else {
+            const duesKey = `myzkool_student_dues_${schoolId}`;
+            const duesCached = localStorage.getItem(duesKey);
+            const allDues: any[] = duesCached ? JSON.parse(duesCached) : [];
+            const duesToRemove = allDues.filter(
+              (d: any) => d.student_id === studentId && d.source === "transport" && d.source_ref === transportAssignmentId
+            );
+            const dueIdsToRemove = duesToRemove.map((d: any) => d.id);
+            localStorage.setItem(duesKey, JSON.stringify(allDues.filter((d: any) => !dueIdsToRemove.includes(d.id))));
+
+            const ledgerKey = `myzkool_fee_ledger_${schoolId}`;
+            const ledgerCached = localStorage.getItem(ledgerKey);
+            const allLedger: any[] = ledgerCached ? JSON.parse(ledgerCached) : [];
+            localStorage.setItem(ledgerKey, JSON.stringify(allLedger.filter((l: any) => !dueIdsToRemove.includes(l.due_id))));
+
+            const assignKey = `myzkool_transport_assignments_${schoolId}`;
+            const assignCached = localStorage.getItem(assignKey);
+            const allAssigns: any[] = assignCached ? JSON.parse(assignCached) : [];
+            localStorage.setItem(assignKey, JSON.stringify(allAssigns.filter((a: any) => a.id !== transportAssignmentId)));
+          }
+        }
+      });
     }
 
-    if (payload.step8_fee?.fee_structure_id) {
-      await feeService.assignStructure(studentId);
+    if (options?.forceFailAtStep === "transport") {
+      throw new Error("Forced failure at transport step");
+    }
+
+    // STEP 11: Fee Structure Assignment & Dues Generation (Spec B1, B6)
+    const schoolFeeService = createFeeService(schoolId);
+    const academicYearId = payload.step3_academic?.academic_year_id;
+    const classId = payload.step3_academic?.class_id;
+    const isRte = Boolean(payload.step3_academic?.is_rte);
+    const admissionType = payload.step3_academic?.admission_type || "new";
+    const admissionDate = payload.step3_academic?.admission_date;
+    const selectedStructureId = payload.step8_fee?.fee_structure_id;
+
+    let createdFeeAssignmentId: string | null = null;
+
+    if (selectedStructureId) {
+      const feeRes = await schoolFeeService.assignStructure(studentId, {
+        structureId: selectedStructureId,
+        classId,
+        academicYearId,
+        isRte,
+        admissionType,
+        admissionDate,
+        actorId,
+      });
+      if (!feeRes.success) {
+        throw new Error(feeRes.error || "Failed to assign fee structure");
+      }
+      createdFeeAssignmentId = feeRes.assignmentId || null;
+    } else {
+      // Auto-assign based on school settings if no specific structure selected
+      const feeRes = await schoolFeeService.assignStructure(studentId, {
+        classId,
+        academicYearId,
+        isRte,
+        admissionType,
+        admissionDate,
+        actorId,
+      });
+      if (!feeRes.success && feeRes.error) {
+        throw new Error(feeRes.error);
+      }
+      createdFeeAssignmentId = feeRes.assignmentId || null;
+    }
+
+    if (createdFeeAssignmentId) {
+      const assignmentIdToRollback = createdFeeAssignmentId;
+      rollbackStack.push(async () => {
+        if (isSupabaseConfigured) {
+          const { data: createdDues } = await supabase
+            .from("student_dues")
+            .select("id")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+            .eq("source", "structure")
+            .eq("source_ref", assignmentIdToRollback);
+          const dueIds = (createdDues || []).map((d: any) => d.id);
+          if (dueIds.length > 0) {
+            await supabase.from("fee_ledger").delete().eq("school_id", schoolId).in("due_id", dueIds);
+            await supabase.from("student_dues").delete().eq("school_id", schoolId).in("id", dueIds);
+          }
+          await supabase.from("student_fee_assignments").delete().eq("id", assignmentIdToRollback).eq("school_id", schoolId);
+        } else {
+          const duesKey = `myzkool_student_dues_${schoolId}`;
+          const duesCached = localStorage.getItem(duesKey);
+          const allDues: any[] = duesCached ? JSON.parse(duesCached) : [];
+          const duesToRemove = allDues.filter(
+            (d: any) => d.student_id === studentId && d.source === "structure" && d.source_ref === assignmentIdToRollback
+          );
+          const dueIdsToRemove = duesToRemove.map((d: any) => d.id);
+          localStorage.setItem(duesKey, JSON.stringify(allDues.filter((d: any) => !dueIdsToRemove.includes(d.id))));
+
+          const ledgerKey = `myzkool_fee_ledger_${schoolId}`;
+          const ledgerCached = localStorage.getItem(ledgerKey);
+          const allLedger: any[] = ledgerCached ? JSON.parse(ledgerCached) : [];
+          localStorage.setItem(ledgerKey, JSON.stringify(allLedger.filter((l: any) => !dueIdsToRemove.includes(l.due_id))));
+
+          const feeAssignKeys = [`myzkool_fee_assignments_${schoolId}`, `myzkool_student_fee_assignments_${schoolId}`];
+          for (const aKey of feeAssignKeys) {
+            const assignCached = localStorage.getItem(aKey);
+            if (assignCached) {
+              const allAssigns: any[] = JSON.parse(assignCached);
+              localStorage.setItem(aKey, JSON.stringify(allAssigns.filter((a: any) => a.id !== assignmentIdToRollback)));
+            }
+          }
+        }
+      });
+    }
+
+    if (options?.forceFailAtStep === "fee") {
+      throw new Error("Forced failure at fee step");
     }
 
     // STEP 11: Student Timeline Event

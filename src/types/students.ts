@@ -741,6 +741,7 @@ export interface AdmissionWizardPayload {
     mother_tongue?: string;
     sr_no?: string;
     apaar_id?: string;
+    admission_no?: string;
   };
   // Step 2: Guardian & Family
   step2_guardian: {
