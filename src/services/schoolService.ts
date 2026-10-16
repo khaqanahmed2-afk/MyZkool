@@ -326,6 +326,94 @@ export async function getSchoolForCurrentUser(
 }
 
 /**
+ * Loads all school records that the current user is authorized to access.
+ * Enforces RLS / tenant isolation (created_by = user.id OR user has profile for school).
+ */
+export async function getAuthorizedSchoolsForUser(
+  userId: string
+): Promise<{ schools: School[]; error?: string }> {
+  if (!userId) {
+    return { schools: [] };
+  }
+
+  // 1. Try Supabase
+  if (isSupabaseConfigured) {
+    try {
+      // Under RLS:
+      // "School Admins can view own school" policy allows SELECT if created_by = auth.uid() OR id IN (SELECT school_id FROM profiles WHERE auth_id = auth.uid())
+      const { data, error } = await supabase
+        .from("schools")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const mapped: School[] = data.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          subdomain: d.subdomain,
+          school_type: d.school_type,
+          affiliation_board: d.affiliation_board,
+          official_email: d.official_email,
+          contact_phone: d.contact_phone,
+          address: d.address,
+          city: d.city,
+          district: d.district || "",
+          state: d.state,
+          pin_code: d.pin_code,
+          logo_url: d.logo_url,
+          onboarding_completed: Boolean(d.onboarding_completed),
+          onboarding_step: d.onboarding_step || 1,
+          created_by: d.created_by,
+          created_at: d.created_at,
+          updated_at: d.updated_at,
+        }));
+        return { schools: mapped };
+      }
+    } catch (err) {
+      console.warn("getAuthorizedSchoolsForUser Supabase error:", err);
+    }
+  }
+
+  // 2. Local storage fallback for offline / preview
+  try {
+    const list: School[] = [];
+    const localData = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}${userId}`);
+    if (localData) {
+      try {
+        const parsed = JSON.parse(localData) as School;
+        if (parsed?.id) list.push(parsed);
+      } catch {}
+    }
+
+    // Check other potential cached schools in localStorage
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(LOCAL_STORAGE_KEY_PREFIX)) {
+          const item = localStorage.getItem(key);
+          if (item) {
+            try {
+              const parsed = JSON.parse(item) as School;
+              if (parsed && parsed.id && !list.some((s) => s.id === parsed.id)) {
+                list.push(parsed);
+              }
+            } catch {}
+          }
+        }
+      }
+    }
+
+    if (list.length > 0) {
+      return { schools: list };
+    }
+  } catch {
+    // Storage access error
+  }
+
+  return { schools: [] };
+}
+
+/**
  * Resolves school context server-side strictly by subdomain lookup.
  * Used for public tenant websites, admissions landing, and parent portals.
  * Never trusts a client-supplied school_id.

@@ -27,6 +27,7 @@ import {
   updateRoute,
   deleteRoute,
   saveRouteStops,
+  updateRouteStopFees,
   getFeeZones,
   createFeeZone,
   updateFeeZone,
@@ -37,6 +38,7 @@ import { runDocumentExpiryJob } from "../services/transportExpiryJob";
 import {
   getStudentTransportDetails,
   createAssignment,
+  listEnrichedAssignments,
   bulkAssignStudents,
   changeAssignment,
   stopAssignment,
@@ -319,6 +321,21 @@ transportRouter.post("/routes/:id/stops", requireTransportPermission('transport.
   }
 });
 
+transportRouter.put("/routes/:id/stop-fees", requireTransportPermission('transport.fees.manage'), async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const stopFees = req.body.stop_fees || req.body.stops || req.body;
+    const result = await updateRouteStopFees(schoolId, req.params.id, Array.isArray(stopFees) ? stopFees : []);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.stops);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 transportRouter.get("/routes/:id/sheet", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
@@ -439,6 +456,20 @@ transportRouter.get("/students/:id/transport", async (req: Request, res: Respons
     const schoolId = getSchoolId(req);
     const data = await getStudentTransportDetails(schoolId, req.params.id);
     res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+transportRouter.get("/assignments", async (req: Request, res: Response) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const assignments = await listEnrichedAssignments(schoolId, {
+      academicYearId: req.query.academic_year_id as string,
+      status: req.query.status as any,
+      routeId: req.query.route_id as string,
+    });
+    res.json(assignments);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -291,7 +291,30 @@ export async function collectFees(
       const closed = await isDateClosed(schoolId, receiptDate);
       if (closed) throw new Error(`Business date ${receiptDate} is closed`);
 
-      const { dues } = await getStudentDues(schoolId, input.student_id, input.academic_year_id);
+      // Resolve valid academic_year_id UUID
+      let resolvedYearId = input.academic_year_id;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!resolvedYearId || !uuidRegex.test(resolvedYearId)) {
+        const { data: currentYear } = await supabase
+          .from("academic_years")
+          .select("id, label")
+          .eq("school_id", schoolId)
+          .eq("is_current", true)
+          .maybeSingle();
+        if (currentYear?.id) {
+          resolvedYearId = currentYear.id;
+        } else {
+          const { data: anyYear } = await supabase
+            .from("academic_years")
+            .select("id, label")
+            .eq("school_id", schoolId)
+            .limit(1)
+            .maybeSingle();
+          if (anyYear?.id) resolvedYearId = anyYear.id;
+        }
+      }
+
+      const { dues } = await getStudentDues(schoolId, input.student_id, resolvedYearId);
       const pendingDues = dues.filter(d => d.status === "pending" || d.status === "partial");
       const totalPaise = input.payments.reduce((s, p) => s + p.amount_paise, 0);
       const { settings } = await getFeeSettings(schoolId);
@@ -301,15 +324,18 @@ export async function collectFees(
         settings.allocation_mode, input.selected_due_ids,
       );
 
-      const years: any[] = [];
-      const { data: yearData } = await supabase.from("academic_years").select("label").eq("id", input.academic_year_id).single();
+      const { data: yearData } = await supabase
+        .from("academic_years")
+        .select("label")
+        .eq("id", resolvedYearId)
+        .maybeSingle();
       const yearLabel = yearData?.label ?? "2026-27";
       const prefix = settings.receipt_prefix ?? "MZ";
 
       const { data, error } = await supabase.rpc("collect_fees", {
         p_school_id: schoolId,
         p_student_id: input.student_id,
-        p_academic_year_id: input.academic_year_id,
+        p_academic_year_id: resolvedYearId,
         p_receipt_date: receiptDate,
         p_total_paise: totalPaise,
         p_source: input.source ?? "counter",
@@ -327,14 +353,14 @@ export async function collectFees(
         p_advance_paise: allocationResult.advance_paise,
       });
       if (error) throw error;
-      const result = data as { receipt_id: string; receipt_no: string; idempotent: boolean };
+      const result = data as { receipt_id: string; receipt_no: string; idempotent: boolean; total_paise?: number };
       return {
         receipt_id: result.receipt_id,
         receipt_no: result.receipt_no,
         idempotent: result.idempotent,
         lines: allocationResult.lines,
         advance_paise: allocationResult.advance_paise,
-        total_paise: totalPaise,
+        total_paise: result.total_paise || totalPaise,
       };
     } catch (e: any) { throw new Error(e.message); }
   }
@@ -460,12 +486,18 @@ export async function getReceiptById(
 ): Promise<{ receipt?: FeeReceipt; items?: FeeReceiptItem[]; payments?: FeePayment[]; error?: string }> {
   if (isSupabaseConfigured) {
     try {
-      const [{ data: r }, { data: it }, { data: py }] = await Promise.all([
+      const [{ data: r }, { data: it }, { data: py }, { data: heads }] = await Promise.all([
         supabase.from("fee_receipts").select("*").eq("id", receiptId).eq("school_id", schoolId).single(),
         supabase.from("fee_receipt_items").select("*").eq("receipt_id", receiptId),
         supabase.from("fee_payments").select("*").eq("receipt_id", receiptId),
+        supabase.from("fee_heads").select("id, name").eq("school_id", schoolId),
       ]);
-      return { receipt: r as FeeReceipt, items: (it || []) as FeeReceiptItem[], payments: (py || []) as FeePayment[] };
+      const headMap = new Map((heads || []).map((h: any) => [h.id, h.name]));
+      const enrichedItems = ((it || []) as FeeReceiptItem[]).map((item) => ({
+        ...item,
+        fee_head_id: headMap.get(item.fee_head_id) || item.fee_head_id || "Tuition / Term Fee",
+      }));
+      return { receipt: r as FeeReceipt, items: enrichedItems, payments: (py || []) as FeePayment[] };
     } catch (e: any) { return { error: e.message }; }
   }
   const receipt = lsGet<FeeReceipt>(RECEIPTS_KEY(schoolId)).find(r => r.id === receiptId && r.school_id === schoolId);
@@ -536,42 +568,223 @@ export async function getCollectContext(
 
 // ─── Student search (counter) ─────────────────────────────────────────────────
 
+export interface StudentCounterFilterOptions {
+  classId?: string;
+  sectionId?: string;
+  academicYearId?: string;
+  limit?: number;
+}
+
 export async function searchStudentsForCounter(
   schoolId: string,
-  q: string,
-): Promise<Array<{ id: string; name: string; admission_no: string; balance_paise: number }>> {
-  const term = q.trim().toLowerCase();
-  if (term.length < 2) return [];
+  q: string = "",
+  filters?: StudentCounterFilterOptions
+): Promise<Array<{
+  id: string;
+  name: string;
+  admission_no: string;
+  class_id?: string;
+  class_name: string;
+  section_id?: string;
+  section_name?: string;
+  balance_paise: number;
+}>> {
+  const term = (q || "").trim();
+  const classId = filters?.classId && filters.classId !== "all" ? filters.classId : undefined;
+  const sectionId = filters?.sectionId && filters.sectionId !== "all" ? filters.sectionId : undefined;
+  const limitCount = filters?.limit || 40;
+
+  // If no search query and no class/section filter selected, return empty list
+  if (term.length < 1 && !classId && !sectionId) return [];
 
   if (isSupabaseConfigured) {
-    const { data } = await supabase.from("students")
-      .select("id, first_name, last_name, admission_no")
-      .eq("school_id", schoolId).is("deleted_at", null)
-      .or(`admission_no.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
-      .limit(20);
-    if (!data) return [];
-    return data.map((s: any) => ({
-      id: s.id,
-      name: `${s.first_name} ${s.last_name}`.trim(),
-      admission_no: s.admission_no,
-      balance_paise: 0, // enriched client-side or via join in Phase 3b
-    }));
+    try {
+      const isEnrFiltered = Boolean(classId || sectionId);
+      const enrollJoin = isEnrFiltered
+        ? `student_enrollments!student_enrollments_student_id_fkey!inner (
+            class_id,
+            section_id,
+            status,
+            class:classes!student_enrollments_class_id_fkey(id, name),
+            section:sections(id, name)
+          )`
+        : `student_enrollments!student_enrollments_student_id_fkey (
+            class_id,
+            section_id,
+            status,
+            class:classes!student_enrollments_class_id_fkey(id, name),
+            section:sections(id, name)
+          )`;
+
+      let query = supabase.from("students")
+        .select(`
+          id,
+          first_name,
+          last_name,
+          admission_no,
+          ${enrollJoin},
+          student_dues!student_dues_student_id_fkey (
+            balance_paise,
+            status
+          )
+        `)
+        .eq("school_id", schoolId)
+        .is("deleted_at", null)
+        .order("first_name", { ascending: true })
+        .limit(limitCount);
+
+      if (classId) {
+        query = query.eq("student_enrollments.class_id", classId);
+      }
+      if (sectionId) {
+        query = query.eq("student_enrollments.section_id", sectionId);
+      }
+      if (term.length > 0) {
+        query = query.or(`admission_no.ilike.%${term}%,first_name.ilike.%${term}%,last_name.ilike.%${term}%`);
+      }
+
+      const { data, error } = await query;
+
+      if (!error && data) {
+        return data.map((s: any) => {
+          const activeEnroll = (s.student_enrollments || []).find((e: any) => e.status !== "inactive") || s.student_enrollments?.[0];
+          const pendingDues = (s.student_dues || []).filter(
+            (d: any) => d.status === "pending" || d.status === "partial"
+          );
+          const balancePaise = pendingDues.reduce((acc: number, d: any) => acc + (d.balance_paise || 0), 0);
+
+          return {
+            id: s.id,
+            name: `${s.first_name || ""} ${s.last_name || ""}`.trim(),
+            admission_no: s.admission_no,
+            class_id: activeEnroll?.class_id,
+            class_name: activeEnroll?.class?.name || "—",
+            section_id: activeEnroll?.section_id,
+            section_name: activeEnroll?.section?.name || "",
+            balance_paise: balancePaise,
+          };
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase student search notice:", err);
+    }
   }
 
   const all = lsGet<any>(`myzkool_students_${schoolId}`).filter((s: any) => !s.deleted_at);
+  const dues = lsGet<any>(`myzkool_student_dues_${schoolId}`);
+  const classes = lsGet<any>(`myzkool_classes_${schoolId}`);
+  const sections = lsGet<any>(`myzkool_sections_${schoolId}`);
+  const enrollments = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
+  const lowerTerm = term.toLowerCase();
+
   return all
-    .filter((s: any) =>
-      s.admission_no?.toLowerCase().includes(term) ||
-      s.first_name?.toLowerCase().includes(term) ||
-      s.last_name?.toLowerCase().includes(term)
-    )
-    .slice(0, 20)
-    .map((s: any) => ({
-      id: s.id,
-      name: `${s.first_name} ${s.last_name}`.trim(),
-      admission_no: s.admission_no,
-      balance_paise: 0,
-    }));
+    .filter((s: any) => {
+      const enr = enrollments.find((e: any) => e.student_id === s.id);
+      if (classId && enr?.class_id !== classId) return false;
+      if (sectionId && enr?.section_id !== sectionId) return false;
+      if (term.length > 0) {
+        const matches = s.admission_no?.toLowerCase().includes(lowerTerm) ||
+          s.first_name?.toLowerCase().includes(lowerTerm) ||
+          s.last_name?.toLowerCase().includes(lowerTerm);
+        if (!matches) return false;
+      }
+      return true;
+    })
+    .slice(0, limitCount)
+    .map((s: any) => {
+      const enr = enrollments.find((e: any) => e.student_id === s.id);
+      const cls = enr ? classes.find((c: any) => c.id === enr.class_id) : null;
+      const sec = enr ? sections.find((sec: any) => sec.id === enr.section_id) : null;
+      const stdDues = dues.filter((d: any) => d.student_id === s.id && (d.status === "pending" || d.status === "partial"));
+      const balancePaise = stdDues.reduce((acc: number, d: any) => acc + (d.balance_paise || 0), 0);
+
+      return {
+        id: s.id,
+        name: `${s.first_name || ""} ${s.last_name || ""}`.trim(),
+        admission_no: s.admission_no,
+        class_id: enr?.class_id,
+        class_name: cls?.name || s.class_name || "—",
+        section_id: enr?.section_id,
+        section_name: sec?.name || s.section_name || "",
+        balance_paise: balancePaise,
+      };
+    });
+}
+
+export async function getStudentForCounter(
+  schoolId: string,
+  studentId: string
+): Promise<{
+  id: string;
+  name: string;
+  admission_no: string;
+  class_name: string;
+  section_name?: string;
+  balance_paise: number;
+} | null> {
+  if (!schoolId || !studentId) return null;
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.from("students")
+        .select(`
+          id,
+          first_name,
+          last_name,
+          admission_no,
+          student_enrollments!student_enrollments_student_id_fkey (
+            class_id,
+            section_id,
+            class:classes!student_enrollments_class_id_fkey(name),
+            section:sections(name)
+          ),
+          student_dues!student_dues_student_id_fkey (
+            balance_paise,
+            status
+          )
+        `)
+        .eq("school_id", schoolId)
+        .eq("id", studentId)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (!error && data) {
+        const activeEnroll = (data.student_enrollments || []).find((e: any) => e.status !== "inactive") || data.student_enrollments?.[0];
+        const pendingDues = (data.student_dues || []).filter(
+          (d: any) => d.status === "pending" || d.status === "partial"
+        );
+        const balancePaise = pendingDues.reduce((acc: number, d: any) => acc + (d.balance_paise || 0), 0);
+
+        return {
+          id: data.id,
+          name: `${data.first_name || ""} ${data.last_name || ""}`.trim(),
+          admission_no: data.admission_no,
+          class_name: (Array.isArray(activeEnroll?.class) ? activeEnroll.class[0]?.name : (activeEnroll?.class as any)?.name) || "—",
+          section_name: (Array.isArray(activeEnroll?.section) ? activeEnroll.section[0]?.name : (activeEnroll?.section as any)?.name) || "",
+          balance_paise: balancePaise,
+        };
+      }
+    } catch (err) {
+      console.warn("Supabase getStudentForCounter error:", err);
+    }
+  }
+
+  const all = lsGet<any>(`myzkool_students_${schoolId}`).filter((s: any) => !s.deleted_at);
+  const found = all.find((s: any) => s.id === studentId);
+  if (!found) return null;
+
+  const dues = lsGet<any>(`myzkool_student_dues_${schoolId}`);
+  const stdDues = dues.filter((d: any) => d.student_id === studentId && (d.status === "pending" || d.status === "partial"));
+  const balancePaise = stdDues.reduce((acc: number, d: any) => acc + (d.balance_paise || 0), 0);
+
+  return {
+    id: found.id,
+    name: `${found.first_name || ""} ${found.last_name || ""}`.trim(),
+    admission_no: found.admission_no,
+    class_name: found.class_name || "—",
+    section_name: found.section_name || "",
+    balance_paise: balancePaise,
+  };
 }
 
 // FeeCredit is imported from "../types/fees" above — no local redefinition needed.

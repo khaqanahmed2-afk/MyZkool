@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   MapPin,
   Plus,
@@ -13,6 +14,7 @@ import {
   ChevronUp,
   ChevronDown,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import {
   getRoutes,
@@ -38,6 +40,8 @@ import { TransportLockedPreview } from "./TransportLockedPreview";
 import { PrintableRouteSheet } from "./PrintableRouteSheet";
 
 export function RouteBuilderPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { schoolId } = useAuth();
   const [hasFeature, setHasFeature] = useState<boolean | null>(null);
   const [routes, setRoutes] = useState<EnrichedRoute[]>([]);
@@ -45,6 +49,15 @@ export function RouteBuilderPage() {
   const [staff, setStaff] = useState<TransportStaff[]>([]);
   const [feeZones, setFeeZones] = useState<TransportFeeZone[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Safe Back Navigation
+  const handleBack = () => {
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate("/admin/transport");
+    }
+  };
 
   // Active route being built / edited
   const [activeRoute, setActiveRoute] = useState<EnrichedRoute | null>(null);
@@ -96,8 +109,16 @@ export function RouteBuilderPage() {
     setStaff(sData);
     setFeeZones(zData);
 
-    if (rData.length > 0 && !activeRoute) {
-      selectRouteForEditing(rData[0]);
+    if (searchParams.get("action") === "new") {
+      handleStartNewRoute();
+    } else {
+      const targetId = searchParams.get("id");
+      const targetRoute = targetId ? rData.find((r) => r.id === targetId) : null;
+      if (targetRoute) {
+        selectRouteForEditing(targetRoute);
+      } else if (rData.length > 0 && !activeRoute) {
+        selectRouteForEditing(rData[0]);
+      }
     }
     setLoading(false);
   }
@@ -121,7 +142,7 @@ export function RouteBuilderPage() {
     setActiveRoute(null);
     setRouteName("");
     setRouteCode(`R-${routes.length + 1}`);
-    setVehicleId(vehicles[0]?.id || "");
+    setVehicleId("");
     setDriverId("");
     setAttendantId("");
     setPickupStart("07:00");
@@ -236,6 +257,70 @@ export function RouteBuilderPage() {
 
   // ─── Save Route & Stops ───────────────────────────────────────────────────
 
+  // Reassignment handlers with explicit confirmation
+  const handleVehicleChange = (newVehicleId: string) => {
+    if (!newVehicleId) {
+      setVehicleId("");
+      return;
+    }
+    const assignedRoute = routes.find(
+      (r) => r.default_vehicle_id === newVehicleId && r.id !== activeRoute?.id
+    );
+    if (assignedRoute) {
+      const v = vehicles.find((item) => item.id === newVehicleId);
+      const label = v ? `${v.registration_no} (${v.make_model})` : "This vehicle";
+      const confirmed = window.confirm(
+        `Vehicle "${label}" is currently assigned to Route ${assignedRoute.code} (${assignedRoute.name}).\n\nDo you want to reassign it to this route? It will be unassigned from Route ${assignedRoute.code} when you save.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setVehicleId(newVehicleId);
+  };
+
+  const handleDriverChange = (newDriverId: string) => {
+    if (!newDriverId) {
+      setDriverId("");
+      return;
+    }
+    const assignedRoute = routes.find(
+      (r) => r.default_driver_id === newDriverId && r.id !== activeRoute?.id
+    );
+    if (assignedRoute) {
+      const d = staff.find((item) => item.id === newDriverId);
+      const label = d ? d.full_name : "This driver";
+      const confirmed = window.confirm(
+        `Driver "${label}" is currently assigned to Route ${assignedRoute.code} (${assignedRoute.name}).\n\nDo you want to reassign them to this route? They will be unassigned from Route ${assignedRoute.code} when you save.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setDriverId(newDriverId);
+  };
+
+  const handleAttendantChange = (newAttendantId: string) => {
+    if (!newAttendantId) {
+      setAttendantId("");
+      return;
+    }
+    const assignedRoute = routes.find(
+      (r) => r.default_attendant_id === newAttendantId && r.id !== activeRoute?.id
+    );
+    if (assignedRoute) {
+      const a = staff.find((item) => item.id === newAttendantId);
+      const label = a ? a.full_name : "This conductor/attendant";
+      const confirmed = window.confirm(
+        `Conductor/Attendant "${label}" is currently assigned to Route ${assignedRoute.code} (${assignedRoute.name}).\n\nDo you want to reassign them to this route? They will be unassigned from Route ${assignedRoute.code} when you save.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setAttendantId(newAttendantId);
+  };
+
   async function handleSaveRoute(e: React.FormEvent) {
     e.preventDefault();
     if (!schoolId) return;
@@ -243,37 +328,48 @@ export function RouteBuilderPage() {
     setIsSaving(true);
 
     let routeId = activeRoute?.id;
+    let unassignedFromRoutes: string[] = [];
 
     if (activeRoute) {
-      const res = await updateRoute(schoolId, activeRoute.id, {
-        name: routeName.trim(),
-        code: routeCode.trim().toUpperCase(),
-        default_vehicle_id: vehicleId || null,
-        default_driver_id: driverId || null,
-        default_attendant_id: attendantId || null,
-        pickup_start_time: pickupStart,
-        drop_start_time: dropStart,
-        est_duration_min: durationMin,
-        status: "active",
-      });
+      const res = await updateRoute(
+        schoolId,
+        activeRoute.id,
+        {
+          name: routeName.trim(),
+          code: routeCode.trim().toUpperCase(),
+          default_vehicle_id: vehicleId || null,
+          default_driver_id: driverId || null,
+          default_attendant_id: attendantId || null,
+          pickup_start_time: pickupStart,
+          drop_start_time: dropStart,
+          est_duration_min: durationMin,
+          status: "active",
+        },
+        { reassignResources: true }
+      );
 
       if (!res.success) {
         setRouteError(res.error || "Failed to update route.");
         setIsSaving(false);
         return;
       }
+      unassignedFromRoutes = res.unassignedFromRoutes || [];
     } else {
-      const res = await createRoute(schoolId, {
-        name: routeName.trim(),
-        code: routeCode.trim().toUpperCase(),
-        default_vehicle_id: vehicleId || null,
-        default_driver_id: driverId || null,
-        default_attendant_id: attendantId || null,
-        pickup_start_time: pickupStart,
-        drop_start_time: dropStart,
-        est_duration_min: durationMin,
-        status: "active",
-      });
+      const res = await createRoute(
+        schoolId,
+        {
+          name: routeName.trim(),
+          code: routeCode.trim().toUpperCase(),
+          default_vehicle_id: vehicleId || null,
+          default_driver_id: driverId || null,
+          default_attendant_id: attendantId || null,
+          pickup_start_time: pickupStart,
+          drop_start_time: dropStart,
+          est_duration_min: durationMin,
+          status: "active",
+        },
+        { reassignResources: true }
+      );
 
       if (!res.success || !res.route) {
         setRouteError(res.error || "Failed to create route.");
@@ -281,6 +377,7 @@ export function RouteBuilderPage() {
         return;
       }
       routeId = res.route.id;
+      unassignedFromRoutes = res.unassignedFromRoutes || [];
     }
 
     // Save Stops
@@ -292,9 +389,14 @@ export function RouteBuilderPage() {
       return;
     }
 
+    let successMsg = `Route ${routeCode.trim().toUpperCase()} and ${stops.length} stop(s) saved successfully.`;
+    if (unassignedFromRoutes.length > 0) {
+      successMsg += ` Reassigned resources from Route ${unassignedFromRoutes.join(", ")}.`;
+    }
+
     setToast({
       type: "success",
-      message: `Route ${routeCode.trim().toUpperCase()} and ${stops.length} stop(s) saved successfully.`,
+      message: successMsg,
     });
     await loadAll();
   }
@@ -327,6 +429,19 @@ export function RouteBuilderPage() {
   const capacity = currentVehicle?.capacity || 40;
   const seatsUsed = activeRoute?.seats_used || 0;
   const isOverCapacity = seatsUsed > capacity;
+
+  // Identify if selected resources are currently assigned to other active routes
+  const otherVehicleRoute = vehicleId
+    ? routes.find((r) => r.default_vehicle_id === vehicleId && r.id !== activeRoute?.id)
+    : null;
+
+  const otherDriverRoute = driverId
+    ? routes.find((r) => r.default_driver_id === driverId && r.id !== activeRoute?.id)
+    : null;
+
+  const otherAttendantRoute = attendantId
+    ? routes.find((r) => r.default_attendant_id === attendantId && r.id !== activeRoute?.id)
+    : null;
 
   if (isPrintMode && activeRoute) {
     return (
@@ -368,13 +483,26 @@ export function RouteBuilderPage() {
 
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-[#141A2E] tracking-tight">
-            Route Builder & Stops
-          </h1>
-          <p className="text-xs text-[#5B6478]">
-            Configure stop timeline sequences, automated schedules, and bus seat allocations
-          </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
+            title="Return to Transport Dashboard"
+          >
+            <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
+            <span>Back to Transport</span>
+          </button>
+
+          <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div>
+            <h1 className="text-2xl font-black text-[#141A2E] tracking-tight">
+              Route Builder & Stops
+            </h1>
+            <p className="text-xs text-[#5B6478]">
+              Configure stop timeline sequences, automated schedules, and bus seat allocations
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {activeRoute && (
@@ -482,54 +610,114 @@ export function RouteBuilderPage() {
             </div>
 
             <div>
-              <label className="block text-[#5B6478] mb-1 font-semibold">Default Vehicle</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[#5B6478] font-semibold">Default Vehicle</label>
+                {otherVehicleRoute && (
+                  <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200">
+                    Reassigning from Route {otherVehicleRoute.code}
+                  </span>
+                )}
+              </div>
               <select
                 value={vehicleId}
-                onChange={(e) => setVehicleId(e.target.value)}
+                onChange={(e) => handleVehicleChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
               >
                 <option value="">Unassigned</option>
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.registration_no} ({v.make_model} - {v.capacity} seats)
-                  </option>
-                ))}
+                {vehicles.map((v) => {
+                  const assignedRoute = routes.find(
+                    (r) => r.default_vehicle_id === v.id && !r.deleted_at
+                  );
+                  const isCurrent = assignedRoute && activeRoute && assignedRoute.id === activeRoute.id;
+                  const isOther = assignedRoute && (!activeRoute || assignedRoute.id !== activeRoute.id);
+                  const statusNote = isCurrent
+                    ? "Current Route"
+                    : isOther
+                    ? `Assigned to Route ${assignedRoute.code}`
+                    : "Available";
+
+                  return (
+                    <option key={v.id} value={v.id}>
+                      {v.registration_no} ({v.make_model} - {v.capacity} seats) — {statusNote}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Driver</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#5B6478] font-semibold">Driver</label>
+                  {otherDriverRoute && (
+                    <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200">
+                      Reassigning from {otherDriverRoute.code}
+                    </span>
+                  )}
+                </div>
                 <select
                   value={driverId}
-                  onChange={(e) => setDriverId(e.target.value)}
+                  onChange={(e) => handleDriverChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                 >
                   <option value="">Unassigned</option>
                   {staff
                     .filter((s) => s.staff_type === "driver")
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.full_name}
-                      </option>
-                    ))}
+                    .map((d) => {
+                      const assignedRoute = routes.find(
+                        (r) => r.default_driver_id === d.id && !r.deleted_at
+                      );
+                      const isCurrent = assignedRoute && activeRoute && assignedRoute.id === activeRoute.id;
+                      const isOther = assignedRoute && (!activeRoute || assignedRoute.id !== activeRoute.id);
+                      const statusNote = isCurrent
+                        ? "Current Route"
+                        : isOther
+                        ? `Assigned to Route ${assignedRoute.code}`
+                        : "Available";
+
+                      return (
+                        <option key={d.id} value={d.id}>
+                          {d.full_name} — {statusNote}
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Attendant</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#5B6478] font-semibold">Conductor / Attendant</label>
+                  {otherAttendantRoute && (
+                    <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200">
+                      Reassigning from {otherAttendantRoute.code}
+                    </span>
+                  )}
+                </div>
                 <select
                   value={attendantId}
-                  onChange={(e) => setAttendantId(e.target.value)}
+                  onChange={(e) => handleAttendantChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                 >
                   <option value="">Unassigned</option>
                   {staff
                     .filter((s) => s.staff_type === "attendant")
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.full_name}
-                      </option>
-                    ))}
+                    .map((a) => {
+                      const assignedRoute = routes.find(
+                        (r) => r.default_attendant_id === a.id && !r.deleted_at
+                      );
+                      const isCurrent = assignedRoute && activeRoute && assignedRoute.id === activeRoute.id;
+                      const isOther = assignedRoute && (!activeRoute || assignedRoute.id !== activeRoute.id);
+                      const statusNote = isCurrent
+                        ? "Current Route"
+                        : isOther
+                        ? `Assigned to Route ${assignedRoute.code}`
+                        : "Available";
+
+                      return (
+                        <option key={a.id} value={a.id}>
+                          {a.full_name} — {statusNote}
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
             </div>

@@ -51,6 +51,7 @@ import { transportService } from "./transportService";
 import {
   getNextCounter,
   reserveCounters,
+  formatAdmissionNumber,
   logAudit,
   getStudentProfile,
 } from "./studentService";
@@ -598,8 +599,7 @@ export async function parseAndValidateImportCSV(
       const { data } = await supabase
         .from("students")
         .select("first_name, last_name, dob, admission_no")
-        .eq("school_id", schoolId)
-        .is("deleted_at", null);
+        .eq("school_id", schoolId);
       if (data) existingDbStudents = data;
     } catch {
       // Non-fatal
@@ -1134,7 +1134,7 @@ export async function commitImportBatch(
     createdStudentIds.push(studentId);
 
     const customAdmNo = r.admission_no?.trim();
-    const admissionNo = customAdmNo || `ADM-${currentYear}-${String(counterStart + counterOffset).padStart(4, "0")}`;
+    const admissionNo = customAdmNo || formatAdmissionNumber(currentYear, counterStart + counterOffset);
     if (!customAdmNo) counterOffset++;
 
     const classIdResolved = classNameToId.get((r.class_name || "").trim().toLowerCase()) || null;

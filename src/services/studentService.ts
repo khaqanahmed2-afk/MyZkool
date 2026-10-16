@@ -92,6 +92,11 @@ const NOTIFICATION_OUTBOX_CACHE_PREFIX = "myzkool_notification_outbox_";
 const STUDENT_SENSITIVE_CACHE_PREFIX = "myzkool_student_sensitive_";
 const STUDENT_MEDICAL_CACHE_PREFIX = "myzkool_student_medical_";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isValidUuid(val: unknown): val is string {
+  return typeof val === "string" && UUID_REGEX.test(val);
+}
+
 function getStudentsCacheKey(schoolId: string) {
   return `${STUDENTS_CACHE_PREFIX}${schoolId}`;
 }
@@ -265,12 +270,17 @@ export function formatAdmissionNumber(year: number | string, seq: number): strin
 export function parseCountersCache(cached: string | null): Record<string, number> {
   if (!cached) return {};
   try {
-    const parsed = JSON.parse(cached);
+    const parsed = typeof cached === "string" ? JSON.parse(cached) : cached;
     if (Array.isArray(parsed)) {
       const map: Record<string, number> = {};
       for (const item of parsed) {
-        if (item && item.key) {
-          map[item.key] = typeof item.next_value === "number" ? item.next_value : Number(item.value || 1);
+        if (item && typeof item === "object") {
+          const k = item.key || item.name || item.id;
+          if (k) {
+            const raw = item.next_value ?? item.value ?? item.count ?? item.current_value;
+            const num = Number(raw);
+            map[k] = !isNaN(num) ? num : 1;
+          }
         }
       }
       return map;
@@ -280,10 +290,10 @@ export function parseCountersCache(cached: string | null): Record<string, number
       for (const [k, v] of Object.entries(parsed)) {
         if (typeof v === "number") {
           map[k] = v;
-        } else if (v && typeof v === "object" && "next_value" in v) {
-          map[k] = Number((v as any).next_value);
-        } else if (v && typeof v === "object" && "value" in v) {
-          map[k] = Number((v as any).value);
+        } else if (v && typeof v === "object") {
+          const raw = (v as any).next_value ?? (v as any).value ?? (v as any).count ?? (v as any).current_value;
+          const num = Number(raw);
+          map[k] = !isNaN(num) ? num : 1;
         } else {
           const num = Number(v);
           map[k] = isNaN(num) ? 1 : num;
@@ -314,9 +324,15 @@ export async function getNextCounter(schoolId: string, key: string): Promise<{ v
         return { value: Number(data) };
       }
       if (error) {
+        if (error.message?.includes("UNAUTHORIZED") || error.code === "42501") {
+          return { value: 0, error: error.message };
+        }
         console.warn("Notice: get_next_counter RPC error, using fallback:", error.message);
       }
-    } catch {
+    } catch (e: any) {
+      if (e?.message?.includes("UNAUTHORIZED")) {
+        return { value: 0, error: e.message };
+      }
       // Fall through to local storage
     }
   }
@@ -362,9 +378,15 @@ export async function reserveCounters(
         return { startValue: Number(data) };
       }
       if (error) {
+        if (error.message?.includes("UNAUTHORIZED") || error.code === "42501") {
+          return { startValue: 0, error: error.message };
+        }
         console.warn("Notice: reserve_counters RPC error, using fallback:", error.message);
       }
-    } catch {
+    } catch (e: any) {
+      if (e?.message?.includes("UNAUTHORIZED")) {
+        return { startValue: 0, error: e.message };
+      }
       // Fall through
     }
   }
@@ -413,7 +435,7 @@ export async function createStudent(
     if (counterError) {
       return { error: counterError };
     }
-    admissionNoStr = `ADM-${new Date().getFullYear()}-${String(admissionNo).padStart(4, "0")}`;
+    admissionNoStr = formatAdmissionNumber(new Date().getFullYear(), admissionNo);
   }
 
   const timestamp = new Date().toISOString();
@@ -472,7 +494,7 @@ export async function createStudent(
     const cacheKey = getStudentsCacheKey(schoolId);
     const cached = localStorage.getItem(cacheKey);
     const students: Student[] = cached ? JSON.parse(cached) : [];
-    const duplicate = students.find((s) => s.admission_no === newStudent.admission_no && !s.deleted_at);
+    const duplicate = students.find((s) => s.admission_no === newStudent.admission_no);
     if (duplicate) {
       return { error: `A student with admission number '${newStudent.admission_no}' already exists in this school.` };
     }
@@ -1559,9 +1581,14 @@ export async function createStudentEnrollment(
  * Log audit entry
  */
 export async function logAudit(input: Omit<AuditLog, "id" | "created_at">): Promise<{ success: boolean; error?: string }> {
+  const cleanActorId = isValidUuid(input.actor_id) ? input.actor_id : null;
+  const cleanEntityId = isValidUuid(input.entity_id) ? input.entity_id : crypto.randomUUID();
+
   const auditLog: AuditLog = {
     id: crypto.randomUUID(),
     ...input,
+    actor_id: cleanActorId,
+    entity_id: cleanEntityId,
     created_at: new Date().toISOString(),
   };
 
@@ -1569,13 +1596,27 @@ export async function logAudit(input: Omit<AuditLog, "id" | "created_at">): Prom
     try {
       const { error } = await supabase
         .from("audit_logs")
-        .insert(auditLog);
+        .insert({
+          id: auditLog.id,
+          school_id: auditLog.school_id,
+          actor_id: auditLog.actor_id,
+          actor_role: auditLog.actor_role || null,
+          entity_type: auditLog.entity_type,
+          entity_id: auditLog.entity_id,
+          action: auditLog.action,
+          before: auditLog.before || null,
+          after: auditLog.after || null,
+          reason: auditLog.reason || null,
+          created_at: auditLog.created_at,
+        });
 
       if (!error) {
         return { success: true };
       }
+      console.warn("Audit log insert skipped:", error.message);
       return { success: false, error: error.message };
     } catch (err) {
+      console.warn("Audit log insert error:", err);
       return { success: false, error: String(err) };
     }
   }
@@ -2718,7 +2759,7 @@ export async function admitStudentTransactional(
         throw new Error(`Failed to generate admission number: ${counterRes.error}`);
       }
       const admissionSeq = counterRes.value;
-      admissionNo = `ADM-${new Date().getFullYear()}-${String(admissionSeq).padStart(4, "0")}`;
+      admissionNo = formatAdmissionNumber(new Date().getFullYear(), admissionSeq);
     }
 
     if (options?.forceFailAtStep === "counter") {
@@ -2789,7 +2830,7 @@ export async function admitStudentTransactional(
       const cacheKey = getStudentsCacheKey(schoolId);
       const cached = localStorage.getItem(cacheKey);
       const students: Student[] = cached ? JSON.parse(cached) : [];
-      if (students.some((s) => s.admission_no === admissionNo && !s.deleted_at)) {
+      if (students.some((s) => s.admission_no === admissionNo)) {
         throw new Error(`A student with admission number '${admissionNo}' already exists in this school.`);
       }
       students.push(studentRecord);
@@ -3225,6 +3266,9 @@ export async function admitStudentTransactional(
 
       const pickup = tPayload.pickup !== false;
       const dropoff = tPayload.dropoff !== false;
+      if (!pickup && !dropoff) {
+        throw new Error("At least one of pickup or dropoff must be selected when opting into transport");
+      }
       let serviceType: ServiceType = "both";
       if (pickup && !dropoff) {
         serviceType = "pickup_only";
@@ -3418,13 +3462,16 @@ export async function admitStudentTransactional(
     });
 
     // STEP 12: Audit Log
+    const cleanActorId = isValidUuid(actorId) ? actorId : null;
+    const cleanEntityId = isValidUuid(studentId) ? studentId : crypto.randomUUID();
+
     const auditRow: AuditLog = {
       id: crypto.randomUUID(),
       school_id: schoolId,
-      actor_id: actorId,
+      actor_id: cleanActorId,
       actor_role: actorRole,
       entity_type: "students",
-      entity_id: studentId,
+      entity_id: cleanEntityId,
       action: "student.admitted",
       after: { admission_no: admissionNo, first_name: payload.step1_basic.first_name, last_name: payload.step1_basic.last_name },
       reason: "Admitted via admission wizard",
@@ -3432,7 +3479,26 @@ export async function admitStudentTransactional(
     };
 
     if (isSupabaseConfigured) {
-      await supabase.from("audit_logs").insert(auditRow);
+      try {
+        const { error } = await supabase.from("audit_logs").insert({
+          id: auditRow.id,
+          school_id: auditRow.school_id,
+          actor_id: auditRow.actor_id,
+          actor_role: auditRow.actor_role || null,
+          entity_type: auditRow.entity_type,
+          entity_id: auditRow.entity_id,
+          action: auditRow.action,
+          before: auditRow.before || null,
+          after: auditRow.after || null,
+          reason: auditRow.reason || null,
+          created_at: auditRow.created_at,
+        });
+        if (error) {
+          console.warn("Audit log insert skipped in admission:", error.message);
+        }
+      } catch (err) {
+        console.warn("Audit log insert error in admission:", err);
+      }
     } else {
       const cacheKey = getAuditLogsCacheKey(schoolId);
       const cached = localStorage.getItem(cacheKey);

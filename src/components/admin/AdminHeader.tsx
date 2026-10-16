@@ -12,13 +12,15 @@ import {
 import type { School } from "../../types/school";
 import { useAuth } from "../../hooks/useAuth";
 
+import { SchoolSelector } from "./SchoolSelector";
+
 interface AdminHeaderProps {
   school: School | null;
   onMenuClick: () => void;
 }
 
 export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, currentAcademicYear } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -29,6 +31,8 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
   const formattedModule =
     currentModule.charAt(0).toUpperCase() + currentModule.slice(1);
 
+  const activeYearLabel = currentAcademicYear?.label || "2025–2026";
+
   const handleSignOut = async () => {
     await signOut();
     navigate("/login");
@@ -36,7 +40,7 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
 
   return (
     <header className="h-16 bg-white border-b border-[#E6EAF3] flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
         <button
           onClick={onMenuClick}
           className="p-2 -ml-2 text-[#5B6478] hover:bg-gray-100 rounded-lg md:hidden"
@@ -44,11 +48,16 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Breadcrumb / Title area */}
-        <div className="hidden sm:flex items-center text-sm font-medium">
+        {/* Mobile School Switcher */}
+        <div className="md:hidden">
+          <SchoolSelector variant="header" />
+        </div>
+
+        {/* Breadcrumb / Title area on desktop */}
+        <div className="hidden md:flex items-center text-sm font-medium">
           <span className="text-[#5B6478]">Admin</span>
           <span className="mx-2 text-gray-300">/</span>
-          <span className="text-[#141A2E]">{formattedModule}</span>
+          <span className="text-[#141A2E] font-semibold">{formattedModule}</span>
         </div>
       </div>
 
@@ -57,30 +66,48 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search students, staff..."
-            className="pl-9 pr-4 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-full text-sm focus:outline-none focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] transition-shadow w-64"
+            placeholder="Search students, invoices, receipts..."
+            className="pl-9 pr-4 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-full text-xs focus:outline-none focus:border-[#0B7B49] focus:ring-1 focus:ring-[#0B7B49] transition-shadow w-72 text-[#141A2E]"
           />
         </div>
 
-        <button className="relative p-2 text-[#5B6478] hover:bg-gray-100 rounded-full transition-colors">
+        {/* Academic Year: Shows only current academic year saved during onboarding */}
+        <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-white border border-[#E6EAF3] rounded-xl shadow-2xs">
+          <div className="flex flex-col items-start">
+            <span className="text-[9px] font-semibold text-[#8A94A6] uppercase tracking-wider leading-none">Academic Year</span>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#141A2E] mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>{activeYearLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        <button className="relative p-2 text-[#5B6478] hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
           <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
+          <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] font-bold flex items-center justify-center border-2 border-white">
+            3
+          </span>
         </button>
 
-        <div className="h-6 w-px bg-gray-200 hidden sm:block mx-1"></div>
+        <div className="h-6 w-px bg-gray-200 hidden sm:block mx-0.5"></div>
 
         {/* Profile Dropdown */}
         <div className="relative">
           <button
             onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="flex items-center gap-2 hover:bg-gray-50 p-1 pr-2 rounded-full transition-colors border border-transparent hover:border-gray-200"
+            className="flex items-center gap-2 hover:bg-gray-50 p-1 pr-2 rounded-full transition-colors border border-transparent hover:border-gray-200 cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-full bg-[#2158E0] text-white flex items-center justify-center text-xs font-bold shrink-0">
-              {profile?.full_name?.charAt(0) || "A"}
+            <div className="w-8 h-8 rounded-full bg-slate-200 text-[#141A2E] flex items-center justify-center text-xs font-bold shrink-0">
+              {profile?.full_name ? profile.full_name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase() : "PS"}
             </div>
-            <span className="text-sm font-medium text-[#141A2E] hidden md:block">
-              {profile?.full_name?.split(" ")[0] || "Admin"}
-            </span>
+            <div className="hidden md:flex flex-col items-start text-left leading-tight">
+              <span className="text-xs font-bold text-[#141A2E]">
+                {profile?.full_name || "Principal"}
+              </span>
+              <span className="text-[10px] text-[#5B6478]">
+                School Admin
+              </span>
+            </div>
             <ChevronDown className="w-3 h-3 text-[#5B6478] hidden md:block" />
           </button>
 

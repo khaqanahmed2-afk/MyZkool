@@ -88,6 +88,7 @@ export interface StudentInput {
   medium?: string;
   sr_no?: string;
   apaar_id?: string;
+  admission_no?: string;
 }
 
 /**

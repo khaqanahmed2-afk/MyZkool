@@ -315,7 +315,7 @@ async function runTests() {
   // -------------------------------------------------------------------------
   console.log("\n3. Rollback Stack & Zero Orphans on Mid-Transaction Failure:");
 
-  const beforeStudentsCount = (await listStudents(schoolId)).response?.total || 0;
+  const beforeStudentsCount = (await listStudents(schoolId)).response?.data.length || 0;
   const beforeAssignsCount: number = JSON.parse(localStorage.getItem(`myzkool_transport_assignments_${schoolId}`) || "[]").length;
   const beforeDuesCount: number = JSON.parse(localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]").length;
   const beforeLedgerCount: number = JSON.parse(localStorage.getItem(`myzkool_fee_ledger_${schoolId}`) || "[]").length;
@@ -346,7 +346,7 @@ async function runTests() {
   assert(failRes.error?.includes("outbox") === true, "Failure reported at outbox step");
 
   // Verify no orphaned student row
-  const afterStudentsCount = (await listStudents(schoolId)).response?.total || 0;
+  const afterStudentsCount = (await listStudents(schoolId)).response?.data.length || 0;
   assert(afterStudentsCount === beforeStudentsCount, "Student table rolled back without orphans");
 
   // Verify no orphaned transport assignment

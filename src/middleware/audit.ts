@@ -18,6 +18,11 @@ export interface AuditEntry {
   ip?: string;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isValidUuid(val: unknown): val is string {
+  return typeof val === 'string' && UUID_REGEX.test(val);
+}
+
 // In-memory audit buffer for testing / offline fallback
 export const memoryAuditLogs: (AuditEntry & { id: number; at: string })[] = [];
 let nextAuditId = 1;
@@ -30,19 +35,35 @@ export async function createAuditLogEntry(entry: AuditEntry): Promise<number> {
   const id = nextAuditId++;
   memoryAuditLogs.push({ ...entry, id, at });
 
-  if (isSupabaseConfigured) {
+  if (isSupabaseConfigured && entry.schoolId && isValidUuid(entry.schoolId)) {
     try {
-      await supabase.from('audit_logs').insert({
+      const cleanActorId = isValidUuid(entry.actorId) ? entry.actorId : null;
+      const cleanEntityId = isValidUuid(entry.entityId) ? entry.entityId : crypto.randomUUID();
+      
+      // Clean IP for postgres INET field (extract first IP if comma-separated from proxy)
+      let cleanIp: string | null = null;
+      if (entry.ip) {
+        const firstIp = entry.ip.split(',')[0].trim();
+        if (/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(firstIp) || firstIp.includes(':')) {
+          cleanIp = firstIp;
+        }
+      }
+
+      const { error } = await supabase.from('audit_logs').insert({
         school_id: entry.schoolId,
-        actor_id: entry.actorId,
+        actor_id: cleanActorId,
         action: entry.action,
-        entity: entry.entity,
-        entity_id: entry.entityId,
-        reason: entry.reason,
-        before: entry.before ? JSON.stringify(entry.before) : null,
-        after: entry.after ? JSON.stringify(entry.after) : null,
-        ip: entry.ip,
+        entity_type: entry.entity,
+        entity_id: cleanEntityId,
+        reason: entry.reason || null,
+        before: entry.before || null,
+        after: entry.after || null,
+        ip: cleanIp,
       });
+
+      if (error) {
+        console.warn('[AuditMiddleware] Supabase audit log insert skipped:', error.message);
+      }
     } catch (e) {
       // Memory record preserved
     }

@@ -60,6 +60,16 @@ export async function requestRefund(
     updated_at: new Date().toISOString(),
   };
 
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.from("fee_refunds").insert(refund).select().single();
+      if (error) throw error;
+      return { success: true, refund: data as FeeRefund };
+    } catch (err: any) {
+      console.warn("Supabase requestRefund error, falling back to local storage:", err);
+    }
+  }
+
   const refunds = lsGet<FeeRefund>(`myzkool_fee_refunds_${schoolId}`);
   refunds.push(refund);
   lsSet(`myzkool_fee_refunds_${schoolId}`, refunds);
@@ -76,6 +86,26 @@ export async function approveRefund(
   approved: boolean,
   actorId?: string
 ): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured) {
+    try {
+      const updateData = {
+        status: approved ? "approved" : "rejected",
+        approved_by: actorId || null,
+        approved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from("fee_refunds")
+        .update(updateData)
+        .eq("id", refundId)
+        .eq("school_id", schoolId);
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.warn("Supabase approveRefund error, falling back to local storage:", err);
+    }
+  }
+
   const refunds = lsGet<FeeRefund>(`myzkool_fee_refunds_${schoolId}`);
   const refund = refunds.find(r => r.id === refundId);
   if (!refund) return { success: false, error: "Refund request not found" };
@@ -99,6 +129,47 @@ export async function payRefund(
   referenceNo?: string,
   actorId?: string
 ): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured) {
+    try {
+      const { data: refund, error: fetchErr } = await supabase
+        .from("fee_refunds")
+        .select("*")
+        .eq("id", refundId)
+        .eq("school_id", schoolId)
+        .single();
+      if (fetchErr || !refund) return { success: false, error: "Refund request not found" };
+      if (refund.status !== "approved") return { success: false, error: "Refund must be approved before payment" };
+
+      const ledgerId = crypto.randomUUID();
+      const ledgerEntry = {
+        id: ledgerId,
+        school_id: schoolId,
+        student_id: refund.student_id,
+        academic_year_id: refund.academic_year_id,
+        entry_type: "reversal",
+        amount_paise: refund.amount_paise,
+        receipt_id: refund.receipt_id || null,
+        due_id: null,
+        note: `Fee refund paid: ${refund.reason} (${refund.payment_mode.toUpperCase()})`,
+        created_by: actorId || null,
+        created_at: new Date().toISOString(),
+      };
+
+      await supabase.from("fee_ledger").insert(ledgerEntry);
+      await supabase.from("fee_refunds").update({
+        status: "paid",
+        reference_no: referenceNo || null,
+        paid_at: new Date().toISOString(),
+        ledger_entry_id: ledgerId,
+        updated_at: new Date().toISOString(),
+      }).eq("id", refundId);
+
+      return { success: true };
+    } catch (err: any) {
+      console.warn("Supabase payRefund error, falling back to local storage:", err);
+    }
+  }
+
   const refunds = lsGet<FeeRefund>(`myzkool_fee_refunds_${schoolId}`);
   const refund = refunds.find(r => r.id === refundId);
   if (!refund) return { success: false, error: "Refund request not found" };
@@ -138,5 +209,17 @@ export async function payRefund(
  * Fetch all refunds for a school
  */
 export async function getRefunds(schoolId: string): Promise<FeeRefund[]> {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from("fee_refunds")
+        .select("*")
+        .eq("school_id", schoolId)
+        .order("created_at", { ascending: false });
+      if (!error && data) return data as FeeRefund[];
+    } catch (err) {
+      console.warn("Supabase getRefunds error:", err);
+    }
+  }
   return lsGet<FeeRefund>(`myzkool_fee_refunds_${schoolId}`);
 }

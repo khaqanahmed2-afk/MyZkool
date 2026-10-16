@@ -8,6 +8,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   CalendarSync,
   Bus,
@@ -20,17 +21,30 @@ import {
   Filter,
   UserX,
   AlertTriangle,
+  ArrowLeft,
 } from "lucide-react";
 import { getRenewalPreview, commitRenewal } from "../../../services/transportAssignmentService";
+import { getAcademicYearsForSchool } from "../../../services/academicService";
 import { useAuth } from "../../../context/AuthContext";
 import type { RenewalPreviewItem } from "../../../types/transport";
+import type { AcademicYear } from "../../../types/academic";
 
 export const YearRenewalPage: React.FC = () => {
+  const navigate = useNavigate();
   const { schoolId: authSchoolId } = useAuth();
   const [schoolId, setSchoolId] = useState<string>(authSchoolId || "");
-  const [oldYearId, setOldYearId] = useState<string>("ay-2025-26");
-  const [newYearId, setNewYearId] = useState<string>("ay-2026-27");
-  const [effectiveFrom, setEffectiveFrom] = useState<string>("2026-04-01");
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [oldYearId, setOldYearId] = useState<string>("");
+  const [newYearId, setNewYearId] = useState<string>("");
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split("T")[0]);
+
+  const handleBack = () => {
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate("/admin/transport");
+    }
+  };
 
   const [items, setItems] = useState<RenewalPreviewItem[]>([]);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -52,8 +66,28 @@ export const YearRenewalPage: React.FC = () => {
     }
   }, [authSchoolId]);
 
+  useEffect(() => {
+    if (!schoolId) return;
+    getAcademicYearsForSchool(schoolId).then((res) => {
+      const years = res.academicYears || [];
+      setAcademicYears(years);
+      if (years.length >= 2) {
+        const currentIdx = years.findIndex((y) => y.is_current);
+        if (currentIdx !== -1 && currentIdx + 1 < years.length) {
+          setOldYearId(years[currentIdx + 1].id);
+          setNewYearId(years[currentIdx].id);
+        } else {
+          setOldYearId(years[1].id);
+          setNewYearId(years[0].id);
+        }
+      } else if (years.length === 1) {
+        setNewYearId(years[0].id);
+      }
+    });
+  }, [schoolId]);
+
   const loadPreview = async () => {
-    if (!schoolId) {
+    if (!schoolId || !oldYearId || !newYearId) {
       setLoading(false);
       return;
     }
@@ -75,7 +109,7 @@ export const YearRenewalPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!schoolId) return;
+    if (!schoolId || !oldYearId || !newYearId) return;
     loadPreview();
   }, [schoolId, oldYearId, newYearId]);
 
@@ -158,22 +192,64 @@ export const YearRenewalPage: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 font-display flex items-center gap-2.5">
-            <CalendarSync className="w-5 h-5 text-[#2158E0]" />
-            Transport Year Renewal
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Review previous year riders and confirm assignments for the new academic session.
-          </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
+            title="Return to Transport Dashboard"
+          >
+            <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
+            <span>Back to Transport</span>
+          </button>
+
+          <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 font-display flex items-center gap-2.5">
+              <CalendarSync className="w-5 h-5 text-[#2158E0]" />
+              Transport Year Renewal
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Review previous year riders and confirm assignments for the new academic session.
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500 font-medium">Session:</span>
-            <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-[#E6EAF3]">
-              {oldYearId} → {newYearId}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500 font-medium">From:</span>
+            <select
+              value={oldYearId}
+              onChange={(e) => setOldYearId(e.target.value)}
+              className="font-semibold text-slate-800 bg-white px-2 py-1 rounded-lg border border-[#E6EAF3] focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+            >
+              {academicYears.length > 0 ? (
+                academicYears.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.label}
+                  </option>
+                ))
+              ) : (
+                <option value={oldYearId}>{oldYearId}</option>
+              )}
+            </select>
+            <span className="text-slate-400">→</span>
+            <span className="text-slate-500 font-medium">To:</span>
+            <select
+              value={newYearId}
+              onChange={(e) => setNewYearId(e.target.value)}
+              className="font-semibold text-slate-800 bg-white px-2 py-1 rounded-lg border border-[#E6EAF3] focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
+            >
+              {academicYears.length > 0 ? (
+                academicYears.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.label} {y.is_current ? "(Current)" : ""}
+                  </option>
+                ))
+              ) : (
+                <option value={newYearId}>{newYearId}</option>
+              )}
+            </select>
           </div>
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-slate-500 font-medium">Effective:</span>

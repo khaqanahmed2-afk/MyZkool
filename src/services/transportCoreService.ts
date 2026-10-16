@@ -20,6 +20,7 @@ import type {
   StaffDocument,
   TransportRoute,
   RouteStop,
+  RouteStopFeeInput,
   TransportFeeZone,
   EnrichedVehicle,
   EnrichedStaff,
@@ -442,15 +443,19 @@ export async function getTransportStaff(
       .map((r) => ({ id: r.id, name: r.name, code: r.code }));
 
     let licenseChip: DocumentStatusChip | undefined;
-    if (s.license_expires_on) {
-      const diffMs = new Date(s.license_expires_on).getTime() - new Date(todayStr).getTime();
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays <= 0) {
-        licenseChip = { status: "expired", label: "License Expired", color: "red", daysRemaining: diffDays };
-      } else if (diffDays <= 30) {
-        licenseChip = { status: "expiring_soon", label: `Expires in ${diffDays}d`, color: "amber", daysRemaining: diffDays };
+    if (s.staff_type === "driver") {
+      if (s.license_expires_on) {
+        const diffMs = new Date(s.license_expires_on).getTime() - new Date(todayStr).getTime();
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays <= 0) {
+          licenseChip = { status: "expired", label: "License Expired", color: "red", daysRemaining: diffDays };
+        } else if (diffDays <= 30) {
+          licenseChip = { status: "expiring_soon", label: `Expires in ${diffDays}d`, color: "amber", daysRemaining: diffDays };
+        } else {
+          licenseChip = { status: "valid", label: "License Valid", color: "green", daysRemaining: diffDays };
+        }
       } else {
-        licenseChip = { status: "valid", label: "License Valid", color: "green", daysRemaining: diffDays };
+        licenseChip = { status: "missing", label: "License Required", color: "red", daysRemaining: 0 };
       }
     }
 
@@ -742,28 +747,62 @@ export function generateDriverAppInvite(
 
 export async function getRoutes(schoolId: string): Promise<EnrichedRoute[]> {
   let routes: TransportRoute[] = [];
+  let allStops: RouteStop[] = [];
+  let vehicles: TransportVehicle[] = [];
+  let staff: TransportStaff[] = [];
+  let assignments: { route_id: string; status: string }[] = [];
+
   if (isSupabaseConfigured) {
-    const { data } = await supabase
-      .from("transport_routes")
-      .select("*")
-      .eq("school_id", schoolId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false });
-    routes = (data || []) as TransportRoute[];
+    const [routesRes, stopsRes, vehRes, staffRes, assignRes] = await Promise.all([
+      supabase
+        .from("transport_routes")
+        .select("*")
+        .eq("school_id", schoolId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("route_stops")
+        .select("*")
+        .eq("school_id", schoolId)
+        .is("deleted_at", null)
+        .order("sequence", { ascending: true }),
+      supabase
+        .from("transport_vehicles")
+        .select("*")
+        .eq("school_id", schoolId)
+        .is("deleted_at", null),
+      supabase
+        .from("transport_staff")
+        .select("*")
+        .eq("school_id", schoolId)
+        .is("deleted_at", null),
+      supabase
+        .from("transport_assignments")
+        .select("route_id, status")
+        .eq("school_id", schoolId)
+        .eq("status", "active"),
+    ]);
+
+    routes = (routesRes.data || []) as TransportRoute[];
+    allStops = (stopsRes.data || []) as RouteStop[];
+    vehicles = (vehRes.data || []) as TransportVehicle[];
+    staff = (staffRes.data || []) as TransportStaff[];
+    assignments = (assignRes.data || []) as { route_id: string; status: string }[];
+
+    // Synchronize local cache for offline / fallback resilience
+    lsSet(`myzkool_transport_routes_${schoolId}`, routes);
+    lsSet(`myzkool_route_stops_${schoolId}`, allStops);
   } else {
     routes = lsGet<TransportRoute>(`myzkool_transport_routes_${schoolId}`).filter(
       (r) => !r.deleted_at
     );
+    vehicles = lsGet<TransportVehicle>(`myzkool_transport_vehicles_${schoolId}`).filter((v) => !v.deleted_at);
+    staff = lsGet<TransportStaff>(`myzkool_transport_staff_${schoolId}`).filter((s) => !s.deleted_at);
+    allStops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`).filter((s) => !s.deleted_at);
+    assignments = lsGet<{ route_id: string; status: string }>(
+      `myzkool_transport_assignments_${schoolId}`
+    ).filter((a) => a.status === "active");
   }
-
-  const vehicles = lsGet<TransportVehicle>(`myzkool_transport_vehicles_${schoolId}`);
-  const staff = lsGet<TransportStaff>(`myzkool_transport_staff_${schoolId}`);
-  const allStops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`).filter((s) => !s.deleted_at);
-
-  // Mock or query student assignments count (Phase 7 table)
-  const assignments = lsGet<{ route_id: string; status: string }>(
-    `myzkool_transport_assignments_${schoolId}`
-  ).filter((a) => a.status === "active");
 
   return routes.map((r) => {
     const v = vehicles.find((veh) => veh.id === r.default_vehicle_id);
@@ -862,10 +901,90 @@ export async function validateRouteOverlap(
   return { valid: true };
 }
 
+/**
+ * Unassigns a vehicle, driver, or attendant from other routes in the school
+ * to prevent duplicate assignments across routes (Spec Route Builder Reassignment).
+ */
+export async function unassignRouteResourcesFromOtherRoutes(
+  schoolId: string,
+  excludeRouteId: string | null | undefined,
+  resources: {
+    vehicleId?: string | null;
+    driverId?: string | null;
+    attendantId?: string | null;
+  }
+): Promise<{ success: boolean; unassignedFromRoutes: string[]; error?: string }> {
+  if (!schoolId) {
+    return { success: false, unassignedFromRoutes: [], error: "School ID is required." };
+  }
+
+  const { vehicleId, driverId, attendantId } = resources;
+  if (!vehicleId && !driverId && !attendantId) {
+    return { success: true, unassignedFromRoutes: [] };
+  }
+
+  let dbRoutes: TransportRoute[] = [];
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("transport_routes")
+      .select("*")
+      .eq("school_id", schoolId)
+      .is("deleted_at", null);
+    dbRoutes = (data || []) as TransportRoute[];
+  } else {
+    dbRoutes = lsGet<TransportRoute>(`myzkool_transport_routes_${schoolId}`).filter((r) => !r.deleted_at);
+  }
+
+  const otherRoutes = dbRoutes.filter((r) => r.id !== excludeRouteId);
+  const affectedRouteCodes: string[] = [];
+  const lsRoutes = lsGet<TransportRoute>(`myzkool_transport_routes_${schoolId}`);
+
+  for (const r of otherRoutes) {
+    let needsUpdate = false;
+    const patch: Partial<TransportRoute> = {};
+
+    if (vehicleId && r.default_vehicle_id === vehicleId) {
+      patch.default_vehicle_id = null;
+      needsUpdate = true;
+    }
+    if (driverId && r.default_driver_id === driverId) {
+      patch.default_driver_id = null;
+      needsUpdate = true;
+    }
+    if (attendantId && r.default_attendant_id === attendantId) {
+      patch.default_attendant_id = null;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      if (!affectedRouteCodes.includes(r.code)) {
+        affectedRouteCodes.push(r.code);
+      }
+
+      if (isSupabaseConfigured) {
+        await supabase
+          .from("transport_routes")
+          .update({ ...patch, updated_at: nowISO() })
+          .eq("id", r.id)
+          .eq("school_id", schoolId);
+      }
+
+      const idx = lsRoutes.findIndex((item) => item.id === r.id);
+      if (idx !== -1) {
+        lsRoutes[idx] = { ...lsRoutes[idx], ...patch, updated_at: nowISO() };
+      }
+    }
+  }
+
+  lsSet(`myzkool_transport_routes_${schoolId}`, lsRoutes);
+  return { success: true, unassignedFromRoutes: affectedRouteCodes };
+}
+
 export async function createRoute(
   schoolId: string,
-  input: Omit<TransportRoute, "id" | "school_id" | "created_at" | "updated_at">
-): Promise<{ success: boolean; route?: TransportRoute; error?: string }> {
+  input: Omit<TransportRoute, "id" | "school_id" | "created_at" | "updated_at">,
+  options?: { reassignResources?: boolean }
+): Promise<{ success: boolean; route?: TransportRoute; unassignedFromRoutes?: string[]; error?: string }> {
   const code = input.code.trim().toUpperCase();
   if (!code || !input.name.trim()) {
     return { success: false, error: "Route name and code are required." };
@@ -875,6 +994,17 @@ export async function createRoute(
   const routes = await getRoutes(schoolId);
   if (routes.some((r) => r.code.toUpperCase() === code)) {
     return { success: false, error: `Route code '${code}' already exists.` };
+  }
+
+  // If reassignResources option is enabled, unassign from other routes first
+  let unassignedFromRoutes: string[] = [];
+  if (options?.reassignResources) {
+    const unassignRes = await unassignRouteResourcesFromOtherRoutes(schoolId, null, {
+      vehicleId: input.default_vehicle_id,
+      driverId: input.default_driver_id,
+      attendantId: input.default_attendant_id,
+    });
+    unassignedFromRoutes = unassignRes.unassignedFromRoutes;
   }
 
   // Validate overlaps
@@ -901,14 +1031,15 @@ export async function createRoute(
   const allRoutes = lsGet<TransportRoute>(`myzkool_transport_routes_${schoolId}`);
   lsSet(`myzkool_transport_routes_${schoolId}`, [...allRoutes, record]);
 
-  return { success: true, route: record };
+  return { success: true, route: record, unassignedFromRoutes };
 }
 
 export async function updateRoute(
   schoolId: string,
   routeId: string,
-  input: Partial<TransportRoute>
-): Promise<{ success: boolean; route?: TransportRoute; error?: string }> {
+  input: Partial<TransportRoute>,
+  options?: { reassignResources?: boolean }
+): Promise<{ success: boolean; route?: TransportRoute; unassignedFromRoutes?: string[]; error?: string }> {
   const allRoutes = lsGet<TransportRoute>(`myzkool_transport_routes_${schoolId}`);
   const idx = allRoutes.findIndex((r) => r.id === routeId && !r.deleted_at);
 
@@ -922,6 +1053,17 @@ export async function updateRoute(
       return { success: false, error: `Route code '${code}' already exists.` };
     }
     input.code = code;
+  }
+
+  // If reassignResources option is enabled, unassign from other routes first
+  let unassignedFromRoutes: string[] = [];
+  if (options?.reassignResources) {
+    const unassignRes = await unassignRouteResourcesFromOtherRoutes(schoolId, routeId, {
+      vehicleId: input.default_vehicle_id,
+      driverId: input.default_driver_id,
+      attendantId: input.default_attendant_id,
+    });
+    unassignedFromRoutes = unassignRes.unassignedFromRoutes;
   }
 
   // Validate overlaps if schedule or assignments change
@@ -943,7 +1085,7 @@ export async function updateRoute(
   allRoutes[idx] = updated;
   lsSet(`myzkool_transport_routes_${schoolId}`, allRoutes);
 
-  return { success: true, route: updated };
+  return { success: true, route: updated, unassignedFromRoutes };
 }
 
 export async function deleteRoute(
@@ -951,14 +1093,26 @@ export async function deleteRoute(
   routeId: string
 ): Promise<{ success: boolean; error?: string }> {
   // C10.5: No delete with riders
-  const assignments = lsGet<{ route_id: string; status: string }>(
-    `myzkool_transport_assignments_${schoolId}`
-  ).filter((a) => a.route_id === routeId && a.status === "active");
+  let activeRidersCount = 0;
+  if (isSupabaseConfigured) {
+    const { count } = await supabase
+      .from("transport_assignments")
+      .select("*", { count: "exact", head: true })
+      .eq("school_id", schoolId)
+      .eq("route_id", routeId)
+      .eq("status", "active");
+    activeRidersCount = count || 0;
+  } else {
+    const assignments = lsGet<{ route_id: string; status: string }>(
+      `myzkool_transport_assignments_${schoolId}`
+    ).filter((a) => a.route_id === routeId && a.status === "active");
+    activeRidersCount = assignments.length;
+  }
 
-  if (assignments.length > 0) {
+  if (activeRidersCount > 0) {
     return {
       success: false,
-      error: `Cannot delete route. ${assignments.length} student rider(s) are currently assigned. Reassign students first.`,
+      error: `Cannot delete route. ${activeRidersCount} student rider(s) are currently assigned. Reassign students first.`,
     };
   }
 
@@ -1017,18 +1171,43 @@ export async function saveRouteStops(
     lastPickupMin = min;
   }
 
-  // Check if removing any stop that has riders assigned
-  const allExistingStops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`).filter(
-    (s) => s.route_id === routeId && !s.deleted_at
-  );
-  const assignments = lsGet<{ pickup_stop_id?: string; drop_stop_id?: string; status: string }>(
-    `myzkool_transport_assignments_${schoolId}`
-  ).filter((a) => a.status === "active");
+  // Query existing stops
+  let allExistingStops: RouteStop[] = [];
+  let activeAssignments: { pickup_stop_id?: string; drop_stop_id?: string; status: string }[] = [];
 
-  const newStopNames = new Set(sortedStops.map((s) => s.name));
+  if (isSupabaseConfigured) {
+    const { data: dbStops } = await supabase
+      .from("route_stops")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("route_id", routeId)
+      .is("deleted_at", null);
+    allExistingStops = (dbStops || []) as RouteStop[];
+
+    const { data: dbAssigns } = await supabase
+      .from("transport_assignments")
+      .select("pickup_stop_id, drop_stop_id, status")
+      .eq("school_id", schoolId)
+      .eq("route_id", routeId)
+      .eq("status", "active");
+    activeAssignments = (dbAssigns || []) as any[];
+  } else {
+    allExistingStops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`).filter(
+      (s) => s.route_id === routeId && !s.deleted_at
+    );
+    activeAssignments = lsGet<{ pickup_stop_id?: string; drop_stop_id?: string; status: string; route_id?: string }>(
+      `myzkool_transport_assignments_${schoolId}`
+    ).filter((a) => a.route_id === routeId && a.status === "active");
+  }
+
+  // Check if removing any stop that has riders assigned
+  const newStopIds = new Set(sortedStops.map((s) => (s as any).id).filter(Boolean));
+  const newStopNames = new Set(sortedStops.map((s) => s.name.trim().toLowerCase()));
+
   for (const oldStop of allExistingStops) {
-    if (!newStopNames.has(oldStop.name)) {
-      const riderUsingStop = assignments.find(
+    const isRetained = newStopIds.has(oldStop.id) || newStopNames.has(oldStop.name.trim().toLowerCase());
+    if (!isRetained) {
+      const riderUsingStop = activeAssignments.find(
         (a) => a.pickup_stop_id === oldStop.id || a.drop_stop_id === oldStop.id
       );
       if (riderUsingStop) {
@@ -1040,14 +1219,36 @@ export async function saveRouteStops(
     }
   }
 
-  const createdStops: RouteStop[] = sortedStops.map((st) => ({
-    ...st,
-    id: (st as any).id || crypto.randomUUID(),
-    school_id: schoolId,
-    route_id: routeId,
-    created_at: nowISO(),
-    updated_at: nowISO(),
-  }));
+  const createdStops: RouteStop[] = sortedStops.map((st) => {
+    // Preserve existing stop ID if stop with same name already existed on this route
+    const existingMatch = allExistingStops.find(
+      (old) => (st as any).id === old.id || old.name.trim().toLowerCase() === st.name.trim().toLowerCase()
+    );
+    const finalMonthlyFee =
+      (st as any).monthly_fee_paise !== undefined && (st as any).monthly_fee_paise !== null
+        ? Number((st as any).monthly_fee_paise)
+        : (existingMatch?.monthly_fee_paise || 0);
+    const finalPickupFee =
+      (st as any).pickup_only_monthly_paise !== undefined && (st as any).pickup_only_monthly_paise !== null
+        ? Number((st as any).pickup_only_monthly_paise)
+        : (existingMatch?.pickup_only_monthly_paise || 0);
+    const finalDropFee =
+      (st as any).drop_only_monthly_paise !== undefined && (st as any).drop_only_monthly_paise !== null
+        ? Number((st as any).drop_only_monthly_paise)
+        : (existingMatch?.drop_only_monthly_paise || 0);
+
+    return {
+      ...st,
+      id: (st as any).id || existingMatch?.id || crypto.randomUUID(),
+      school_id: schoolId,
+      route_id: routeId,
+      monthly_fee_paise: finalMonthlyFee,
+      pickup_only_monthly_paise: finalPickupFee,
+      drop_only_monthly_paise: finalDropFee,
+      created_at: existingMatch?.created_at || nowISO(),
+      updated_at: nowISO(),
+    };
+  });
 
   // Update localStorage
   const allStops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`).filter(
@@ -1056,11 +1257,126 @@ export async function saveRouteStops(
   lsSet(`myzkool_route_stops_${schoolId}`, [...allStops, ...createdStops]);
 
   if (isSupabaseConfigured) {
-    await supabase.from("route_stops").delete().eq("route_id", routeId).eq("school_id", schoolId);
-    await supabase.from("route_stops").insert(createdStops);
+    // 1. Delete stops that are no longer part of the route (and have no riders)
+    const retainedIds = new Set(createdStops.map((s) => s.id));
+    const stopsToDelete = allExistingStops.filter((s) => !retainedIds.has(s.id));
+    if (stopsToDelete.length > 0) {
+      const deleteIds = stopsToDelete.map((s) => s.id);
+      await supabase.from("route_stops").delete().in("id", deleteIds).eq("school_id", schoolId);
+    }
+
+    // 2. Upsert retained and new stops safely without breaking foreign keys
+    const { error: upsertErr } = await supabase.from("route_stops").upsert(createdStops, { onConflict: "id" });
+    if (upsertErr) {
+      return { success: false, error: upsertErr.message };
+    }
   }
 
   return { success: true, stops: createdStops };
+}
+
+/**
+ * Configure separate monthly transport fees for stops on a route (Spec 1.5, Section 2)
+ */
+export async function updateRouteStopFees(
+  schoolId: string,
+  routeId: string,
+  stopFees: RouteStopFeeInput[]
+): Promise<{ success: boolean; stops?: RouteStop[]; error?: string }> {
+  if (!schoolId || !routeId) {
+    return { success: false, error: "School ID and Route ID are required." };
+  }
+
+  if (!stopFees || stopFees.length === 0) {
+    return { success: false, error: "No stop fees provided." };
+  }
+
+  // 1. Fetch route and its stops
+  const route = await getRouteById(schoolId, routeId);
+  if (!route) {
+    return { success: false, error: "Route not found." };
+  }
+
+  const existingStops = route.stops || [];
+  const existingStopIds = new Set(existingStops.map((s) => s.id));
+
+  // 2. Validate all stop IDs belong to this route and fees are non-negative
+  for (const item of stopFees) {
+    if (!item.id || !existingStopIds.has(item.id)) {
+      return {
+        success: false,
+        error: `Stop with ID '${item.id}' does not belong to route '${route.name}' (${route.code}).`,
+      };
+    }
+    const bothPaise = Number(item.monthly_fee_paise);
+    const pickupPaise = item.pickup_only_monthly_paise !== undefined ? Number(item.pickup_only_monthly_paise) : bothPaise;
+    const dropPaise = item.drop_only_monthly_paise !== undefined ? Number(item.drop_only_monthly_paise) : bothPaise;
+
+    if (isNaN(bothPaise) || bothPaise < 0 || isNaN(pickupPaise) || pickupPaise < 0 || isNaN(dropPaise) || dropPaise < 0) {
+      return {
+        success: false,
+        error: "Stop fees must be non-negative numbers.",
+      };
+    }
+  }
+
+  // 3. Update the stops
+  const feeMap = new Map<string, RouteStopFeeInput>();
+  for (const item of stopFees) {
+    feeMap.set(item.id, item);
+  }
+
+  const updatedStops: RouteStop[] = existingStops.map((st) => {
+    const feeItem = feeMap.get(st.id);
+    if (!feeItem) return st;
+
+    const bothPaise = Math.round(Number(feeItem.monthly_fee_paise));
+    const pickupPaise = feeItem.pickup_only_monthly_paise !== undefined 
+      ? Math.round(Number(feeItem.pickup_only_monthly_paise)) 
+      : bothPaise;
+    const dropPaise = feeItem.drop_only_monthly_paise !== undefined 
+      ? Math.round(Number(feeItem.drop_only_monthly_paise)) 
+      : bothPaise;
+
+    return {
+      ...st,
+      monthly_fee_paise: bothPaise,
+      pickup_only_monthly_paise: pickupPaise,
+      drop_only_monthly_paise: dropPaise,
+      updated_at: nowISO(),
+    };
+  });
+
+  // 4. Update Supabase
+  if (isSupabaseConfigured) {
+    for (const st of updatedStops) {
+      if (feeMap.has(st.id)) {
+        const { error: updErr } = await supabase
+          .from("route_stops")
+          .update({
+            monthly_fee_paise: st.monthly_fee_paise,
+            pickup_only_monthly_paise: st.pickup_only_monthly_paise,
+            drop_only_monthly_paise: st.drop_only_monthly_paise,
+            updated_at: st.updated_at,
+          })
+          .eq("id", st.id)
+          .eq("school_id", schoolId)
+          .eq("route_id", routeId);
+
+        if (updErr) {
+          return { success: false, error: updErr.message };
+        }
+      }
+    }
+  }
+
+  // 5. Update localStorage
+  const allStops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`).filter(
+    (s) => s.route_id !== routeId
+  );
+  lsSet(`myzkool_route_stops_${schoolId}`, [...allStops, ...updatedStops]);
+
+  return { success: true, stops: updatedStops };
 }
 
 // ─── 7. Fee Zones ───────────────────────────────────────────────────────────
@@ -1073,7 +1389,9 @@ export async function getFeeZones(schoolId: string): Promise<TransportFeeZone[]>
       .eq("school_id", schoolId)
       .is("deleted_at", null)
       .order("monthly_fee_paise", { ascending: true });
-    return (data || []) as TransportFeeZone[];
+    const zones = (data || []) as TransportFeeZone[];
+    lsSet(`myzkool_transport_fee_zones_${schoolId}`, zones);
+    return zones;
   }
   return lsGet<TransportFeeZone>(`myzkool_transport_fee_zones_${schoolId}`).filter(
     (z) => !z.deleted_at
@@ -1137,12 +1455,24 @@ export async function deleteFeeZone(
   schoolId: string,
   zoneId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const stops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`);
-  const stopsUsingZone = stops.filter((s) => s.fee_zone_id === zoneId && !s.deleted_at);
-  if (stopsUsingZone.length > 0) {
+  let stopsUsingZoneCount = 0;
+  if (isSupabaseConfigured) {
+    const { count } = await supabase
+      .from("route_stops")
+      .select("*", { count: "exact", head: true })
+      .eq("school_id", schoolId)
+      .eq("fee_zone_id", zoneId)
+      .is("deleted_at", null);
+    stopsUsingZoneCount = count || 0;
+  } else {
+    const stops = lsGet<RouteStop>(`myzkool_route_stops_${schoolId}`);
+    stopsUsingZoneCount = stops.filter((s) => s.fee_zone_id === zoneId && !s.deleted_at).length;
+  }
+
+  if (stopsUsingZoneCount > 0) {
     return {
       success: false,
-      error: `Cannot delete fee zone. ${stopsUsingZone.length} stop(s) are currently assigned to this zone.`,
+      error: `Cannot delete fee zone. ${stopsUsingZoneCount} stop(s) are currently assigned to this zone.`,
     };
   }
 
@@ -1279,6 +1609,28 @@ export async function getTransportDashboardData(schoolId: string): Promise<Trans
     is_over: r.is_over_capacity,
   }));
 
+  let authoritativeRidersCount = totalRiders;
+  if (isSupabaseConfigured) {
+    const { data: activeAssignments } = await supabase
+      .from("transport_assignments")
+      .select("student_id")
+      .eq("school_id", schoolId)
+      .eq("status", "active");
+    if (activeAssignments) {
+      authoritativeRidersCount = new Set(activeAssignments.map((a) => a.student_id)).size;
+    }
+  } else {
+    const assignments = lsGet<any>(`myzkool_transport_assignments_${schoolId}`).filter((a) => a.status === "active");
+    authoritativeRidersCount = new Set(assignments.map((a) => a.student_id)).size;
+  }
+
+  const driversTotal = staff.filter((s) => s.staff_type === "driver").length;
+  const driversActive = staff.filter((s) => s.staff_type === "driver" && s.status === "active").length;
+  const attendantsTotal = staff.filter((s) => s.staff_type === "attendant").length;
+  const attendantsActive = staff.filter((s) => s.staff_type === "attendant" && s.status === "active").length;
+  const staffTotal = staff.length;
+  const staffActive = staff.filter((s) => s.status === "active").length;
+
   return {
     needs_attention: {
       expired_documents_count: expiredDocsCount,
@@ -1293,9 +1645,16 @@ export async function getTransportDashboardData(schoolId: string): Promise<Trans
       vehicles_active: activeVehicles.length,
       vehicles_total: vehicles.length,
       routes_active: activeRoutes.length,
-      total_riders: totalRiders,
+      routes_total: routes.length,
+      drivers_total: driversTotal,
+      drivers_active: driversActive,
+      attendants_total: attendantsTotal,
+      attendants_active: attendantsActive,
+      staff_total: staffTotal,
+      staff_active: staffActive,
+      total_riders: authoritativeRidersCount,
       total_capacity: totalCapacity,
-      utilization_percent: utilPercent,
+      utilization_percent: totalCapacity > 0 ? Math.round((authoritativeRidersCount / totalCapacity) * 100) : 0,
       route_bars: routeBars,
     },
     today_trips: {

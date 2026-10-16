@@ -226,9 +226,9 @@ export default function FeeCollectPage() {
     }
   }, [schoolId, yearId]);
 
-  // ── Load student from URL param ?student= ────────────────────────────────
+  // ── Load student from URL param ?student= or ?studentId= ────────────────────────────────
   useEffect(() => {
-    const studentParam = searchParams.get("student");
+    const studentParam = searchParams.get("student") || searchParams.get("studentId");
     if (studentParam && schoolId && yearId && !student) {
       getCollectContext(schoolId, studentParam, yearId).then(ctx => {
         if (ctx?.student) {
@@ -1105,7 +1105,7 @@ export default function FeeCollectPage() {
                     <div>
                       {error}
                       {error.includes("confirm") && (
-                        <span> <button type="button" onClick={() => navigate("/admin/fees/receipts")} className="underline cursor-pointer">View receipts</button></span>
+                        <span> <button type="button" onClick={() => navigate("/admin/fees/collections")} className="underline cursor-pointer">View collections</button></span>
                       )}
                     </div>
                   </div>

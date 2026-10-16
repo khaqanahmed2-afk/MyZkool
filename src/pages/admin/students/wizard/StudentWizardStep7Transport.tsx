@@ -146,7 +146,7 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
                       {availableStops.length > 0 ? (
                         availableStops.map((stop) => (
                           <option key={stop.id} value={stop.id}>
-                            {stop.name}
+                            {stop.name} {stop.monthly_fee_paise ? `(₹${Math.round(stop.monthly_fee_paise / 100)}/mo)` : ""}
                           </option>
                         ))
                       ) : (

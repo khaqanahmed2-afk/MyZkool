@@ -93,7 +93,7 @@ export default function TransferCertificateModal({
           transportService.getStudentTransport(student.id),
         ]);
         setDuesPaise(feeRes?.balance || 0);
-        setHasTransport(!!trans);
+        setHasTransport(Boolean(trans?.assignment));
       } catch (err) {
         console.error("Failed to check dues or transport:", err);
       } finally {

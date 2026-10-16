@@ -25,6 +25,7 @@ import {
   getRouteById,
   getVehicles,
   getVehicleDocuments,
+  getFeeZones,
 } from "./transportCoreService";
 import type {
   TransportAssignment,
@@ -74,6 +75,11 @@ function lsSet<T>(key: string, data: T[]): void {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isValidUuid(val?: string | null): boolean {
+  return typeof val === "string" && UUID_REGEX.test(val);
+}
+
 async function logTransportAudit(
   schoolId: string,
   entry: {
@@ -82,31 +88,41 @@ async function logTransportAudit(
     action: string;
     entity_id: string;
     details?: any;
+    before?: any;
+    after?: any;
     reason?: string | null;
   }
 ) {
+  const cleanActorId = isValidUuid(entry.actor_id) ? entry.actor_id : null;
+  const cleanEntityId = isValidUuid(entry.entity_id) ? entry.entity_id : uuid();
+  const afterData = entry.after || entry.details || {};
+
   const row = {
     id: uuid(),
     school_id: schoolId,
-    actor_id: entry.actor_id || null,
+    actor_id: cleanActorId,
     actor_role: entry.actor_role || null,
     entity_type: "transport_assignment",
-    entity_id: entry.entity_id,
+    entity_id: cleanEntityId,
     action: entry.action,
-    details: entry.details || {},
+    before: entry.before || null,
+    after: afterData,
     reason: entry.reason || null,
     created_at: nowISO(),
   };
 
   if (isSupabaseConfigured) {
     try {
-      await supabase.from("audit_logs").insert(row);
+      const { error } = await supabase.from("audit_logs").insert(row);
+      if (error) {
+        console.warn("Audit log insert skipped:", error.message);
+      }
     } catch {
       // fallback
     }
   }
   const existing = lsGet<any>(AUDIT_KEY(schoolId));
-  lsSet(AUDIT_KEY(schoolId), [row, ...existing]);
+  lsSet(AUDIT_KEY(schoolId), [{ ...row, details: afterData }, ...existing]);
 }
 
 async function queueTransportNotification(
@@ -136,38 +152,63 @@ export async function calculateStopMonthlyFee(
   stopId: string,
   serviceType: ServiceType
 ): Promise<number> {
-  const zones = lsGet<any>(ZONES_KEY(schoolId));
-
   // Find stop
   let stop: any = null;
   if (isSupabaseConfigured) {
-    const { data } = await supabase.from("route_stops").select("*").eq("id", stopId).eq("school_id", schoolId).maybeSingle();
+    const { data } = await supabase
+      .from("route_stops")
+      .select("*")
+      .eq("id", stopId)
+      .eq("school_id", schoolId)
+      .maybeSingle();
     stop = data;
   } else {
     const allStops = lsGet<any>(`myzkool_route_stops_${schoolId}`);
     stop = allStops.find((s: any) => s.id === stopId);
   }
 
-  if (!stop) return 100000; // fallback ₹1,000 in paise
+  if (!stop) {
+    throw new Error(`Bus stop not found with ID '${stopId}'.`);
+  }
 
-  if (stop.fee_zone_id) {
-    const zone = zones.find((z: any) => z.id === stop.fee_zone_id && z.is_active);
-    if (zone) {
-      if (serviceType === "pickup_only") {
-        return zone.pickup_only_monthly_paise || zone.monthly_fee_paise;
-      }
-      if (serviceType === "drop_only") {
-        return zone.drop_only_monthly_paise || zone.monthly_fee_paise;
-      }
-      return zone.monthly_fee_paise;
+  // 1. Check stop-specific pricing first
+  const stopBothPaise = Number(stop.monthly_fee_paise) || 0;
+  const stopPickupPaise = Number(stop.pickup_only_monthly_paise) || 0;
+  const stopDropPaise = Number(stop.drop_only_monthly_paise) || 0;
+
+  if (stopBothPaise > 0 || stopPickupPaise > 0 || stopDropPaise > 0) {
+    if (serviceType === "pickup_only") {
+      const fee = stopPickupPaise > 0 ? stopPickupPaise : stopBothPaise;
+      if (fee > 0) return fee;
+    } else if (serviceType === "drop_only") {
+      const fee = stopDropPaise > 0 ? stopDropPaise : stopBothPaise;
+      if (fee > 0) return fee;
+    } else {
+      if (stopBothPaise > 0) return stopBothPaise;
     }
   }
 
-  // Default monthly fee fallback: ₹1,200 for both, ₹700 for one way
-  if (serviceType === "pickup_only" || serviceType === "drop_only") {
-    return 70000;
+  // 2. Backward compatibility: check zone-based fee if stop has fee_zone_id
+  if (stop.fee_zone_id) {
+    const zones = await getFeeZones(schoolId);
+    const zone = zones.find((z: any) => z.id === stop.fee_zone_id && z.is_active);
+    if (zone) {
+      if (serviceType === "pickup_only") {
+        const fee = zone.pickup_only_monthly_paise || zone.monthly_fee_paise;
+        if (fee > 0) return fee;
+      } else if (serviceType === "drop_only") {
+        const fee = zone.drop_only_monthly_paise || zone.monthly_fee_paise;
+        if (fee > 0) return fee;
+      } else if (zone.monthly_fee_paise > 0) {
+        return zone.monthly_fee_paise;
+      }
+    }
   }
-  return 120000;
+
+  // 3. If required fee is missing or not configured, throw a clear validation error
+  throw new Error(
+    `Transport fee has not been configured for stop '${stop.name}'. Please configure the stop fee in Transport Fee Management before assigning students.`
+  );
 }
 
 // ─── Core Assignment Operations ───────────────────────────────────────────────
@@ -184,11 +225,75 @@ export async function createAssignment(
     return { success: false, error: "PLAN_REQUIRED" };
   }
 
+  // Academic year resolution
+  let academicYearId = input.academic_year_id;
+  if (!academicYearId) {
+    if (isSupabaseConfigured) {
+      const { data: ay } = await supabase
+        .from("academic_years")
+        .select("id")
+        .eq("school_id", schoolId)
+        .eq("is_current", true)
+        .maybeSingle();
+      if (ay?.id) academicYearId = ay.id;
+    }
+    if (!academicYearId) {
+      const years = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+      const curr = years.find((y: any) => y.is_current) || years[0];
+      if (curr?.id) academicYearId = curr.id;
+    }
+  }
+  if (!academicYearId) {
+    return { success: false, error: "ACADEMIC_YEAR_REQUIRED" };
+  }
+
+  // Student tenant & active status verification
+  if (isSupabaseConfigured) {
+    const { data: st } = await supabase
+      .from("students")
+      .select("id, school_id, status")
+      .eq("id", input.student_id)
+      .maybeSingle();
+    if (st) {
+      if (st.school_id !== schoolId) {
+        return { success: false, error: "UNAUTHORIZED_CROSS_TENANT" };
+      }
+      if (st.status === "withdrawn" || st.status === "transferred" || st.status === "alumni") {
+        return { success: false, error: "STUDENT_INACTIVE" };
+      }
+    }
+  } else {
+    const localStudents = lsGet<any>(STUDENTS_KEY(schoolId));
+    let st = localStudents.find((s: any) => s.id === input.student_id);
+    if (!st && typeof localStorage !== "undefined") {
+      // Check if student belongs to another school in localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("myzkool_students_") && k !== STUDENTS_KEY(schoolId)) {
+          const otherStudents = JSON.parse(localStorage.getItem(k) || "[]");
+          const found = otherStudents.find((s: any) => s.id === input.student_id);
+          if (found) {
+            st = found;
+            break;
+          }
+        }
+      }
+    }
+    if (st) {
+      if (st.school_id && st.school_id !== schoolId) {
+        return { success: false, error: "UNAUTHORIZED_CROSS_TENANT" };
+      }
+      if (st.status === "withdrawn" || st.status === "transferred" || st.status === "alumni") {
+        return { success: false, error: "STUDENT_INACTIVE" };
+      }
+    }
+  }
+
   // 1. One active assignment per student per academic year (Rule C7.1)
   const existingActive = await getActiveAssignmentForStudent(
     schoolId,
     input.student_id,
-    input.academic_year_id
+    academicYearId
   );
   if (existingActive) {
     return {
@@ -203,8 +308,18 @@ export async function createAssignment(
     return { success: false, error: "Route not found" };
   }
 
+  // Verify route stops membership
+  const routeStopIds = (route.stops || []).map((s) => s.id);
+  if (!routeStopIds.includes(input.pickup_stop_id)) {
+    return { success: false, error: "STOP_NOT_ON_ROUTE" };
+  }
+  const dropStopId = input.drop_stop_id || input.pickup_stop_id;
+  if (!routeStopIds.includes(dropStopId)) {
+    return { success: false, error: "STOP_NOT_ON_ROUTE" };
+  }
+
   // 3. Capacity Check (Rule C7.2)
-  const currentRiders = await getActiveRidersCountForRoute(schoolId, input.route_id);
+  const currentRiders = await getActiveRidersCountForRoute(schoolId, input.route_id, academicYearId);
   const vehicleCapacity = route.vehicle?.capacity || 0;
 
   if (vehicleCapacity > 0 && currentRiders >= vehicleCapacity) {
@@ -270,19 +385,32 @@ export async function createAssignment(
   }
 
   // 5. Fee snapshot (Rule C7.5)
-  const monthlyFeePaise = await calculateStopMonthlyFee(
-    schoolId,
-    input.pickup_stop_id,
-    input.service_type
-  );
+  let monthlyFeePaise = 0;
+  try {
+    monthlyFeePaise = await calculateStopMonthlyFee(
+      schoolId,
+      input.pickup_stop_id,
+      input.service_type
+    );
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to calculate stop transport fee.",
+    };
+  }
 
-  const dropStopId = input.drop_stop_id || input.pickup_stop_id;
+  if (monthlyFeePaise <= 0) {
+    return {
+      success: false,
+      error: "MISSING_STOP_FEE: Transport monthly fee must be greater than zero.",
+    };
+  }
 
   const assignment: TransportAssignment = {
     id: uuid(),
     school_id: schoolId,
     student_id: input.student_id,
-    academic_year_id: input.academic_year_id,
+    academic_year_id: academicYearId,
     route_id: input.route_id,
     pickup_stop_id: input.pickup_stop_id,
     drop_stop_id: dropStopId,
@@ -367,10 +495,20 @@ export async function changeAssignment(
     return { success: false, error: "Active assignment not found" };
   }
 
+  const newRoute = await getRouteById(schoolId, input.new_route_id);
+  if (!newRoute) return { success: false, error: "New route not found" };
+
+  const newRouteStopIds = (newRoute.stops || []).map((s) => s.id);
+  if (!newRouteStopIds.includes(input.new_pickup_stop_id)) {
+    return { success: false, error: "STOP_NOT_ON_ROUTE" };
+  }
+  const newDropStopId = input.new_drop_stop_id || input.new_pickup_stop_id;
+  if (!newRouteStopIds.includes(newDropStopId)) {
+    return { success: false, error: "STOP_NOT_ON_ROUTE" };
+  }
+
   // Check capacity on new route if changed
   if (input.new_route_id !== oldAssignment.route_id) {
-    const newRoute = await getRouteById(schoolId, input.new_route_id);
-    if (!newRoute) return { success: false, error: "New route not found" };
     const currentRiders = await getActiveRidersCountForRoute(schoolId, input.new_route_id);
     const capacity = newRoute.vehicle?.capacity || 0;
     if (capacity > 0 && currentRiders >= capacity) {
@@ -386,13 +524,26 @@ export async function changeAssignment(
       });
     }
   }
+  let newMonthlyFeePaise = 0;
+  try {
+    newMonthlyFeePaise = await calculateStopMonthlyFee(
+      schoolId,
+      input.new_pickup_stop_id,
+      input.new_service_type
+    );
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to calculate stop transport fee for new stop.",
+    };
+  }
 
-  const newDropStopId = input.new_drop_stop_id || input.new_pickup_stop_id;
-  const newMonthlyFeePaise = await calculateStopMonthlyFee(
-    schoolId,
-    input.new_pickup_stop_id,
-    input.new_service_type
-  );
+  if (newMonthlyFeePaise <= 0) {
+    return {
+      success: false,
+      error: "MISSING_STOP_FEE: Transport monthly fee for the new stop must be greater than zero.",
+    };
+  }
 
   // Mark old ended
   const endEffectiveTo = input.effective_date;
@@ -643,25 +794,41 @@ export async function bulkAssignStudents(
     actor_id?: string;
     actor_role?: string;
   }
-): Promise<{ success: boolean; error?: string; count?: number; assignments?: TransportAssignment[] }> {
+): Promise<{
+  success: boolean;
+  error?: string;
+  count: number;
+  assignments: TransportAssignment[];
+  failed: { student_id: string; error: string }[];
+}> {
   const hasTransport = await checkSchoolFeature(schoolId, "transport");
   if (!hasTransport) {
-    return { success: false, error: "PLAN_REQUIRED" };
+    return { success: false, error: "PLAN_REQUIRED", count: 0, assignments: [], failed: [] };
   }
 
   const route = await getRouteById(schoolId, input.route_id);
-  if (!route) return { success: false, error: "Route not found" };
+  if (!route) return { success: false, error: "Route not found", count: 0, assignments: [], failed: [] };
+
+  const routeStopIds = (route.stops || []).map((s) => s.id);
+  if (!routeStopIds.includes(input.pickup_stop_id)) {
+    return { success: false, error: "STOP_NOT_ON_ROUTE", count: 0, assignments: [], failed: [] };
+  }
+  const dropStopId = input.drop_stop_id || input.pickup_stop_id;
+  if (!routeStopIds.includes(dropStopId)) {
+    return { success: false, error: "STOP_NOT_ON_ROUTE", count: 0, assignments: [], failed: [] };
+  }
 
   const currentRiders = await getActiveRidersCountForRoute(schoolId, input.route_id);
   const capacity = route.vehicle?.capacity || 0;
 
   if (capacity > 0 && currentRiders + input.student_ids.length > capacity) {
     if (!input.override_reason || input.override_reason.trim().length === 0) {
-      return { success: false, error: "ROUTE_OVER_CAPACITY" };
+      return { success: false, error: "ROUTE_OVER_CAPACITY", count: 0, assignments: [], failed: [] };
     }
   }
 
   const created: TransportAssignment[] = [];
+  const failed: { student_id: string; error: string }[] = [];
 
   for (const studentId of input.student_ids) {
     const res = await createAssignment(schoolId, {
@@ -679,10 +846,186 @@ export async function bulkAssignStudents(
 
     if (res.success && res.assignment) {
       created.push(res.assignment);
+    } else {
+      failed.push({ student_id: studentId, error: res.error || "Assignment failed" });
     }
   }
 
-  return { success: true, count: created.length, assignments: created };
+  const allFailed = created.length === 0 && failed.length > 0;
+  return {
+    success: !allFailed,
+    error: allFailed ? (failed[0]?.error || "Failed to assign any students.") : undefined,
+    count: created.length,
+    assignments: created,
+    failed,
+  };
+}
+
+/**
+ * List enriched transport assignments for a school
+ */
+export async function listEnrichedAssignments(
+  schoolId: string,
+  options?: {
+    academicYearId?: string;
+    status?: "all" | "active" | "ended";
+    routeId?: string;
+  }
+): Promise<TransportAssignment[]> {
+  let rawAssignments: TransportAssignment[] = [];
+  let students: any[] = [];
+  let classes: any[] = [];
+  let sections: any[] = [];
+  let enrollments: any[] = [];
+  let routes: any[] = [];
+  let allStops: any[] = [];
+
+  if (isSupabaseConfigured) {
+    try {
+      let q = supabase
+        .from("transport_assignments")
+        .select("*")
+        .eq("school_id", schoolId)
+        .order("created_at", { ascending: false });
+
+      if (options?.academicYearId && options.academicYearId !== "all") {
+        q = q.eq("academic_year_id", options.academicYearId);
+      }
+      if (options?.status && options.status !== "all") {
+        q = q.eq("status", options.status);
+      }
+      if (options?.routeId && options.routeId !== "all") {
+        q = q.eq("route_id", options.routeId);
+      }
+
+      const [asRes, stRes, clRes, secRes, enRes, rtRes, stpRes] = await Promise.all([
+        q,
+        supabase
+          .from("students")
+          .select("id, first_name, last_name, admission_no, admission_class_id, status")
+          .eq("school_id", schoolId)
+          .is("deleted_at", null),
+        supabase
+          .from("classes")
+          .select("id, name")
+          .eq("school_id", schoolId),
+        supabase
+          .from("sections")
+          .select("id, name, class_id")
+          .eq("school_id", schoolId),
+        supabase
+          .from("student_enrollments")
+          .select("student_id, class_id, section_id, status")
+          .eq("school_id", schoolId)
+          .eq("status", "active"),
+        supabase
+          .from("transport_routes")
+          .select("*")
+          .eq("school_id", schoolId)
+          .is("deleted_at", null),
+        supabase
+          .from("route_stops")
+          .select("*")
+          .eq("school_id", schoolId),
+      ]);
+
+      rawAssignments = (asRes.data || []) as TransportAssignment[];
+      
+      if (stRes.error) {
+        console.warn("Retrying students query with select(*):", stRes.error.message);
+        const fbSt = await supabase.from("students").select("*").eq("school_id", schoolId).is("deleted_at", null);
+        students = fbSt.data || [];
+      } else {
+        students = stRes.data || [];
+      }
+
+      if (clRes.error) {
+        console.warn("Retrying classes query with select(*):", clRes.error.message);
+        const fbCl = await supabase.from("classes").select("*").eq("school_id", schoolId);
+        classes = fbCl.data || [];
+      } else {
+        classes = clRes.data || [];
+      }
+
+      if (rtRes.error) {
+        console.warn("Retrying transport_routes query:", rtRes.error.message);
+        const fbRt = await supabase.from("transport_routes").select("*").eq("school_id", schoolId);
+        routes = fbRt.data || [];
+      } else {
+        routes = rtRes.data || [];
+      }
+
+      sections = secRes.data || [];
+      enrollments = enRes.data || [];
+      allStops = stpRes.data || [];
+    } catch (err) {
+      console.warn("Failed to load assignments from Supabase, falling back to local storage:", err);
+    }
+  }
+
+  if (rawAssignments.length === 0) {
+    const all = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
+    rawAssignments = all.filter((a) => {
+      const matchYear = !options?.academicYearId || options.academicYearId === "all" || a.academic_year_id === options.academicYearId;
+      const matchStatus = !options?.status || options.status === "all" || a.status === options.status;
+      const matchRoute = !options?.routeId || options.routeId === "all" || a.route_id === options.routeId;
+      return matchYear && matchStatus && matchRoute;
+    }).sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  }
+
+  if (students.length === 0) {
+    students = lsGet<any>(STUDENTS_KEY(schoolId));
+  }
+  if (classes.length === 0) {
+    classes = lsGet<any>(CLASSES_KEY(schoolId));
+  }
+  if (sections.length === 0) {
+    sections = lsGet<any>(`myzkool_sections_${schoolId}`);
+  }
+  if (enrollments.length === 0) {
+    enrollments = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
+  }
+  if (routes.length === 0) {
+    routes = lsGet<any>(`myzkool_transport_routes_${schoolId}`);
+  }
+  if (allStops.length === 0) {
+    allStops = lsGet<any>(`myzkool_route_stops_${schoolId}`);
+  }
+
+  return rawAssignments.map((assign) => {
+    const s = students.find((st: any) => st.id === assign.student_id);
+    const enr = enrollments.find((e: any) => e.student_id === assign.student_id);
+    const classId = enr?.class_id || s?.admission_class_id || s?.class_id;
+    const c = classes.find((cl: any) => cl.id === classId);
+    const sec = enr?.section_id ? sections.find((sc: any) => sc.id === enr.section_id) : null;
+    const r = routes.find((rt: any) => rt.id === assign.route_id);
+    const pStop = allStops.find((st: any) => st.id === assign.pickup_stop_id);
+    const dStop = allStops.find((st: any) => st.id === assign.drop_stop_id);
+
+    const studentFullName = s
+      ? `${s.first_name || ""} ${s.last_name || ""}`.trim() || (s as any).name || (assign as any).student_name || "Unknown Student"
+      : (assign as any).student_name || "Unknown Student";
+    const admissionNo = s?.admission_no || (s as any)?.student_admission_no || (assign as any).student_admission_no || "—";
+    
+    let formattedClass = "—";
+    if (c?.name) {
+      formattedClass = sec?.name ? `${c.name} - ${sec.name}` : c.name;
+    } else if ((assign as any).class_name && (assign as any).class_name !== "—") {
+      formattedClass = (assign as any).class_name;
+    }
+
+    return {
+      ...assign,
+      student_name: studentFullName,
+      student_admission_no: admissionNo,
+      class_name: formattedClass,
+      route_name: r?.name || (assign as any).route_name || "Unknown Route",
+      pickup_stop_name: pStop?.name || (assign as any).pickup_stop_name || "Unknown Stop",
+      drop_stop_name: dStop?.name || pStop?.name || (assign as any).drop_stop_name || "Unknown Stop",
+      pickup_time: pStop?.pickup_time || (assign as any).pickup_time || "—",
+      drop_time: dStop?.drop_time || pStop?.drop_time || (assign as any).drop_time || "—",
+    };
+  });
 }
 
 // ─── Query Helpers ────────────────────────────────────────────────────────────
@@ -735,20 +1078,30 @@ export async function getAssignmentById(
 
 export async function getActiveRidersCountForRoute(
   schoolId: string,
-  routeId: string
+  routeId: string,
+  academicYearId?: string
 ): Promise<number> {
   if (isSupabaseConfigured) {
-    const { count } = await supabase
+    let q = supabase
       .from("transport_assignments")
       .select("*", { count: "exact", head: true })
       .eq("school_id", schoolId)
       .eq("route_id", routeId)
       .eq("status", "active");
+    if (academicYearId) {
+      q = q.eq("academic_year_id", academicYearId);
+    }
+    const { count } = await q;
     return count || 0;
   }
 
   const all = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
-  return all.filter((a) => a.route_id === routeId && a.status === "active").length;
+  return all.filter(
+    (a) =>
+      a.route_id === routeId &&
+      a.status === "active" &&
+      (!academicYearId || a.academic_year_id === academicYearId)
+  ).length;
 }
 
 /**
@@ -1012,13 +1365,41 @@ export async function getRenewalPreview(
   oldYearId: string,
   newYearId: string
 ): Promise<RenewalPreviewItem[]> {
-  // Get all riders who had an active assignment in oldYearId
-  const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
-  const oldRiders = allAssignments.filter((a) => a.academic_year_id === oldYearId);
+  let allAssignments: TransportAssignment[] = [];
+  let students: any[] = [];
+  let classes: any[] = [];
 
-  const students = lsGet<any>(STUDENTS_KEY(schoolId));
-  const classes = lsGet<any>(CLASSES_KEY(schoolId));
+  if (isSupabaseConfigured) {
+    const { data: dbAssigns } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("school_id", schoolId);
+    allAssignments = (dbAssigns || []) as TransportAssignment[];
 
+    const { data: dbStudents } = await supabase
+      .from("students")
+      .select("*")
+      .eq("school_id", schoolId);
+    students = dbStudents || [];
+
+    const { data: dbClasses } = await supabase
+      .from("classes")
+      .select("*")
+      .eq("school_id", schoolId);
+    classes = dbClasses || [];
+  }
+
+  if (allAssignments.length === 0) {
+    allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
+  }
+  if (students.length === 0) {
+    students = lsGet<any>(STUDENTS_KEY(schoolId));
+  }
+  if (classes.length === 0) {
+    classes = lsGet<any>(CLASSES_KEY(schoolId));
+  }
+
+  const oldRiders = allAssignments.filter((a) => a.academic_year_id === oldYearId && a.status === "active");
   const previewItems: RenewalPreviewItem[] = [];
 
   for (const oldAssign of oldRiders) {
@@ -1034,11 +1415,16 @@ export async function getRenewalPreview(
     const pStop = route?.stops.find((st) => st.id === oldAssign.pickup_stop_id);
     const dStop = route?.stops.find((st) => st.id === oldAssign.drop_stop_id);
 
-    const newFeePaise = await calculateStopMonthlyFee(
-      schoolId,
-      oldAssign.pickup_stop_id,
-      oldAssign.service_type
-    );
+    let newFeePaise = oldAssign.monthly_fee_paise;
+    try {
+      newFeePaise = await calculateStopMonthlyFee(
+        schoolId,
+        oldAssign.pickup_stop_id,
+        oldAssign.service_type
+      );
+    } catch {
+      newFeePaise = oldAssign.monthly_fee_paise;
+    }
 
     const cls = classes.find((c: any) => c.id === s?.class_id);
 
@@ -1093,7 +1479,8 @@ export async function commitRenewal(
       service_type: item.service_type,
       effective_from: input.effective_from,
       actor_id: input.actor_id,
-      actor_role: input.actor_role,
+      actor_role: input.actor_role || "owner",
+      override_reason: "Annual Academic Year Renewal Promotion",
     });
 
     if (res.success) {
@@ -1110,12 +1497,44 @@ export async function getRouteRosterReport(schoolId: string, routeId: string) {
   const route = await getRouteById(schoolId, routeId);
   if (!route) return null;
 
-  const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
-  const activeAssignments = allAssignments.filter((a) => a.route_id === routeId && a.status === "active");
+  let activeAssignments: TransportAssignment[] = [];
+  let students: any[] = [];
+  let classes: any[] = [];
+  let absences: TransportAbsence[] = [];
 
-  const students = lsGet<any>(STUDENTS_KEY(schoolId));
-  const classes = lsGet<any>(CLASSES_KEY(schoolId));
-  const absences = lsGet<TransportAbsence>(ABSENCES_KEY(schoolId));
+  if (isSupabaseConfigured) {
+    const { data: dbAssigns } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("route_id", routeId)
+      .eq("status", "active");
+    activeAssignments = (dbAssigns || []) as TransportAssignment[];
+
+    const { data: dbStudents } = await supabase.from("students").select("*").eq("school_id", schoolId);
+    students = dbStudents || [];
+
+    const { data: dbClasses } = await supabase.from("classes").select("*").eq("school_id", schoolId);
+    classes = dbClasses || [];
+
+    const { data: dbAbs } = await supabase.from("transport_absences").select("*").eq("school_id", schoolId);
+    absences = (dbAbs || []) as TransportAbsence[];
+  }
+
+  if (activeAssignments.length === 0) {
+    const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
+    activeAssignments = allAssignments.filter((a) => a.route_id === routeId && a.status === "active");
+  }
+  if (students.length === 0) {
+    students = lsGet<any>(STUDENTS_KEY(schoolId));
+  }
+  if (classes.length === 0) {
+    classes = lsGet<any>(CLASSES_KEY(schoolId));
+  }
+  if (absences.length === 0) {
+    absences = lsGet<TransportAbsence>(ABSENCES_KEY(schoolId));
+  }
+
   const today = new Date().toISOString().split("T")[0];
 
   const stopsWithRiders = route.stops.map((stop) => {
@@ -1142,6 +1561,7 @@ export async function getRouteRosterReport(schoolId: string, routeId: string) {
     return {
       ...stop,
       riders,
+      riders_count: riders.length,
     };
   });
 
@@ -1153,8 +1573,21 @@ export async function getRouteRosterReport(schoolId: string, routeId: string) {
 }
 
 export async function getRidersByRouteAndStopReport(schoolId: string) {
-  const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
-  const active = allAssignments.filter((a) => a.status === "active");
+  let active: TransportAssignment[] = [];
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("status", "active");
+    if (data && data.length > 0) {
+      active = data as TransportAssignment[];
+    }
+  }
+  if (active.length === 0) {
+    const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
+    active = allAssignments.filter((a) => a.status === "active");
+  }
   return {
     total_active_riders: active.length,
     items: active,
@@ -1163,15 +1596,37 @@ export async function getRidersByRouteAndStopReport(schoolId: string) {
 
 export async function getVehicleUtilisationReport(schoolId: string) {
   const vehicles = await getVehicles(schoolId);
-  const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
-  const activeAssignments = allAssignments.filter((a) => a.status === "active");
+  let activeAssignments: TransportAssignment[] = [];
+  let routes: any[] = [];
+
+  if (isSupabaseConfigured) {
+    const { data: dbAssigns } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("status", "active");
+    activeAssignments = (dbAssigns || []) as TransportAssignment[];
+
+    const { data: dbRoutes } = await supabase
+      .from("transport_routes")
+      .select("*")
+      .eq("school_id", schoolId)
+      .is("deleted_at", null);
+    routes = dbRoutes || [];
+  }
+
+  if (activeAssignments.length === 0) {
+    const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
+    activeAssignments = allAssignments.filter((a) => a.status === "active");
+  }
+  if (routes.length === 0) {
+    routes = lsGet<any>(`myzkool_transport_routes_${schoolId}`);
+  }
 
   const results = vehicles.map((v) => {
     const ridersOnVehicle = activeAssignments.filter((a) => {
-      // Find if route uses this vehicle
-      const routes = lsGet<any>(`myzkool_transport_routes_${schoolId}`);
       const r = routes.find((rt: any) => rt.id === a.route_id);
-      return r?.vehicle_id === v.id;
+      return r?.default_vehicle_id === v.id || r?.vehicle_id === v.id;
     });
 
     const used = ridersOnVehicle.length;
@@ -1192,10 +1647,32 @@ export async function getVehicleUtilisationReport(schoolId: string) {
 }
 
 export async function getUnassignedAndRequestsReport(schoolId: string) {
-  const students = lsGet<any>(STUDENTS_KEY(schoolId));
-  const activeAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId)).filter((a) => a.status === "active");
-  const assignedStudentIds = new Set(activeAssignments.map((a) => a.student_id));
+  let students: any[] = [];
+  let activeAssignments: TransportAssignment[] = [];
 
+  if (isSupabaseConfigured) {
+    const { data: dbStudents } = await supabase
+      .from("students")
+      .select("*")
+      .eq("school_id", schoolId);
+    students = dbStudents || [];
+
+    const { data: dbAssigns } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("status", "active");
+    activeAssignments = (dbAssigns || []) as TransportAssignment[];
+  }
+
+  if (students.length === 0) {
+    students = lsGet<any>(STUDENTS_KEY(schoolId));
+  }
+  if (activeAssignments.length === 0) {
+    activeAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId)).filter((a) => a.status === "active");
+  }
+
+  const assignedStudentIds = new Set(activeAssignments.map((a) => a.student_id));
   const unassigned = students.filter((s: any) => !assignedStudentIds.has(s.id) && s.status === "active");
   const requests = await listTransportRequests(schoolId, "pending");
 
@@ -1208,14 +1685,38 @@ export async function getUnassignedAndRequestsReport(schoolId: string) {
 }
 
 export async function getTransportFeeReport(schoolId: string) {
-  const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
-  const active = allAssignments.filter((a) => a.status === "active");
-  const totalMonthlyDemandPaise = active.reduce((sum, a) => sum + (Number(a.monthly_fee_paise) || 0), 0);
+  let active: TransportAssignment[] = [];
+  let dues: any[] = [];
 
-  const dues = lsGet<any>(`myzkool_student_dues_${schoolId}`).filter((d: any) => d.source === "transport");
-  const totalBilledPaise = dues.reduce((sum: number, d: any) => sum + (d.gross_paise || 0), 0);
-  const totalCollectedPaise = dues.reduce((sum: number, d: any) => sum + (d.paid_paise || 0), 0);
-  const totalOutstandingPaise = dues.reduce((sum: number, d: any) => sum + (d.balance_paise || 0), 0);
+  if (isSupabaseConfigured) {
+    const { data: dbAssigns } = await supabase
+      .from("transport_assignments")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("status", "active");
+    active = (dbAssigns || []) as TransportAssignment[];
+
+    const { data: dbDues } = await supabase
+      .from("student_dues")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("source", "transport")
+      .is("deleted_at", null);
+    dues = dbDues || [];
+  }
+
+  if (active.length === 0) {
+    const allAssignments = lsGet<TransportAssignment>(ASSIGNMENTS_KEY(schoolId));
+    active = allAssignments.filter((a) => a.status === "active");
+  }
+  if (dues.length === 0) {
+    dues = lsGet<any>(`myzkool_student_dues_${schoolId}`).filter((d: any) => d.source === "transport");
+  }
+
+  const totalMonthlyDemandPaise = active.reduce((sum, a) => sum + (Number(a.monthly_fee_paise) || 0), 0);
+  const totalBilledPaise = dues.reduce((sum: number, d: any) => sum + (Number(d.gross_paise) || 0), 0);
+  const totalCollectedPaise = dues.reduce((sum: number, d: any) => sum + (Number(d.paid_paise) || 0), 0);
+  const totalOutstandingPaise = dues.reduce((sum: number, d: any) => sum + (Number(d.balance_paise) || 0), 0);
 
   return {
     active_riders_count: active.length,
@@ -1256,3 +1757,5 @@ export async function getAssignmentHistoryReport(
     items: assignments,
   };
 }
+
+export const listAssignments = getAssignmentHistoryReport;

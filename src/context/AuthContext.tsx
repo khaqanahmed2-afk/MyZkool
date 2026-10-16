@@ -10,7 +10,9 @@ import type { User, Session, AuthError } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { UserRole, UserProfile, AuthActionResult } from "../types/auth";
 import type { School } from "../types/school";
-import { getSchoolForCurrentUser } from "../services/schoolService";
+import { getSchoolForCurrentUser, getAuthorizedSchoolsForUser } from "../services/schoolService";
+import { getCurrentAcademicYear } from "../services/academicService";
+import type { AcademicYear } from "../types/academic";
 
 interface AuthContextType {
   user: User | null;
@@ -21,6 +23,10 @@ interface AuthContextType {
   school: School | null;
   loading: boolean;
   isAuthenticated: boolean;
+  availableSchools: School[];
+  currentAcademicYear: AcademicYear | null;
+  switchSchool: (schoolId: string) => Promise<{ success: boolean; error?: string }>;
+  refreshSchool: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<AuthActionResult>;
   signUp: (
     email: string,
@@ -80,6 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [school, setSchool] = useState<School | null>(null);
+  const [availableSchools, setAvailableSchools] = useState<School[]>([]);
+  const [currentAcademicYear, setCurrentAcademicYear] = useState<AcademicYear | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   /**
@@ -260,17 +268,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             const userProfile = await resolveUserProfile(data.session.user);
             if (isMounted) {
               setProfile(userProfile);
+              // Respect saved active school preference if valid
+              const storedSchoolId = typeof localStorage !== "undefined"
+                ? localStorage.getItem("myzkool_active_school_id")
+                : null;
+              const targetSchoolId = storedSchoolId || userProfile.school_id;
+
               const { school: userSchool } = await getSchoolForCurrentUser(
                 data.session.user.id,
-                userProfile.school_id,
+                targetSchoolId,
               );
-              if (isMounted) setSchool(userSchool);
+              const { schools: authSchools } = await getAuthorizedSchoolsForUser(
+                data.session.user.id
+              );
+
+              let mergedSchools = [...authSchools];
+              if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
+                mergedSchools.unshift(userSchool);
+              }
+
+              let ay: AcademicYear | null = null;
+              if (userSchool?.id) {
+                const { academicYear } = await getCurrentAcademicYear(userSchool.id);
+                ay = academicYear;
+              }
+
+              if (isMounted) {
+                setSchool(userSchool);
+                setAvailableSchools(mergedSchools);
+                setCurrentAcademicYear(ay);
+              }
             }
           } else {
             setSession(null);
             setUser(null);
             setProfile(null);
             setSchool(null);
+            setAvailableSchools([]);
+            setCurrentAcademicYear(null);
           }
         }
       } catch (err) {
@@ -300,15 +335,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const userProfile = await resolveUserProfile(newSession.user);
         if (isMounted) {
           setProfile(userProfile);
+          const storedSchoolId = typeof localStorage !== "undefined"
+            ? localStorage.getItem("myzkool_active_school_id")
+            : null;
+          const targetSchoolId = storedSchoolId || userProfile.school_id;
+
           const { school: userSchool } = await getSchoolForCurrentUser(
             newSession.user.id,
-            userProfile.school_id,
+            targetSchoolId,
           );
-          if (isMounted) setSchool(userSchool);
+          const { schools: authSchools } = await getAuthorizedSchoolsForUser(
+            newSession.user.id
+          );
+
+          let mergedSchools = [...authSchools];
+          if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
+            mergedSchools.unshift(userSchool);
+          }
+
+          let ay: AcademicYear | null = null;
+          if (userSchool?.id) {
+            const { academicYear } = await getCurrentAcademicYear(userSchool.id);
+            ay = academicYear;
+          }
+
+          if (isMounted) {
+            setSchool(userSchool);
+            setAvailableSchools(mergedSchools);
+            setCurrentAcademicYear(ay);
+          }
         }
       } else {
         setProfile(null);
         setSchool(null);
+        setAvailableSchools([]);
+        setCurrentAcademicYear(null);
       }
 
       setLoading(false);
@@ -482,6 +543,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setSession(null);
     setProfile(null);
     setSchool(null);
+    setAvailableSchools([]);
+    setCurrentAcademicYear(null);
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("myzkool_active_school_id");
+    }
   };
 
   const resetPassword = async (email: string): Promise<AuthActionResult> => {
@@ -568,11 +634,99 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setUser(data.session.user);
         const resolved = await resolveUserProfile(data.session.user);
         setProfile(resolved);
+        const storedSchoolId = typeof localStorage !== "undefined"
+          ? localStorage.getItem("myzkool_active_school_id")
+          : null;
+        const targetSchoolId = storedSchoolId || resolved.school_id;
+        const { school: userSchool } = await getSchoolForCurrentUser(
+          data.session.user.id,
+          targetSchoolId,
+        );
+        const { schools: authSchools } = await getAuthorizedSchoolsForUser(
+          data.session.user.id
+        );
+        let mergedSchools = [...authSchools];
+        if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
+          mergedSchools.unshift(userSchool);
+        }
+        let ay: AcademicYear | null = null;
+        if (userSchool?.id) {
+          const { academicYear } = await getCurrentAcademicYear(userSchool.id);
+          ay = academicYear;
+        }
+        setSchool(userSchool);
+        setAvailableSchools(mergedSchools);
+        setCurrentAcademicYear(ay);
       }
     } catch (err) {
       console.warn("Failed to refresh session:", err);
     }
   };
+
+  const switchSchool = useCallback(
+    async (newSchoolId: string): Promise<{ success: boolean; error?: string }> => {
+      if (!newSchoolId) return { success: false, error: "School ID is required." };
+      try {
+        let target = availableSchools.find((s) => s.id === newSchoolId) || null;
+        if (!target && user) {
+          const { school: fetched } = await getSchoolForCurrentUser(user.id, newSchoolId);
+          target = fetched;
+        }
+
+        if (!target) {
+          return { success: false, error: "School not found or access denied." };
+        }
+
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("myzkool_active_school_id", newSchoolId);
+        }
+
+        if (isSupabaseConfigured && user) {
+          try {
+            await supabase
+              .from("profiles")
+              .update({ school_id: newSchoolId })
+              .eq("auth_id", user.id);
+          } catch (dbErr) {
+            console.warn("Could not update profile school_id:", dbErr);
+          }
+        }
+
+        setSchool(target);
+        setProfile((prev) => (prev ? { ...prev, school_id: newSchoolId } : null));
+
+        const { academicYear: ay } = await getCurrentAcademicYear(newSchoolId);
+        setCurrentAcademicYear(ay);
+
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err?.message || "Failed to switch school." };
+      }
+    },
+    [availableSchools, user]
+  );
+
+  const refreshSchool = useCallback(async (): Promise<void> => {
+    if (!user) return;
+    const storedSchoolId = typeof localStorage !== "undefined"
+      ? localStorage.getItem("myzkool_active_school_id")
+      : null;
+    const targetId = storedSchoolId || school?.id || profile?.school_id || undefined;
+    const { school: userSchool } = await getSchoolForCurrentUser(user.id, targetId);
+    const { schools: authSchools } = await getAuthorizedSchoolsForUser(user.id);
+    let mergedSchools = [...authSchools];
+    if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
+      mergedSchools.unshift(userSchool);
+    }
+    let ay: AcademicYear | null = null;
+    if (userSchool?.id) {
+      const { academicYear } = await getCurrentAcademicYear(userSchool.id);
+      ay = academicYear;
+    }
+    setSchool(userSchool);
+    setAvailableSchools(mergedSchools);
+    setCurrentAcademicYear(ay);
+  }, [user, school?.id, profile?.school_id]);
 
   const value = useMemo(
     () => ({
@@ -584,6 +738,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       school,
       loading,
       isAuthenticated: Boolean(user && session),
+      availableSchools,
+      currentAcademicYear,
+      switchSchool,
+      refreshSchool,
       signIn,
       signUp,
       signInWithGoogle,
@@ -593,7 +751,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       resendVerificationEmail,
       refreshSession,
     }),
-    [user, session, profile, school, loading],
+    [
+      user,
+      session,
+      profile,
+      school,
+      loading,
+      availableSchools,
+      currentAcademicYear,
+      switchSchool,
+      refreshSchool,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

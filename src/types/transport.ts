@@ -168,9 +168,19 @@ export interface RouteStop {
   drop_time: string;   // HH:MM
   distance_km?: number | null;
   fee_zone_id?: string | null;
+  monthly_fee_paise?: number;
+  pickup_only_monthly_paise?: number;
+  drop_only_monthly_paise?: number;
   deleted_at?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface RouteStopFeeInput {
+  id: string;
+  monthly_fee_paise: number;
+  pickup_only_monthly_paise?: number;
+  drop_only_monthly_paise?: number;
 }
 
 export interface TransportFeeZone {
@@ -246,6 +256,13 @@ export interface TransportDashboardData {
     vehicles_active: number;
     vehicles_total: number;
     routes_active: number;
+    routes_total?: number;
+    drivers_total?: number;
+    drivers_active?: number;
+    attendants_total?: number;
+    attendants_active?: number;
+    staff_total?: number;
+    staff_active?: number;
     total_riders: number;
     total_capacity: number;
     utilization_percent: number;

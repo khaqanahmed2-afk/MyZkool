@@ -37,6 +37,7 @@ import {
   getFeeStructures,
   computeConcession,
   ensureSystemHeads,
+  getTermBillingMonths,
 } from "./feeSetupService";
 import { checkSchoolFeature } from "../middleware/features";
 import { getTransportSettings } from "./transportCoreService";
@@ -247,7 +248,23 @@ async function generateDuesForStudent(
 
     for (const item of items) {
       const head = feeHeads.find(h => h.id === item.fee_head_id);
-      const itemTermAmounts = itemTerms.filter(it => it.item_id === item.id);
+      let itemTermAmounts = itemTerms.filter(it => it.item_id === item.id);
+      if (itemTermAmounts.length === 0 && item.amount_paise && item.amount_paise > 0) {
+        itemTermAmounts = terms
+          .filter(term => {
+            const order = term.sort_order;
+            if (item.frequency === "monthly") return true;
+            if (item.frequency === "quarterly") return order % 3 === 0 && order < 12;
+            if (item.frequency === "half_yearly") return order === 0 || order === 6;
+            if (item.frequency === "yearly" || item.frequency === "one_time") return order === 0;
+            return false;
+          })
+          .map(term => ({
+            item_id: item.id,
+            term_id: term.id,
+            amount_paise: item.amount_paise,
+          }));
+      }
 
       for (const termAmount of itemTermAmounts) {
         const term = terms.find(t => t.id === termAmount.term_id);
@@ -699,7 +716,7 @@ export async function cancelFutureDues(
 ): Promise<{ cancelled: number; totalCreditPaise: number; error?: string }> {
   const { dues } = await getStudentDues(schoolId, studentId);
   const toCancel = dues.filter(d =>
-    d.due_date > effectiveDate &&
+    d.due_date >= effectiveDate &&
     d.source !== "transport" &&
     d.status !== "cancelled" &&
     d.status !== "waived"
@@ -903,6 +920,28 @@ export async function createTransportDues(
     }
   }
 
+  // Idempotency check: if non-cancelled dues already exist for this assignment, return existing count without duplicating
+  let existingDues: StudentDue[] = [];
+  if (isSupabaseConfigured) {
+    const { data: dbDues } = await supabase
+      .from("student_dues")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("source", "transport")
+      .eq("source_ref", assignmentId)
+      .neq("status", "cancelled");
+    existingDues = (dbDues || []) as StudentDue[];
+  } else {
+    const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+    existingDues = all.filter(
+      (d) => d.source === "transport" && d.source_ref === assignmentId && d.status !== "cancelled"
+    );
+  }
+
+  if (existingDues.length > 0) {
+    return { success: true, count: existingDues.length };
+  }
+
   // 3. Fetch transport settings
   const settings = await getTransportSettings(schoolId);
   const billingMonths = settings.billing_months || [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
@@ -934,6 +973,14 @@ export async function createTransportDues(
     }
   }
 
+  let endYear: number | null = null;
+  let endMonth: number | null = null;
+  if (assignment.effective_to) {
+    const toDate = new Date(assignment.effective_to);
+    endYear = toDate.getFullYear();
+    endMonth = toDate.getMonth() + 1;
+  }
+
   // 6. Fetch terms for academic year
   const { terms } = await getFeeTerms(schoolId, assignment.academic_year_id);
   const monthlyFeePaise = Number(assignment.monthly_fee_paise) || 0;
@@ -942,38 +989,45 @@ export async function createTransportDues(
     return { success: true, count: 0 };
   }
 
+  // Fetch existing transport dues for this assignment to prevent duplicates
+  let existingAssignDues: StudentDue[] = [];
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("student_dues")
+      .select("id, term_id, status")
+      .eq("school_id", schoolId)
+      .eq("source", "transport")
+      .eq("source_ref", assignment.id);
+    existingAssignDues = (data || []) as StudentDue[];
+  } else {
+    const all = lsGet<StudentDue>(DUES_KEY(schoolId));
+    existingAssignDues = all.filter((d) => d.source === "transport" && d.source_ref === assignment.id);
+  }
+
   let createdCount = 0;
 
   if (terms && terms.length > 0) {
     for (let idx = 0; idx < terms.length; idx++) {
       const term = terms[idx];
-      let termBillingMonths: { year: number; month: number }[] = [];
 
-      if (term.period_start && term.period_end) {
-        const pStart = new Date(term.period_start);
-        const pEnd = new Date(term.period_end);
-        let cur = new Date(pStart.getFullYear(), pStart.getMonth(), 1);
-        const end = new Date(pEnd.getFullYear(), pEnd.getMonth(), 1);
-        while (cur <= end) {
-          const m = cur.getMonth() + 1;
-          if (billingMonths.includes(m)) {
-            termBillingMonths.push({ year: cur.getFullYear(), month: m });
-          }
-          cur.setMonth(cur.getMonth() + 1);
-        }
-      } else {
-        const perTerm = Math.ceil(billingMonths.length / terms.length);
-        const slice = billingMonths.slice(idx * perTerm, (idx + 1) * perTerm);
-        const termYear = term.due_date ? new Date(term.due_date).getFullYear() : effYear;
-        termBillingMonths = slice.map((m) => ({
-          year: m < 4 ? termYear + 1 : termYear,
-          month: m,
-        }));
+      // Check if active due already exists for this term
+      if (existingAssignDues.some((d) => d.term_id === term.id && d.status !== "cancelled")) {
+        continue;
       }
 
-      const activeMonths = termBillingMonths.filter(
-        (bm) => bm.year > startYear || (bm.year === startYear && bm.month >= startMonth)
+      const termBillingMonths = getTermBillingMonths(
+        term,
+        effYear,
+        billingMonths,
+        terms.length,
+        idx
       );
+
+      const activeMonths = termBillingMonths.filter((bm) => {
+        const afterStart = bm.year > startYear || (bm.year === startYear && bm.month >= startMonth);
+        const beforeEnd = !endYear || bm.year < endYear || (bm.year === endYear && bm.month <= endMonth!);
+        return afterStart && beforeEnd;
+      });
 
       if (activeMonths.length === 0) continue;
 
@@ -1022,56 +1076,60 @@ export async function createTransportDues(
       createdCount++;
     }
   } else {
-    // If no terms defined, create a single due for all active billing months
-    let totalMonths = 0;
-    for (const m of billingMonths) {
-      const year = m < 4 ? effYear + 1 : effYear;
-      if (year > startYear || (year === startYear && m >= startMonth)) {
-        totalMonths++;
+    // If no terms defined, check if due already exists
+    if (!existingAssignDues.some((d) => d.term_id === null && d.status !== "cancelled")) {
+      let totalMonths = 0;
+      for (const m of billingMonths) {
+        const year = m < 4 ? effYear + 1 : effYear;
+        const afterStart = year > startYear || (year === startYear && m >= startMonth);
+        const beforeEnd = !endYear || year < endYear || (year === endYear && m <= endMonth!);
+        if (afterStart && beforeEnd) {
+          totalMonths++;
+        }
       }
-    }
-    if (totalMonths > 0) {
-      const grossPaise = monthlyFeePaise * totalMonths;
-      const due: StudentDue = {
-        id: crypto.randomUUID(),
-        school_id: schoolId,
-        student_id: assignment.student_id,
-        academic_year_id: assignment.academic_year_id,
-        fee_head_id: transportHead.id,
-        term_id: null,
-        source: "transport",
-        source_ref: assignment.id,
-        description: `Transport Fee (${totalMonths} mo)`,
-        gross_paise: grossPaise,
-        concession_paise: 0,
-        net_paise: grossPaise,
-        paid_paise: 0,
-        balance_paise: grossPaise,
-        due_date: assignment.effective_from,
-        status: "pending",
-        created_at: now(),
-        updated_at: now(),
-      };
+      if (totalMonths > 0) {
+        const grossPaise = monthlyFeePaise * totalMonths;
+        const due: StudentDue = {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: assignment.student_id,
+          academic_year_id: assignment.academic_year_id,
+          fee_head_id: transportHead.id,
+          term_id: null,
+          source: "transport",
+          source_ref: assignment.id,
+          description: `Transport Fee (${totalMonths} mo)`,
+          gross_paise: grossPaise,
+          concession_paise: 0,
+          net_paise: grossPaise,
+          paid_paise: 0,
+          balance_paise: grossPaise,
+          due_date: assignment.effective_from,
+          status: "pending",
+          created_at: now(),
+          updated_at: now(),
+        };
 
-      if (isSupabaseConfigured) {
-        await supabase.from("student_dues").insert(due);
-      } else {
-        const allDues = lsGet<StudentDue>(DUES_KEY(schoolId));
-        lsSet(DUES_KEY(schoolId), [...allDues, due]);
+        if (isSupabaseConfigured) {
+          await supabase.from("student_dues").insert(due);
+        } else {
+          const allDues = lsGet<StudentDue>(DUES_KEY(schoolId));
+          lsSet(DUES_KEY(schoolId), [...allDues, due]);
+        }
+
+        await writeLedger(schoolId, {
+          school_id: schoolId,
+          student_id: assignment.student_id,
+          academic_year_id: assignment.academic_year_id,
+          due_id: due.id,
+          receipt_id: null,
+          entry_type: "due_created",
+          amount_paise: grossPaise,
+          note: `Due created: Transport Fee`,
+          created_by: assignment.created_by || null,
+        });
+        createdCount++;
       }
-
-      await writeLedger(schoolId, {
-        school_id: schoolId,
-        student_id: assignment.student_id,
-        academic_year_id: assignment.academic_year_id,
-        due_id: due.id,
-        receipt_id: null,
-        entry_type: "due_created",
-        amount_paise: grossPaise,
-        note: `Due created: Transport Fee`,
-        created_by: assignment.created_by || null,
-      });
-      createdCount++;
     }
   }
 
@@ -1109,18 +1167,18 @@ export async function cancelTransportDues(
   let totalCreditPaise = 0;
 
   for (const due of dues) {
-    if (due.due_date >= effectiveDate || due.status === "pending") {
+    if (due.due_date >= effectiveDate && due.status !== "cancelled" && due.status !== "waived") {
       if (due.paid_paise === 0) {
         if (isSupabaseConfigured) {
           await supabase
             .from("student_dues")
-            .update({ status: "cancelled", updated_at: now() })
+            .update({ status: "cancelled", balance_paise: 0, updated_at: now() })
             .eq("id", due.id);
         } else {
           const all = lsGet<StudentDue>(DUES_KEY(schoolId));
           lsSet(
             DUES_KEY(schoolId),
-            all.map((d) => (d.id === due.id ? { ...d, status: "cancelled" as const, updated_at: now() } : d))
+            all.map((d) => (d.id === due.id ? { ...d, status: "cancelled" as const, balance_paise: 0, updated_at: now() } : d))
           );
         }
 
@@ -1167,6 +1225,21 @@ export async function cancelTransportDues(
           );
         }
 
+        // If there was an unpaid remaining portion, cancel that balance in ledger
+        if (due.balance_paise > 0) {
+          await writeLedger(schoolId, {
+            school_id: schoolId,
+            student_id: due.student_id,
+            academic_year_id: due.academic_year_id,
+            due_id: due.id,
+            receipt_id: null,
+            entry_type: "cancel_due",
+            amount_paise: -due.balance_paise,
+            note: `Transport due balance cancelled on stop (effective ${effectiveDate})`,
+            created_by: actorId ?? null,
+          });
+        }
+
         await writeLedger(schoolId, {
           school_id: schoolId,
           student_id: due.student_id,
@@ -1174,8 +1247,8 @@ export async function cancelTransportDues(
           due_id: due.id,
           receipt_id: null,
           entry_type: "adjustment",
-          amount_paise: -due.balance_paise,
-          note: `Transport future paid amount converted to credit on stop (${effectiveDate})`,
+          amount_paise: 0,
+          note: `Transport future paid amount of ₹${(creditPaise / 100).toFixed(2)} converted to credit on stop (${effectiveDate})`,
           created_by: actorId ?? null,
         });
         cancelled++;
@@ -1224,4 +1297,4 @@ export async function changeTransportDues(
   return { success: true };
 }
 
-
+export { assignFeeStructureToEligibleStudents } from "./feeSetupService";

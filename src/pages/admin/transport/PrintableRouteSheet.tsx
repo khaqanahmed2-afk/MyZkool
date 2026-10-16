@@ -110,7 +110,7 @@ export function PrintableRouteSheet({
                     {st.drop_time}
                   </td>
                   <td className="py-2.5 px-3 text-center font-semibold">
-                    0 riders
+                    {(st as any).riders_count ?? 0} riders
                   </td>
                 </tr>
               ))}

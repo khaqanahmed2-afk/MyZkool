@@ -65,12 +65,14 @@ const ConcessionRulesPage = lazy(() => import("../pages/admin/fees/ConcessionRul
 const LateFeeRulesPage = lazy(() => import("../pages/admin/fees/LateFeeRulesPage"));
 const FeeSettingsPage = lazy(() => import("../pages/admin/fees/FeeSettingsPage"));
 const DuesGenerationPage = lazy(() => import("../pages/admin/fees/DuesGenerationPage"));
+const InvoicesPage = lazy(() => import("../pages/admin/fees/InvoicesPage"));
 const ApprovalsPage = lazy(() => import("../pages/admin/approvals/ApprovalsPage"));
+const FeeCollectionsPage = lazy(() => import("../pages/admin/fees/FeeCollectionsPage"));
 const FeeCollectPage = lazy(() => import("../pages/admin/fees/FeeCollectPage"));
-const ReceiptsPage = lazy(() => import("../pages/admin/fees/ReceiptsPage"));
 const StudentLedgerPage = lazy(() => import("../pages/admin/fees/StudentLedgerPage"));
 const FeeDashboard = lazy(() => import("../pages/admin/fees/FeeDashboard"));
-const DefaultersPage = lazy(() => import("../pages/admin/fees/DefaultersPage"));
+const DefaultersPage = lazy(() => import("../pages/admin/fees/DuesRemindersPage"));
+const DuesRemindersPage = lazy(() => import("../pages/admin/fees/DuesRemindersPage"));
 const ChequeRegisterPage = lazy(() => import("../pages/admin/fees/ChequeRegisterPage"));
 const RefundsPage = lazy(() => import("../pages/admin/fees/RefundsPage"));
 const DayClosePage = lazy(() => import("../pages/admin/fees/DayClosePage"));
@@ -173,18 +175,21 @@ export default function AppRoutes() {
             <Route path="fees/setup" element={<FeeSetupChecklist />} />
             <Route path="fees/setup/heads" element={<FeeHeadsPage />} />
             <Route path="fees/setup/terms" element={<FeeTermsPage />} />
+            <Route path="fees/structures" element={<FeeStructuresPage />} />
             <Route path="fees/setup/structures" element={<FeeStructuresPage />} />
             <Route path="fees/setup/concessions" element={<ConcessionRulesPage />} />
             <Route path="fees/setup/late-fees" element={<LateFeeRulesPage />} />
             <Route path="fees/setup/settings" element={<FeeSettingsPage />} />
-            <Route path="fees/dues" element={<DuesGenerationPage />} />
-            <Route path="fees/invoices" element={<DuesGenerationPage />} />
-            <Route path="fees/assign" element={<DuesGenerationPage />} />
-            <Route path="fees/collect" element={<FeeCollectPage />} />
-            <Route path="fees/receipts" element={<ReceiptsPage />} />
+            <Route path="fees/dues" element={<InvoicesPage />} />
+            <Route path="fees/invoices" element={<InvoicesPage />} />
+            <Route path="fees/assign" element={<InvoicesPage />} />
+            <Route path="fees/collections" element={<FeeCollectionsPage />} />
+            <Route path="fees/collect" element={<FeeCollectionsPage />} />
+            <Route path="fees/receipts" element={<Navigate to="/admin/fees/collections" replace />} />
             <Route path="fees/students/:id" element={<StudentLedgerPage />} />
-            <Route path="fees/dues-report" element={<DefaultersPage />} />
-            <Route path="fees/defaulters" element={<DefaultersPage />} />
+            <Route path="fees/reminders" element={<DuesRemindersPage />} />
+            <Route path="fees/dues-report" element={<DuesRemindersPage />} />
+            <Route path="fees/defaulters" element={<DuesRemindersPage />} />
             <Route path="fees/cheques" element={<ChequeRegisterPage />} />
             <Route path="fees/refunds" element={<RefundsPage />} />
             <Route path="fees/day-close" element={<DayClosePage />} />

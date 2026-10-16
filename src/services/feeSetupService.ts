@@ -28,6 +28,8 @@ import type {
   FeeHeadFrequency,
   FeeStructureConfigItem,
   StructureStatus,
+  StudentFeeAssignment,
+  StudentDue,
 } from "../types/fees";
 import { SUGGESTED_FEE_HEADS as SUGGESTED, SYSTEM_FEE_HEADS as SYSTEM } from "../types/fees";
 
@@ -82,6 +84,54 @@ export function computeConcession(
     : value;
   const rounded = roundPaise(raw, roundToRupee);
   return Math.min(rounded, grossPaise);
+}
+
+/**
+ * Derives the active calendar months that belong to a fee term.
+ * A month belongs to a term if the overlap between the term's dates and the month is >= 15 days.
+ */
+export function getTermBillingMonths(
+  term: { period_start?: string | null; period_end?: string | null; due_date?: string | null },
+  academicYearStartYear: number,
+  billingMonths: number[] = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
+  allTermsCount = 12,
+  termIndex = 0
+): { year: number; month: number }[] {
+  if (term.period_start && term.period_end) {
+    const [psY, psM, psD] = term.period_start.split("-").map(Number);
+    const [peY, peM, peD] = term.period_end.split("-").map(Number);
+    const tStart = new Date(psY, psM - 1, psD);
+    const tEnd = new Date(peY, peM - 1, peD);
+
+    const result: { year: number; month: number }[] = [];
+    for (const m of billingMonths) {
+      const year = m < 4 ? academicYearStartYear + 1 : academicYearStartYear;
+      const mStart = new Date(year, m - 1, 1);
+      const mEnd = new Date(year, m, 0);
+
+      const overlapStart = tStart > mStart ? tStart : mStart;
+      const overlapEnd = tEnd < mEnd ? tEnd : mEnd;
+
+      if (overlapEnd >= overlapStart) {
+        const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        if (overlapDays >= 15) {
+          result.push({ year, month: m });
+        }
+      }
+    }
+    if (result.length > 0) return result;
+  }
+
+  if (allTermsCount > 0) {
+    const perTerm = Math.ceil(billingMonths.length / allTermsCount);
+    const slice = billingMonths.slice(termIndex * perTerm, (termIndex + 1) * perTerm);
+    return slice.map((m) => ({
+      year: m < 4 ? academicYearStartYear + 1 : academicYearStartYear,
+      month: m,
+    }));
+  }
+
+  return [];
 }
 
 // ─── Simple PBKDF2 PIN hash (browser-compatible) ─────────────────────────────
@@ -709,6 +759,64 @@ export async function getFeeStructures(
       const { data, error } = await q;
       if (error) throw error;
       structures = (data || []) as FeeStructure[];
+
+      // Enrich junction tables (fee_structure_classes, fee_structure_sections)
+      try {
+        const { data: classJunctions } = await supabase
+          .from("fee_structure_classes")
+          .select("fee_structure_id, class_id")
+          .eq("school_id", schoolId);
+
+        const { data: secJunctions } = await supabase
+          .from("fee_structure_sections")
+          .select("fee_structure_id, section_id")
+          .eq("school_id", schoolId);
+
+        if (classJunctions && classJunctions.length > 0) {
+          const classMap = new Map<string, string[]>();
+          for (const cj of classJunctions) {
+            if (!classMap.has(cj.fee_structure_id)) classMap.set(cj.fee_structure_id, []);
+            classMap.get(cj.fee_structure_id)!.push(cj.class_id);
+          }
+
+          structures = structures.map((st) => {
+            const mappedCids = classMap.get(st.id) || [];
+            if (mappedCids.length > 0) {
+              const primaryClassId = st.class_id || mappedCids[0];
+              const mergedCids = Array.from(new Set([...(st.class_ids || []), ...mappedCids]));
+              return {
+                ...st,
+                class_id: primaryClassId,
+                class_ids: mergedCids,
+                target_type: st.target_type === "all_classes" ? "specific_classes" : st.target_type,
+              };
+            }
+            return st;
+          });
+        }
+
+        if (secJunctions && secJunctions.length > 0) {
+          const secMap = new Map<string, string[]>();
+          for (const sj of secJunctions) {
+            if (!secMap.has(sj.fee_structure_id)) secMap.set(sj.fee_structure_id, []);
+            secMap.get(sj.fee_structure_id)!.push(sj.section_id);
+          }
+
+          structures = structures.map((st) => {
+            const mappedSids = secMap.get(st.id) || [];
+            if (mappedSids.length > 0) {
+              const mergedSids = Array.from(new Set([...(st.section_ids || []), ...mappedSids]));
+              return {
+                ...st,
+                section_ids: mergedSids,
+              };
+            }
+            return st;
+          });
+        }
+      } catch (jErr: any) {
+        console.warn("fee_structure junctions enrichment note:", jErr.message);
+      }
     } catch (e: any) {
       console.warn("getFeeStructures Supabase note:", e.message);
     }
@@ -723,10 +831,21 @@ export async function getFeeStructures(
       combinedMap.set(s.id, s);
     } else {
       const remote = combinedMap.get(s.id)!;
+      // Prefer newer record or merge fields cleanly without overwriting valid class_id or names
+      const preferLocal = s.updated_at && remote.updated_at && new Date(s.updated_at) > new Date(remote.updated_at);
+      const effectiveName = preferLocal ? s.name : remote.name || s.name;
+      const effectiveClassId = remote.class_id || (remote.class_ids && remote.class_ids[0]) || s.class_id || (s.class_ids && s.class_ids[0]) || null;
+      const effectiveClassIds = (remote.class_ids && remote.class_ids.length > 0) ? remote.class_ids : (s.class_ids && s.class_ids.length > 0) ? s.class_ids : effectiveClassId ? [effectiveClassId] : [];
+      const effectiveTargetType = effectiveClassId || effectiveClassIds.length > 0
+        ? ((remote.target_type && remote.target_type !== "all_classes") ? remote.target_type : s.target_type !== "all_classes" ? s.target_type : "specific_classes")
+        : (remote.target_type || s.target_type);
+
       combinedMap.set(s.id, {
         ...remote,
-        target_type: remote.target_type || s.target_type,
-        class_ids: (remote.class_ids && remote.class_ids.length > 0) ? remote.class_ids : s.class_ids,
+        name: effectiveName,
+        target_type: effectiveTargetType,
+        class_id: effectiveClassId,
+        class_ids: effectiveClassIds,
         section_ids: (remote.section_ids && remote.section_ids.length > 0) ? remote.section_ids : s.section_ids,
         student_ids: (remote.student_ids && remote.student_ids.length > 0) ? remote.student_ids : s.student_ids,
         description: remote.description || s.description,
@@ -745,6 +864,112 @@ export async function getFeeStructures(
   }
   return { structures: list };
 }
+
+/**
+ * Calculates exact eligible enrolled students and active transport users
+ * for a given fee structure scope without duplicate counts.
+ */
+export async function getStructureStudentCounts(
+  schoolId: string,
+  academicYearId: string,
+  structure: {
+    target_type?: StructureTargetType;
+    class_id?: string | null;
+    class_ids?: string[];
+    section_ids?: string[];
+  }
+): Promise<{ enrolledCount: number; transportCount: number; studentIds: string[] }> {
+  if (!schoolId) {
+    return { enrolledCount: 0, transportCount: 0, studentIds: [] };
+  }
+
+  const targetClassIds =
+    structure.class_ids && structure.class_ids.length > 0
+      ? structure.class_ids
+      : structure.class_id
+      ? [structure.class_id]
+      : [];
+  const targetSectionIds = structure.section_ids || [];
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Fetch eligible student enrollments for this school and academic year
+      let q = supabase
+        .from("student_enrollments")
+        .select("student_id, class_id, section_id")
+        .eq("school_id", schoolId)
+        .eq("status", "active");
+
+      if (academicYearId) {
+        q = q.eq("academic_year_id", academicYearId);
+      }
+
+      if (structure.target_type === "specific_classes" && targetClassIds.length > 0) {
+        q = q.in("class_id", targetClassIds);
+      } else if (structure.target_type === "specific_sections" && targetSectionIds.length > 0) {
+        q = q.in("section_id", targetSectionIds);
+      } else if (targetClassIds.length > 0) {
+        q = q.in("class_id", targetClassIds);
+      }
+
+      const { data: enrollments, error: enrErr } = await q;
+      if (!enrErr && enrollments) {
+        // Unique student IDs to prevent duplicate counts from any joins
+        const studentIdSet = new Set<string>();
+        for (const e of enrollments) {
+          if (e.student_id) studentIdSet.add(e.student_id);
+        }
+        const studentIds = Array.from(studentIdSet);
+        const enrolledCount = studentIds.length;
+
+        let transportCount = 0;
+        if (studentIds.length > 0) {
+          const { data: transData, error: transErr } = await supabase
+            .from("transport_assignments")
+            .select("student_id")
+            .eq("school_id", schoolId)
+            .eq("status", "active")
+            .in("student_id", studentIds);
+
+          if (!transErr && transData) {
+            const transSet = new Set(transData.map((t) => t.student_id));
+            transportCount = transSet.size;
+          }
+        }
+
+        return { enrolledCount, transportCount, studentIds };
+      }
+    } catch (e: any) {
+      console.warn("getStructureStudentCounts Supabase note:", e.message);
+    }
+  }
+
+  // Fallback to local storage cache
+  try {
+    const rawEnr = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
+    const filtered = (rawEnr || []).filter((e: any) => {
+      if (academicYearId && e.academic_year_id && e.academic_year_id !== academicYearId) return false;
+      if (e.status && e.status !== "active" && e.status !== "enrolled") return false;
+      if (targetClassIds.length > 0 && !targetClassIds.includes(e.class_id)) return false;
+      if (targetSectionIds.length > 0 && !targetSectionIds.includes(e.section_id)) return false;
+      return true;
+    });
+
+    const studentIds = Array.from(new Set(filtered.map((e: any) => e.student_id).filter(Boolean))) as string[];
+    const enrolledCount = studentIds.length;
+
+    const rawTrans = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
+    const activeTrans = (rawTrans || []).filter(
+      (t: any) => t.status === "active" && studentIds.includes(t.student_id)
+    );
+    const transportCount = new Set(activeTrans.map((t: any) => t.student_id)).size;
+
+    return { enrolledCount, transportCount, studentIds };
+  } catch {
+    return { enrolledCount: 0, transportCount: 0, studentIds: [] };
+  }
+}
+
 
 export async function createFeeStructure(
   schoolId: string,
@@ -793,6 +1018,573 @@ export async function createFeeStructure(
   const all = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
   lsSet(FEE_STRUCTURES_KEY(schoolId), [...all.filter(s => s.id !== structure.id), structure]);
   return { structure };
+}
+
+/**
+ * Automatically assigns an active fee structure to all eligible students
+ * based on target classes, sections, and academic year.
+ * Applies base fees to all eligible students, and applies transport fees
+ * strictly to students with active transport assignments.
+ */
+export async function assignFeeStructureToEligibleStudents(
+  schoolId: string,
+  structureId: string,
+  actorId?: string
+): Promise<{
+  success: boolean;
+  assignedStudentsCount: number;
+  createdDuesCount: number;
+  transportRidersCount: number;
+  error?: string;
+}> {
+  if (!schoolId || !structureId) {
+    return {
+      success: false,
+      assignedStudentsCount: 0,
+      createdDuesCount: 0,
+      transportRidersCount: 0,
+      error: "School ID and Structure ID are required",
+    };
+  }
+
+  // 1. If Supabase is configured, use the atomic RPC function
+  if (isSupabaseConfigured) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc(
+        "assign_fee_structure_to_eligible_students",
+        {
+          p_school_id: schoolId,
+          p_structure_id: structureId,
+          p_actor_id: actorId || null,
+        }
+      );
+
+      if (!rpcErr && rpcRes && rpcRes.success) {
+        // Sync local storage caches for offline resilience
+        try {
+          const { data: remoteAssigns } = await supabase
+            .from("student_fee_assignments")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("structure_id", structureId);
+
+          if (remoteAssigns) {
+            const localAssigns = lsGet<StudentFeeAssignment>(`myzkool_student_fee_assignments_${schoolId}`);
+            const otherAssigns = localAssigns.filter((a) => a.structure_id !== structureId);
+            lsSet(`myzkool_student_fee_assignments_${schoolId}`, [...otherAssigns, ...remoteAssigns]);
+          }
+
+          const { data: remoteDues } = await supabase
+            .from("student_dues")
+            .select("*")
+            .eq("school_id", schoolId);
+
+          if (remoteDues) {
+            lsSet(`myzkool_student_dues_${schoolId}`, remoteDues);
+          }
+        } catch {
+          // Ignore cache sync error
+        }
+
+        return {
+          success: true,
+          assignedStudentsCount: rpcRes.assigned_students_count || 0,
+          createdDuesCount: rpcRes.created_dues_count || 0,
+          transportRidersCount: rpcRes.transport_riders_count || 0,
+        };
+      } else if (rpcErr) {
+        console.warn("assign_fee_structure_to_eligible_students RPC notice, running client fallback:", rpcErr.message);
+      }
+    } catch (e: any) {
+      console.warn("assignFeeStructureToEligibleStudents Supabase RPC error:", e.message);
+    }
+  }
+
+  // 2. Client-side / Offline fallback
+  try {
+    let structure: FeeStructure | null = null;
+    if (isSupabaseConfigured) {
+      const { data } = await supabase
+        .from("fee_structures")
+        .select("*")
+        .eq("id", structureId)
+        .eq("school_id", schoolId)
+        .maybeSingle();
+      structure = data as FeeStructure | null;
+    }
+    if (!structure) {
+      const allStructures = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
+      structure = allStructures.find((s) => s.id === structureId) || null;
+    }
+
+    if (!structure) {
+      return { success: false, assignedStudentsCount: 0, createdDuesCount: 0, transportRidersCount: 0, error: "Structure not found" };
+    }
+
+    const yearId = structure.academic_year_id;
+    const targetClassIds =
+      structure.class_ids && structure.class_ids.length > 0
+        ? structure.class_ids
+        : structure.class_id
+        ? [structure.class_id]
+        : [];
+    const targetSectionIds = structure.section_ids || [];
+
+    // Resolve eligible student enrollments
+    let eligibleStudents: Array<{ id: string; is_rte: boolean; class_id?: string; section_id?: string }> = [];
+
+    if (isSupabaseConfigured) {
+      let q = supabase
+        .from("student_enrollments")
+        .select("student_id, class_id, section_id, is_rte:students(is_rte)")
+        .eq("school_id", schoolId)
+        .eq("status", "active");
+
+      if (yearId) q = q.eq("academic_year_id", yearId);
+
+      if (structure.target_type === "specific_classes" && targetClassIds.length > 0) {
+        q = q.in("class_id", targetClassIds);
+      } else if (structure.target_type === "specific_sections" && targetSectionIds.length > 0) {
+        q = q.in("section_id", targetSectionIds);
+      } else if (structure.target_type === "specific_students" && structure.student_ids && structure.student_ids.length > 0) {
+        q = q.in("student_id", structure.student_ids);
+      } else if (targetClassIds.length > 0) {
+        q = q.in("class_id", targetClassIds);
+      }
+
+      const { data: enrRows } = await q;
+      if (enrRows) {
+        eligibleStudents = enrRows.map((e: any) => ({
+          id: e.student_id,
+          class_id: e.class_id,
+          section_id: e.section_id,
+          is_rte: !!e.is_rte?.is_rte,
+        }));
+      }
+    }
+
+    if (eligibleStudents.length === 0) {
+      const localEnrollments = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
+      eligibleStudents = localEnrollments
+        .filter((e: any) => {
+          if (e.school_id && e.school_id !== schoolId) return false;
+          if (yearId && e.academic_year_id !== yearId) return false;
+          if (e.status && e.status !== "active") return false;
+          if (structure?.target_type === "specific_classes" && targetClassIds.length > 0) {
+            return targetClassIds.includes(e.class_id);
+          }
+          if (structure?.target_type === "specific_sections" && targetSectionIds.length > 0) {
+            return targetSectionIds.includes(e.section_id);
+          }
+          if (targetClassIds.length > 0) {
+            return targetClassIds.includes(e.class_id);
+          }
+          return true;
+        })
+        .map((e: any) => ({
+          id: e.student_id,
+          class_id: e.class_id,
+          section_id: e.section_id,
+          is_rte: !!e.is_rte,
+        }));
+    }
+
+    if (eligibleStudents.length === 0) {
+      return { success: true, assignedStudentsCount: 0, createdDuesCount: 0, transportRidersCount: 0 };
+    }
+
+    const studentIds = Array.from(new Set(eligibleStudents.map((s) => s.id)));
+
+    // Fetch transport assignments
+    const activeTransportMap = new Map<string, { id: string; monthly_fee_paise: number; effective_from: string; effective_to?: string | null }>();
+    if (isSupabaseConfigured) {
+      const { data: transRows } = await supabase
+        .from("transport_assignments")
+        .select("id, student_id, monthly_fee_paise, status, effective_from, effective_to")
+        .eq("school_id", schoolId)
+        .eq("status", "active")
+        .in("student_id", studentIds);
+
+      if (transRows) {
+        transRows.forEach((tr: any) => {
+          if (tr.monthly_fee_paise > 0) {
+            activeTransportMap.set(tr.student_id, {
+              id: tr.id,
+              monthly_fee_paise: Number(tr.monthly_fee_paise),
+              effective_from: tr.effective_from,
+              effective_to: tr.effective_to,
+            });
+          }
+        });
+      }
+    } else {
+      const localTrans = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
+      localTrans
+        .filter((tr: any) => tr.status === "active" && studentIds.includes(tr.student_id) && tr.monthly_fee_paise > 0)
+        .forEach((tr: any) => {
+          activeTransportMap.set(tr.student_id, {
+            id: tr.id,
+            monthly_fee_paise: Number(tr.monthly_fee_paise),
+            effective_from: tr.effective_from,
+            effective_to: tr.effective_to,
+          });
+        });
+    }
+
+    // Fetch fee heads to check RTE waivability and find transport fee head
+    const { heads: allHeads } = await getFeeHeads(schoolId, true);
+    const transportHead = allHeads.find(
+      (h) => h.code === "transport_fee" || (h.kind === "recurring" && /transport/i.test(h.name))
+    );
+
+    // Fetch terms for this academic year
+    const { terms: allTerms } = await getFeeTerms(schoolId, yearId);
+    const sortedTerms = [...allTerms].sort((a, b) => a.sort_order - b.sort_order);
+
+    // Fetch structure items
+    const { items: structItems, terms: structItemTerms } = await getStructureGrid(schoolId, structureId);
+
+    // Track counts
+    let assignedStudentsCount = 0;
+    let createdDuesCount = 0;
+    let transportRidersCount = 0;
+
+    // Existing assignments
+    let existingAssigns: StudentFeeAssignment[] = [];
+    if (isSupabaseConfigured) {
+      const { data: dbAssigns } = await supabase
+        .from("student_fee_assignments")
+        .select("*")
+        .eq("school_id", schoolId)
+        .eq("academic_year_id", yearId);
+      existingAssigns = (dbAssigns || []) as StudentFeeAssignment[];
+    } else {
+      existingAssigns = lsGet<StudentFeeAssignment>(`myzkool_student_fee_assignments_${schoolId}`);
+    }
+
+    // Existing dues
+    let existingDues: StudentDue[] = [];
+    if (isSupabaseConfigured) {
+      const { data: dbDues } = await supabase
+        .from("student_dues")
+        .select("*")
+        .eq("school_id", schoolId)
+        .eq("academic_year_id", yearId);
+      existingDues = (dbDues || []) as StudentDue[];
+    } else {
+      existingDues = lsGet<StudentDue>(`myzkool_student_dues_${schoolId}`);
+    }
+
+    const newAssignmentsToInsert: StudentFeeAssignment[] = [];
+    const newDuesToInsert: StudentDue[] = [];
+
+    for (const student of eligibleStudents) {
+      // 1. Assignment
+      let assignment = existingAssigns.find(
+        (a) => a.student_id === student.id && a.academic_year_id === yearId && a.structure_id === structureId && a.status === "active"
+      );
+
+      if (!assignment) {
+        // Mark any old active assignments for different structure as replaced
+        const oldAssigns = existingAssigns.filter(
+          (a) => a.student_id === student.id && a.academic_year_id === yearId && a.structure_id !== structureId && a.status === "active"
+        );
+        for (const oldA of oldAssigns) {
+          oldA.status = "replaced";
+          if (isSupabaseConfigured) {
+            await supabase.from("student_fee_assignments").update({ status: "replaced", updated_at: now() }).eq("id", oldA.id);
+          }
+        }
+
+        assignment = {
+          id: uuid(),
+          school_id: schoolId,
+          student_id: student.id,
+          academic_year_id: yearId,
+          structure_id: structureId,
+          structure_version: structure.version || 1,
+          assigned_at: now(),
+          assigned_by: actorId ?? null,
+          status: "active",
+        };
+        newAssignmentsToInsert.push(assignment);
+        assignedStudentsCount++;
+      }
+
+      // 2. Base Dues
+      for (const item of structItems) {
+        if (transportHead && item.fee_head_id === transportHead.id) continue;
+        const head = allHeads.find((h) => h.id === item.fee_head_id);
+        const itemTerms = structItemTerms.filter((it) => it.item_id === item.id);
+
+        if (itemTerms.length > 0) {
+          for (const it of itemTerms) {
+            const term = sortedTerms.find((t) => t.id === it.term_id);
+            if (!term || it.amount_paise <= 0) continue;
+
+            const existingDue = existingDues.find(
+              (d) =>
+                d.student_id === student.id &&
+                d.academic_year_id === yearId &&
+                d.fee_head_id === item.fee_head_id &&
+                d.term_id === it.term_id &&
+                d.source === "structure"
+            );
+
+            if (!existingDue) {
+              const concessionPaise = student.is_rte && head?.rte_waivable ? it.amount_paise : 0;
+              const netPaise = it.amount_paise - concessionPaise;
+              const dueRow: StudentDue = {
+                id: uuid(),
+                school_id: schoolId,
+                student_id: student.id,
+                academic_year_id: yearId,
+                fee_head_id: item.fee_head_id,
+                term_id: it.term_id,
+                source: "structure",
+                source_ref: assignment.id,
+                description: null,
+                gross_paise: it.amount_paise,
+                concession_paise: concessionPaise,
+                net_paise: netPaise,
+                paid_paise: 0,
+                balance_paise: netPaise,
+                due_date: term.due_date,
+                status: netPaise === 0 ? "waived" : "pending",
+                created_at: now(),
+                updated_at: now(),
+                created_by: actorId ?? null,
+              };
+              newDuesToInsert.push(dueRow);
+              createdDuesCount++;
+            }
+          }
+        } else {
+          // Derive terms from frequency
+          const itemAmount = item.amount_paise;
+          if (itemAmount <= 0) continue;
+
+          for (const term of sortedTerms) {
+            const order = term.sort_order;
+            const matchesFrequency =
+              item.frequency === "monthly" ||
+              (item.frequency === "quarterly" && order % 3 === 0 && order < 12) ||
+              (item.frequency === "half_yearly" && (order === 0 || order === 6)) ||
+              ((item.frequency === "yearly" || item.frequency === "one_time") && order === 0);
+
+            if (matchesFrequency) {
+              const existingDue = existingDues.find(
+                (d) =>
+                  d.student_id === student.id &&
+                  d.academic_year_id === yearId &&
+                  d.fee_head_id === item.fee_head_id &&
+                  d.term_id === term.id &&
+                  d.source === "structure"
+              );
+
+              if (!existingDue) {
+                const concessionPaise = student.is_rte && head?.rte_waivable ? itemAmount : 0;
+                const netPaise = itemAmount - concessionPaise;
+                const dueRow: StudentDue = {
+                  id: uuid(),
+                  school_id: schoolId,
+                  student_id: student.id,
+                  academic_year_id: yearId,
+                  fee_head_id: item.fee_head_id,
+                  term_id: term.id,
+                  source: "structure",
+                  source_ref: assignment.id,
+                  description: null,
+                  gross_paise: itemAmount,
+                  concession_paise: concessionPaise,
+                  net_paise: netPaise,
+                  paid_paise: 0,
+                  balance_paise: netPaise,
+                  due_date: term.due_date,
+                  status: netPaise === 0 ? "waived" : "pending",
+                  created_at: now(),
+                  updated_at: now(),
+                  created_by: actorId ?? null,
+                };
+                newDuesToInsert.push(dueRow);
+                createdDuesCount++;
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Transport Dues: ONLY FOR ACTIVE TRANSPORT RIDERS
+      const transInfo = activeTransportMap.get(student.id);
+      if (transInfo && transportHead) {
+        transportRidersCount++;
+        const effDate = new Date(transInfo.effective_from);
+        const effYear = effDate.getFullYear();
+        const startMonth = effDate.getMonth() + 1;
+        const startYear = effYear;
+
+        let endYear: number | null = null;
+        let endMonth: number | null = null;
+        if (transInfo.effective_to) {
+          const toDate = new Date(transInfo.effective_to);
+          endYear = toDate.getFullYear();
+          endMonth = toDate.getMonth() + 1;
+        }
+
+        for (let tIdx = 0; tIdx < sortedTerms.length; tIdx++) {
+          const term = sortedTerms[tIdx];
+          const existingTransDue = existingDues.find(
+            (d) =>
+              d.student_id === student.id &&
+              d.academic_year_id === yearId &&
+              d.term_id === term.id &&
+              d.source === "transport" &&
+              d.status !== "cancelled"
+          );
+
+          if (!existingTransDue) {
+            const termBillingMonths = getTermBillingMonths(
+              term,
+              effYear,
+              [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
+              sortedTerms.length,
+              tIdx
+            );
+
+            const activeMonths = termBillingMonths.filter((bm) => {
+              const afterStart = bm.year > startYear || (bm.year === startYear && bm.month >= startMonth);
+              const beforeEnd = !endYear || bm.year < endYear || (bm.year === endYear && bm.month <= endMonth!);
+              return afterStart && beforeEnd;
+            });
+
+            if (activeMonths.length === 0) continue;
+
+            const grossPaise = transInfo.monthly_fee_paise * activeMonths.length;
+
+            const transDueRow: StudentDue = {
+              id: uuid(),
+              school_id: schoolId,
+              student_id: student.id,
+              academic_year_id: yearId,
+              fee_head_id: transportHead.id,
+              term_id: term.id,
+              source: "transport",
+              source_ref: transInfo.id,
+              description: `Transport Fee - ${term.name}`,
+              gross_paise: grossPaise,
+              concession_paise: 0,
+              net_paise: grossPaise,
+              paid_paise: 0,
+              balance_paise: grossPaise,
+              due_date: term.due_date,
+              status: "pending",
+              created_at: now(),
+              updated_at: now(),
+              created_by: actorId ?? null,
+            };
+            newDuesToInsert.push(transDueRow);
+            createdDuesCount++;
+          }
+        }
+      }
+    }
+
+    // Insert new assignments into Supabase / local
+    if (newAssignmentsToInsert.length > 0) {
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from("student_fee_assignments").insert(newAssignmentsToInsert);
+        } catch (e: any) {
+          console.warn("Insert student_fee_assignments error:", e.message);
+        }
+      }
+      const currentAssigns = lsGet<StudentFeeAssignment>(`myzkool_student_fee_assignments_${schoolId}`);
+      lsSet(`myzkool_student_fee_assignments_${schoolId}`, [...currentAssigns, ...newAssignmentsToInsert]);
+    }
+
+    // Insert new dues and corresponding atomic fee_ledger entries into Supabase / local
+    if (newDuesToInsert.length > 0) {
+      const newLedgerEntries: any[] = [];
+      for (const due of newDuesToInsert) {
+        if (due.concession_paise > 0) {
+          newLedgerEntries.push({
+            id: uuid(),
+            school_id: schoolId,
+            student_id: due.student_id,
+            academic_year_id: due.academic_year_id,
+            due_id: due.id,
+            receipt_id: null,
+            entry_type: "due_created",
+            amount_paise: due.gross_paise,
+            note: due.description || `Due created: ${due.source}`,
+            created_by: actorId ?? null,
+            created_at: now(),
+          });
+          newLedgerEntries.push({
+            id: uuid(),
+            school_id: schoolId,
+            student_id: due.student_id,
+            academic_year_id: due.academic_year_id,
+            due_id: due.id,
+            receipt_id: null,
+            entry_type: "concession",
+            amount_paise: -due.concession_paise,
+            note: `Concession applied: ${due.description || due.source}`,
+            created_by: actorId ?? null,
+            created_at: now(),
+          });
+        } else if (due.net_paise > 0) {
+          newLedgerEntries.push({
+            id: uuid(),
+            school_id: schoolId,
+            student_id: due.student_id,
+            academic_year_id: due.academic_year_id,
+            due_id: due.id,
+            receipt_id: null,
+            entry_type: "due_created",
+            amount_paise: due.net_paise,
+            note: due.description || `Due created: ${due.source}`,
+            created_by: actorId ?? null,
+            created_at: now(),
+          });
+        }
+      }
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from("student_dues").insert(newDuesToInsert);
+          if (newLedgerEntries.length > 0) {
+            await supabase.from("fee_ledger").insert(newLedgerEntries);
+          }
+        } catch (e: any) {
+          console.warn("Insert student_dues/fee_ledger error:", e.message);
+        }
+      }
+      const currentDues = lsGet<StudentDue>(`myzkool_student_dues_${schoolId}`);
+      lsSet(`myzkool_student_dues_${schoolId}`, [...currentDues, ...newDuesToInsert]);
+
+      if (newLedgerEntries.length > 0) {
+        const currentLedger = lsGet<any>(`myzkool_fee_ledger_${schoolId}`);
+        lsSet(`myzkool_fee_ledger_${schoolId}`, [...currentLedger, ...newLedgerEntries]);
+      }
+    }
+
+    return {
+      success: true,
+      assignedStudentsCount,
+      createdDuesCount,
+      transportRidersCount,
+    };
+  } catch (err: any) {
+    console.error("assignFeeStructureToEligibleStudents fallback error:", err);
+    return {
+      success: false,
+      assignedStudentsCount: 0,
+      createdDuesCount: 0,
+      transportRidersCount: 0,
+      error: err.message || "Failed to assign fee structure to students",
+    };
+  }
 }
 
 export async function checkStructureOverlaps(
@@ -860,41 +1652,54 @@ export async function saveCompleteFeeStructure(
   schoolId: string,
   input: {
     id?: string;
-    name: string;
-    academic_year_id: string;
+    name?: string;
+    academic_year_id?: string;
     status?: StructureStatus;
-    target_type: StructureTargetType;
+    target_type?: StructureTargetType;
     class_id?: string | null;
     class_ids?: string[];
     section_ids?: string[];
     student_ids?: string[];
     description?: string;
-    items: FeeStructureConfigItem[];
+    items?: FeeStructureConfigItem[];
+    metadata?: Record<string, any>;
   }
 ): Promise<{ structure?: FeeStructure; error?: string }> {
-  if (!schoolId || !input.academic_year_id || !input.name.trim()) {
+  // If id is provided, fetch existing to allow partial updates (like status toggles or editing)
+  let existing: FeeStructure | null = null;
+  if (input.id) {
+    const all = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
+    existing = all.find(s => s.id === input.id) || null;
+  }
+
+  const effectiveYearId = input.academic_year_id || existing?.academic_year_id;
+  const effectiveName = (input.name !== undefined ? input.name : existing?.name || "").trim();
+
+  if (!schoolId || !effectiveYearId || !effectiveName) {
     return { error: "Name, academic year and school are required" };
   }
 
-  const { structures: existingList } = await getFeeStructures(schoolId, input.academic_year_id);
-  const existing = input.id ? existingList.find(s => s.id === input.id) : null;
-
   const structureId = input.id || uuid();
+  const primaryClassId = input.class_id !== undefined ? input.class_id : existing?.class_id ?? (input.class_ids && input.class_ids.length > 0 ? input.class_ids[0] : (existing?.class_ids && existing.class_ids.length > 0 ? existing.class_ids[0] : null));
+  const resolvedClassIds = input.class_ids !== undefined ? input.class_ids : (existing?.class_ids && existing.class_ids.length > 0 ? existing.class_ids : primaryClassId ? [primaryClassId] : []);
+  const resolvedSectionIds = input.section_ids !== undefined ? input.section_ids : (existing?.section_ids ?? []);
+  const resolvedTargetType = input.target_type || existing?.target_type || (resolvedSectionIds.length > 0 ? "specific_sections" : resolvedClassIds.length > 0 ? "specific_classes" : "all_classes");
+
   const structure: FeeStructure = {
     id: structureId,
     school_id: schoolId,
-    academic_year_id: input.academic_year_id,
-    name: input.name.trim(),
+    academic_year_id: effectiveYearId,
+    name: effectiveName,
     status: input.status || (existing?.status ?? "draft"),
-    target_type: input.target_type,
-    class_id: input.class_id ?? (input.class_ids && input.class_ids.length === 1 ? input.class_ids[0] : null),
-    class_ids: input.class_ids ?? (input.class_id ? [input.class_id] : []),
-    section_ids: input.section_ids ?? [],
-    student_ids: input.student_ids ?? [],
-    description: input.description ?? "",
-    applies_to: input.target_type === "specific_students" ? "new_admission" : "all",
+    target_type: resolvedTargetType,
+    class_id: primaryClassId,
+    class_ids: resolvedClassIds,
+    section_ids: resolvedSectionIds,
+    student_ids: input.student_ids ?? (existing?.student_ids ?? []),
+    description: input.description ?? (existing?.description ?? ""),
+    applies_to: (input.target_type || existing?.target_type) === "specific_students" ? "new_admission" : "all",
     version: existing ? existing.version : 1,
-    metadata: existing?.metadata ?? {},
+    metadata: input.metadata ? { ...(existing?.metadata || {}), ...input.metadata } : (existing?.metadata ?? {}),
     created_at: existing ? existing.created_at : now(),
     updated_at: now(),
   };
@@ -904,8 +1709,18 @@ export async function saveCompleteFeeStructure(
     try {
       const { error: upErr } = await supabase.from("fee_structures").upsert(structure);
       if (upErr) {
-        const { target_type, class_ids, section_ids, student_ids, description, ...legacy } = structure;
-        await supabase.from("fee_structures").upsert(legacy);
+        console.warn("saveCompleteFeeStructure upsert failed, attempting update by ID:", upErr.message);
+        // Attempt explicit update if ID exists
+        const { error: updateErr } = await supabase
+          .from("fee_structures")
+          .update(structure)
+          .eq("id", structureId)
+          .eq("school_id", schoolId);
+
+        if (updateErr) {
+          const { target_type, class_ids, section_ids, student_ids, description, ...legacy } = structure;
+          await supabase.from("fee_structures").upsert(legacy);
+        }
       }
     } catch (e: any) {
       console.warn("saveCompleteFeeStructure Supabase note:", e.message);
@@ -914,77 +1729,203 @@ export async function saveCompleteFeeStructure(
   const allStructures = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
   lsSet(FEE_STRUCTURES_KEY(schoolId), [...allStructures.filter(s => s.id !== structureId), structure]);
 
-  // Handle items & term mappings
-  const existingItems = lsGet<FeeStructureItem>(FEE_STRUCTURE_ITEMS_KEY(schoolId)).filter(i => i.structure_id === structureId);
-  const existingItemIds = new Set(existingItems.map(i => i.id));
+  // Handle items & term mappings if provided
+  if (input.items && Array.isArray(input.items)) {
+    const existingItems = lsGet<FeeStructureItem>(FEE_STRUCTURE_ITEMS_KEY(schoolId)).filter(i => i.structure_id === structureId);
+    const existingItemIds = new Set(existingItems.map(i => i.id));
 
-  // Save new items
-  const savedItems: FeeStructureItem[] = [];
-  const savedItemTerms: FeeStructureItemTerm[] = [];
+    // Save new items
+    const savedItems: FeeStructureItem[] = [];
+    const savedItemTerms: FeeStructureItemTerm[] = [];
 
-  for (const itemInput of input.items) {
-    const existingItem = existingItems.find(i => i.fee_head_id === itemInput.fee_head_id);
-    const itemId = existingItem ? existingItem.id : uuid();
+    for (const itemInput of input.items) {
+      const existingItem = existingItems.find(i => i.fee_head_id === itemInput.fee_head_id);
+      const itemId = existingItem ? existingItem.id : uuid();
 
-    const itemRow: FeeStructureItem = {
-      id: itemId,
-      school_id: schoolId,
-      structure_id: structureId,
-      fee_head_id: itemInput.fee_head_id,
-      pattern: "custom",
-      frequency: itemInput.frequency,
-      is_mandatory: itemInput.is_mandatory ?? true,
-      proration_rule: itemInput.proration_rule ?? "full",
-      start_date: itemInput.start_date || null,
-      end_date: itemInput.end_date || null,
-      amount_paise: Math.round(itemInput.base_amount_rupees * 100),
-    };
-    savedItems.push(itemRow);
-
-    if (isSupabaseConfigured) {
-      try {
-        const { error: itemErr } = await supabase.from("fee_structure_items").upsert(itemRow);
-        if (itemErr) {
-          const { frequency, is_mandatory, proration_rule, start_date, end_date, amount_paise, ...legacyItem } = itemRow;
-          await supabase.from("fee_structure_items").upsert(legacyItem);
-        }
-      } catch (e: any) {
-        console.warn("upsert fee_structure_item error:", e.message);
-      }
-    }
-
-    // Term amounts
-    for (const [termId, amountRupees] of Object.entries(itemInput.term_amounts || {})) {
-      const termAmountRow: FeeStructureItemTerm = {
-        item_id: itemId,
-        term_id: termId,
-        amount_paise: Math.round(Number(amountRupees || 0) * 100),
+      const itemRow: FeeStructureItem = {
+        id: itemId,
+        school_id: schoolId,
+        structure_id: structureId,
+        fee_head_id: itemInput.fee_head_id,
+        pattern: "custom",
+        frequency: itemInput.frequency,
+        is_mandatory: itemInput.is_mandatory ?? true,
+        proration_rule: itemInput.proration_rule ?? "full",
+        start_date: itemInput.start_date || null,
+        end_date: itemInput.end_date || null,
+        amount_paise: Math.round(itemInput.base_amount_rupees * 100),
       };
-      savedItemTerms.push(termAmountRow);
+      savedItems.push(itemRow);
 
       if (isSupabaseConfigured) {
         try {
-          await supabase.from("fee_structure_item_terms").upsert(termAmountRow, {
-            onConflict: "item_id,term_id",
-          });
+          const { error: itemErr } = await supabase.from("fee_structure_items").upsert(itemRow);
+          if (itemErr) {
+            const { frequency, is_mandatory, proration_rule, start_date, end_date, amount_paise, ...legacyItem } = itemRow;
+            await supabase.from("fee_structure_items").upsert(legacyItem);
+          }
         } catch (e: any) {
-          console.warn("upsert fee_structure_item_terms error:", e.message);
+          console.warn("upsert fee_structure_item error:", e.message);
         }
+      }
+
+      // Term amounts
+      for (const [termId, amountRupees] of Object.entries(itemInput.term_amounts || {})) {
+        const termAmountRow: FeeStructureItemTerm = {
+          item_id: itemId,
+          term_id: termId,
+          amount_paise: Math.round(Number(amountRupees || 0) * 100),
+        };
+        savedItemTerms.push(termAmountRow);
+
+        if (isSupabaseConfigured) {
+          try {
+            await supabase.from("fee_structure_item_terms").upsert(termAmountRow, {
+              onConflict: "item_id,term_id",
+            });
+          } catch (e: any) {
+            console.warn("upsert fee_structure_item_terms error:", e.message);
+          }
+        }
+      }
+    }
+
+    // Update local caches
+    const allCachedItems = lsGet<FeeStructureItem>(FEE_STRUCTURE_ITEMS_KEY(schoolId));
+    const otherItems = allCachedItems.filter(i => i.structure_id !== structureId);
+    lsSet(FEE_STRUCTURE_ITEMS_KEY(schoolId), [...otherItems, ...savedItems]);
+
+    const newItemIds = new Set(savedItems.map(i => i.id));
+    const allCachedItemTerms = lsGet<FeeStructureItemTerm>(FEE_STRUCTURE_ITEM_TERMS_KEY(schoolId));
+    const otherItemTerms = allCachedItemTerms.filter(t => !existingItemIds.has(t.item_id) && !newItemIds.has(t.item_id));
+    lsSet(FEE_STRUCTURE_ITEM_TERMS_KEY(schoolId), [...otherItemTerms, ...savedItemTerms]);
+  }
+
+  // Sync junction tables in Supabase if specific classes or sections are targeted
+  if (isSupabaseConfigured) {
+    try {
+      // 1. fee_structure_classes
+      await supabase.from("fee_structure_classes").delete().eq("school_id", schoolId).eq("fee_structure_id", structureId);
+      const classIdsToInsert = structure.class_ids || (structure.class_id ? [structure.class_id] : []);
+      if (classIdsToInsert.length > 0) {
+        const classRows = classIdsToInsert.map(cid => ({
+          school_id: schoolId,
+          fee_structure_id: structureId,
+          class_id: cid,
+        }));
+        await supabase.from("fee_structure_classes").insert(classRows);
+      }
+
+      // 2. fee_structure_sections
+      await supabase.from("fee_structure_sections").delete().eq("school_id", schoolId).eq("fee_structure_id", structureId);
+      if (structure.section_ids && structure.section_ids.length > 0) {
+        const secRows = structure.section_ids.map(sid => ({
+          school_id: schoolId,
+          fee_structure_id: structureId,
+          section_id: sid,
+        }));
+        await supabase.from("fee_structure_sections").insert(secRows);
+      }
+    } catch (e: any) {
+      console.warn("fee_structure junctions sync note:", e.message);
+    }
+  }
+
+  // Automatic student fee assignment if structure is marked Active
+  if (structure.status === "active") {
+    try {
+      await assignFeeStructureToEligibleStudents(schoolId, structureId);
+    } catch (e: any) {
+      console.warn("Auto-assignment on saveCompleteFeeStructure error:", e.message);
+    }
+  }
+
+  return { structure };
+}
+
+export async function deleteFeeStructure(
+  schoolId: string,
+  structureId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!schoolId || !structureId) {
+    return { success: false, error: "School ID and Structure ID are required" };
+  }
+
+  // 1. Financial integrity check: Cannot delete if active student dues or assignments exist
+  if (isSupabaseConfigured) {
+    try {
+      // Check RPC function first
+      const { data: checkRes, error: rpcErr } = await supabase.rpc("check_fee_structure_can_delete", {
+        p_school_id: schoolId,
+        p_structure_id: structureId,
+      });
+
+      if (!rpcErr && checkRes && checkRes.can_delete === false) {
+        return { success: false, error: checkRes.reason };
+      }
+
+      // Direct fallback count checks
+      const { count: assignCount } = await supabase
+        .from("student_fee_assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .eq("structure_id", structureId)
+        .eq("status", "active");
+
+      if (assignCount && assignCount > 0) {
+        return {
+          success: false,
+          error: `Cannot delete fee structure: ${assignCount} student(s) currently have active fee assignments to this structure. Archive the structure instead to preserve financial audit history.`,
+        };
+      }
+
+      // Safe deletion in Supabase (cascades or delete explicitly)
+      await supabase.from("fee_structure_sections").delete().eq("school_id", schoolId).eq("fee_structure_id", structureId);
+      await supabase.from("fee_structure_classes").delete().eq("school_id", schoolId).eq("fee_structure_id", structureId);
+      
+      const { data: itemRows } = await supabase.from("fee_structure_items").select("id").eq("structure_id", structureId);
+      if (itemRows && itemRows.length > 0) {
+        const itemIds = itemRows.map(i => i.id);
+        await supabase.from("fee_structure_item_terms").delete().in("item_id", itemIds);
+      }
+      await supabase.from("fee_structure_items").delete().eq("structure_id", structureId);
+      
+      const { error: delErr } = await supabase.from("fee_structures").delete().eq("id", structureId).eq("school_id", schoolId);
+      if (delErr) throw delErr;
+    } catch (e: any) {
+      console.warn("deleteFeeStructure Supabase error:", e.message);
+      // If error mentions foreign key or constraint, return friendly error
+      if (e.message?.includes("foreign key") || e.message?.includes("violates foreign key")) {
+        return {
+          success: false,
+          error: "Cannot delete fee structure because existing financial records or invoices depend on it. Please archive the structure instead.",
+        };
       }
     }
   }
 
-  // Update local caches
-  const allCachedItems = lsGet<FeeStructureItem>(FEE_STRUCTURE_ITEMS_KEY(schoolId));
-  const otherItems = allCachedItems.filter(i => i.structure_id !== structureId);
-  lsSet(FEE_STRUCTURE_ITEMS_KEY(schoolId), [...otherItems, ...savedItems]);
+  // Check local dues / assignments cache
+  const localAssignments = lsGet<StudentFeeAssignment>(`myzkool_student_fee_assignments_${schoolId}`);
+  const activeLocalAssigns = localAssignments.filter(a => a.structure_id === structureId && a.status === "active");
+  if (activeLocalAssigns.length > 0) {
+    return {
+      success: false,
+      error: `Cannot delete fee structure: ${activeLocalAssigns.length} student(s) have active assignments in local records. Please archive the structure instead.`,
+    };
+  }
 
-  const newItemIds = new Set(savedItems.map(i => i.id));
-  const allCachedItemTerms = lsGet<FeeStructureItemTerm>(FEE_STRUCTURE_ITEM_TERMS_KEY(schoolId));
-  const otherItemTerms = allCachedItemTerms.filter(t => !existingItemIds.has(t.item_id) && !newItemIds.has(t.item_id));
-  lsSet(FEE_STRUCTURE_ITEM_TERMS_KEY(schoolId), [...otherItemTerms, ...savedItemTerms]);
+  // Remove from localStorage caches
+  const allStructures = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
+  lsSet(FEE_STRUCTURES_KEY(schoolId), allStructures.filter(s => s.id !== structureId));
 
-  return { structure };
+  const allItems = lsGet<FeeStructureItem>(FEE_STRUCTURE_ITEMS_KEY(schoolId));
+  const removedItemIds = new Set(allItems.filter(i => i.structure_id === structureId).map(i => i.id));
+  lsSet(FEE_STRUCTURE_ITEMS_KEY(schoolId), allItems.filter(i => i.structure_id !== structureId));
+
+  const allTerms = lsGet<FeeStructureItemTerm>(FEE_STRUCTURE_ITEM_TERMS_KEY(schoolId));
+  lsSet(FEE_STRUCTURE_ITEM_TERMS_KEY(schoolId), allTerms.filter(t => !removedItemIds.has(t.item_id)));
+
+  return { success: true };
 }
 
 export async function getStructureConfigItems(
@@ -1302,6 +2243,12 @@ export async function activateStructure(
         .update({ status: "active", version: newVersion, updated_at: now() })
         .eq("id", structureId);
       if (error) throw error;
+      // Auto-assign to eligible students
+      try {
+        await assignFeeStructureToEligibleStudents(schoolId, structureId, actorId);
+      } catch (err: any) {
+        console.warn("Auto-assignment on activateStructure error:", err.message);
+      }
       return { version: newVersion };
     } catch (e: any) { return { error: e.message }; }
   }
@@ -1312,6 +2259,11 @@ export async function activateStructure(
     return x;
   });
   lsSet(FEE_STRUCTURES_KEY(schoolId), updated);
+  try {
+    await assignFeeStructureToEligibleStudents(schoolId, structureId, actorId);
+  } catch (err: any) {
+    console.warn("Auto-assignment on activateStructure error:", err.message);
+  }
   return { version: (s.version || 1) + 1 };
 }
 

@@ -1,15 +1,13 @@
 /**
  * FeeDashboard — /admin/fees
- * Redesigned MyZkool School Fee Management Dashboard
- * 
- * Features:
- * 1. Clean Header with Title, Subtitle, and Quick Actions (Collect Fee, Assign Dues, Fee Settings)
- * 2. Fee Setup Status Banner with Step-by-Step progress (5 steps: Categories, Cycles, Structures, Assign Dues, Payment Collection)
- * 3. Key Metrics: Collected Today, Collected This Month, Outstanding Fees, Overdue Fees (formatted in ₹)
- * 4. Quick Actions: Collect Fee, Assign Dues, View Invoices, Manage Structures, View Receipts, Manage Defaulters
- * 5. Fee Collection Overview: Recent transactions table with student name, admission/receipt no, class, amount, method, date, status
- * 6. Outstanding Fees: Class-wise outstanding balances and overdue indicators
- * 7. Operational Highlights: Cheques, Approvals, Day Status, Promised Payments
+ * Complete redesign matching reference UI:
+ *  A. Page header (title + subtitle + Create Invoice / Collect Payment / More)
+ *  B. Compact setup reminder
+ *  C. 4 summary stat cards
+ *  D. Analytics row (SVG bar chart + SVG donut chart)
+ *  E. 4 quick-action cards
+ *  F. Two-column tables (recent collections + top pending dues)
+ *  G. Receipt slide-over drawer
  */
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -17,39 +15,37 @@ import { useNavigate, Link } from "react-router-dom";
 import {
   CreditCard,
   IndianRupee,
-  PlusCircle,
-  Settings,
-  FileCheck2,
   Receipt,
   AlertTriangle,
   CheckCircle2,
   Clock,
-  Users,
   ArrowRight,
-  Layers,
-  Calendar,
-  Grid3X3,
-  RefreshCw,
-  FileText,
-  CheckSquare,
-  ShieldAlert,
-  ArrowUpRight,
-  Sliders,
   TrendingUp,
-  Ban,
+  TrendingDown,
+  FileCheck2,
+  Grid3X3,
+  X,
+  ChevronRight,
+  RefreshCw,
+  Sparkles,
+  Printer,
+  ExternalLink,
+  Users,
+  Bell,
+  FileText,
+  MoreVertical,
+  Plus,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
-import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
-import { getReceipts } from "../../../services/collectionService";
-import { getStudentDues } from "../../../services/feeDuesService";
+import { getReceipts, getReceiptById } from "../../../services/collectionService";
 import { getFeeHeads, getFeeTerms, getFeeStructures } from "../../../services/feeSetupService";
 import { getCurrentAcademicYear } from "../../../services/academicService";
-import { getCheques } from "../../../services/chequeService";
-import { getPendingCount } from "../../../services/approvalService";
-import { isBusinessDateClosed } from "../../../services/dayCloseService";
-import { getFollowups } from "../../../services/reminderJob";
+import { generateReceiptHTML } from "../../../lib/receiptTemplate";
 import { supabase, isSupabaseConfigured } from "../../../lib/supabase";
-import type { FeeReceipt } from "../../../types/collection";
+import type { FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RecentTransaction {
   id: string;
@@ -64,10 +60,20 @@ interface RecentTransaction {
   status: "active" | "cancelled" | "bounced";
 }
 
-interface ClassOutstandingItem {
+interface TopPendingDue {
+  studentId: string;
+  studentName: string;
+  admissionNo: string;
   className: string;
-  amountPaise: number;
-  studentCount: number;
+  balancePaise: number;
+  daysPastDue: number;
+}
+
+interface MonthlyData {
+  month: string;
+  label: string;
+  collectedPaise: number;
+  pendingPaise: number;
 }
 
 interface SetupStep {
@@ -77,8 +83,9 @@ interface SetupStep {
   description: string;
   href: string;
   isComplete: boolean;
-  icon: React.ElementType;
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(paise: number): string {
   const num = Number(paise);
@@ -98,6 +105,243 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function formatDateShort(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+function calcDaysOverdue(dueDateStr: string, todayStr: string): number {
+  if (!dueDateStr || dueDateStr >= todayStr) return 0;
+  return Math.floor(
+    (new Date(todayStr).getTime() - new Date(dueDateStr).getTime()) / 86400000
+  );
+}
+
+// ─── SVG Bar Chart ────────────────────────────────────────────────────────────
+
+function CollectionBarChart({
+  data,
+  loading,
+}: {
+  data: MonthlyData[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-end gap-1.5 h-36 px-2 pt-4">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex-1 bg-slate-100 animate-pulse rounded-t"
+            style={{ height: `${20 + ((i * 11) % 75)}%` }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const maxPaise = Math.max(
+    ...data.map((d) => d.collectedPaise + d.pendingPaise),
+    1
+  );
+  const chartH = 130;
+  const labelH = 20;
+  const barW = 22;
+  const gap = 6;
+  const leftPad = 36;
+  const totalW = leftPad + data.length * (barW + gap) - gap + 8;
+
+  const magnitude = Math.pow(10, Math.floor(Math.log10(maxPaise / 100)));
+  const yMax = Math.ceil((maxPaise / 100) / magnitude) * magnitude;
+  const formatY = (v: number) =>
+    v >= 100000
+      ? `${(v / 100000).toFixed(0)}L`
+      : v >= 1000
+      ? `${(v / 1000).toFixed(0)}K`
+      : `${v}`;
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${totalW} ${chartH + labelH + 10}`}
+        className="w-full"
+        style={{ minWidth: `${Math.max(totalW, 280)}px`, maxHeight: "180px" }}
+      >
+        {yTicks.map((t, i) => {
+          const y = chartH - t * chartH;
+          return (
+            <g key={i}>
+              <line
+                x1={leftPad}
+                y1={y}
+                x2={totalW - 4}
+                y2={y}
+                stroke="#F1F5F9"
+                strokeWidth={1}
+              />
+              <text
+                x={leftPad - 4}
+                y={y + 3}
+                textAnchor="end"
+                fontSize={8}
+                fill="#94A3B8"
+              >
+                {formatY(Math.round(t * yMax))}
+              </text>
+            </g>
+          );
+        })}
+        {data.map((d, i) => {
+          const x = leftPad + i * (barW + gap);
+          const collH =
+            yMax > 0 ? (d.collectedPaise / 100 / yMax) * chartH : 0;
+          const pendH =
+            yMax > 0 ? (d.pendingPaise / 100 / yMax) * chartH : 0;
+          const totH = collH + pendH;
+          return (
+            <g key={d.month}>
+              {pendH > 0 && (
+                <rect
+                  x={x}
+                  y={chartH - totH}
+                  width={barW}
+                  height={pendH}
+                  fill="#BFDBFE"
+                  rx={totH > 4 ? 3 : 0}
+                />
+              )}
+              {collH > 0 && (
+                <rect
+                  x={x}
+                  y={chartH - collH}
+                  width={barW}
+                  height={collH}
+                  fill="#22C55E"
+                  rx={3}
+                />
+              )}
+              <text
+                x={x + barW / 2}
+                y={chartH + labelH}
+                textAnchor="middle"
+                fontSize={8.5}
+                fill="#94A3B8"
+              >
+                {d.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ─── SVG Donut Chart ──────────────────────────────────────────────────────────
+
+function DonutChart({
+  collected,
+  pending,
+  overdue,
+  loading,
+}: {
+  collected: number;
+  pending: number;
+  overdue: number;
+  loading: boolean;
+}) {
+  const pendingNonOverdue = Math.max(0, pending - overdue);
+  const total = collected + pending;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <div className="w-32 h-32 rounded-full bg-slate-100 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (total === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-6 gap-2">
+        <div className="w-28 h-28 rounded-full border-8 border-slate-100 flex items-center justify-center">
+          <span className="text-xs text-slate-400 text-center px-2">No data yet</span>
+        </div>
+      </div>
+    );
+  }
+
+  const r = 56;
+  const cx = 72;
+  const cy = 72;
+  const sw = 20;
+  const C = 2 * Math.PI * r;
+
+  const cf = collected / total;
+  const pf = pendingNonOverdue / total;
+  const of = overdue / total;
+  const cd = cf * C;
+  const pd = pf * C;
+  const od = of * C;
+  const o0 = C * 0.25;
+  const o1 = o0 - cd;
+  const o2 = o1 - pd;
+
+  const cpct = Math.round(cf * 100);
+  const ppct = Math.round(pf * 100);
+  const opct = Math.round(of * 100);
+
+  return (
+    <div className="flex items-center gap-5">
+      <div className="relative shrink-0">
+        <svg viewBox="0 0 144 144" className="w-36 h-36">
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F1F5F9" strokeWidth={sw} />
+          {cd > 0.5 && (
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#22C55E" strokeWidth={sw}
+              strokeDasharray={`${cd} ${C}`} strokeDashoffset={o0} strokeLinecap="round" />
+          )}
+          {pd > 0.5 && (
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#93C5FD" strokeWidth={sw}
+              strokeDasharray={`${pd} ${C}`} strokeDashoffset={o1} strokeLinecap="round" />
+          )}
+          {od > 0.5 && (
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F87171" strokeWidth={sw}
+              strokeDasharray={`${od} ${C}`} strokeDashoffset={o2} strokeLinecap="round" />
+          )}
+          <text x={cx} y={cy - 5} textAnchor="middle" fontSize={20} fontWeight="bold" fill="#141A2E"
+            fontFamily="system-ui,sans-serif">{cpct}%</text>
+          <text x={cx} y={cy + 11} textAnchor="middle" fontSize={9} fill="#5B6478"
+            fontFamily="system-ui,sans-serif">Collected</text>
+        </svg>
+      </div>
+      <div className="space-y-3 text-xs">
+        {[
+          { color: "#22C55E", label: "Collected", amount: collected, pct: cpct },
+          { color: "#93C5FD", label: "Pending", amount: pendingNonOverdue, pct: ppct },
+          { color: "#F87171", label: "Overdue", amount: overdue, pct: opct },
+        ].map((s) => (
+          <div key={s.label} className="flex items-start gap-2">
+            <span className="w-3 h-3 rounded-full mt-0.5 shrink-0" style={{ background: s.color }} />
+            <div>
+              <p className="font-semibold text-slate-700">{s.label}</p>
+              <p className="text-slate-500 tabular-nums">{fmt(s.amount)} ({s.pct}%)</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ────────────────────────────────────────────────────────────
+
 export default function FeeDashboard() {
   const { schoolId } = useAuth();
   const navigate = useNavigate();
@@ -105,828 +349,628 @@ export default function FeeDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [yearId, setYearId] = useState("");
+  const [yearLabel, setYearLabel] = useState("Current Year");
   const [todayDate] = useState(new Date().toISOString().split("T")[0]);
 
-  // Key Metrics
-  const [collectedTodayPaise, setCollectedTodayPaise] = useState(0);
+  // Metrics
+  const [collectedYearPaise, setCollectedYearPaise] = useState(0);
   const [collectedMonthPaise, setCollectedMonthPaise] = useState(0);
+  const [collectedLastMonthPaise, setCollectedLastMonthPaise] = useState(0);
   const [outstandingPaise, setOutstandingPaise] = useState(0);
   const [overduePaise, setOverduePaise] = useState(0);
+  const [totalStudents, setTotalStudents] = useState(0);
 
-  // Setup Progress Steps
+  // Setup steps
   const [setupSteps, setSetupSteps] = useState<SetupStep[]>([
-    {
-      id: "heads",
-      stepNumber: 1,
-      title: "Fee Categories",
-      description: "Define categories such as Tuition, Exams, and Lab fees.",
-      href: "/admin/fees/setup/heads",
-      isComplete: false,
-      icon: Layers,
-    },
-    {
-      id: "terms",
-      stepNumber: 2,
-      title: "Billing Cycles",
-      description: "Configure payment terms and schedule due dates.",
-      href: "/admin/fees/setup/terms",
-      isComplete: false,
-      icon: Calendar,
-    },
-    {
-      id: "structures",
-      stepNumber: 3,
-      title: "Fee Structures",
-      description: "Set term-wise fee amounts for every grade level.",
-      href: "/admin/fees/setup/structures",
-      isComplete: false,
-      icon: Grid3X3,
-    },
-    {
-      id: "dues",
-      stepNumber: 4,
-      title: "Assign Dues",
-      description: "Generate student invoices based on fee structures.",
-      href: "/admin/fees/dues",
-      isComplete: false,
-      icon: FileCheck2,
-    },
-    {
-      id: "collect",
-      stepNumber: 5,
-      title: "Payment Collection",
-      description: "Receive fee payments and generate formal receipts.",
-      href: "/admin/fees/collect",
-      isComplete: false,
-      icon: CreditCard,
-    },
+    { id: "heads", stepNumber: 1, title: "Fee Categories", description: "Define fee heads", href: "/admin/fees/setup/heads", isComplete: false },
+    { id: "terms", stepNumber: 2, title: "Billing Cycles", description: "Configure cycles", href: "/admin/fees/setup/terms", isComplete: false },
+    { id: "structures", stepNumber: 3, title: "Fee Structures", description: "Set class fee amounts", href: "/admin/fees/setup/structures", isComplete: false },
+    { id: "dues", stepNumber: 4, title: "Assign Dues", description: "Generate student invoices", href: "/admin/fees/dues", isComplete: false },
+    { id: "collect", stepNumber: 5, title: "Payment Collection", description: "Receive fee payments", href: "/admin/fees/collect", isComplete: false },
   ]);
+  const [setupDismissed, setSetupDismissed] = useState(() => {
+    try { return sessionStorage.getItem("myzkool_fee_setup_dismissed") === "true"; } catch { return false; }
+  });
 
-  // Recent Collections
+  // Chart + table data
+  const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
+  const [topPendingDues, setTopPendingDues] = useState<TopPendingDue[]>([]);
 
-  // Class-wise Outstanding
-  const [classOutstanding, setClassOutstanding] = useState<ClassOutstandingItem[]>([]);
+  // UI state
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
-  // Operational Action Highlights
-  const [pendingChequesCount, setPendingChequesCount] = useState(0);
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
-  const [dayClosed, setDayClosed] = useState(false);
-  const [promisedTodayCount, setPromisedTodayCount] = useState(0);
+  // Drawer
+  const [selectedTx, setSelectedTx] = useState<RecentTransaction | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerReceipt, setDrawerReceipt] = useState<FeeReceipt | null>(null);
+  const [drawerItems, setDrawerItems] = useState<FeeReceiptItem[]>([]);
+  const [drawerPayments, setDrawerPayments] = useState<FeePayment[]>([]);
 
-  // Resolve current academic year
+  // Resolve academic year
   useEffect(() => {
     if (!schoolId) return;
-    let isMounted = true;
-    async function resolveYear() {
+    let mounted = true;
+    (async () => {
       try {
-        const storedYears = JSON.parse(
-          localStorage.getItem(`myzkool_academic_years_${schoolId}`) || "[]"
-        );
-        const currentYear = storedYears.find((y: any) => y.is_current);
-        if (currentYear?.id) {
-          if (isMounted) setYearId(currentYear.id);
+        const stored = JSON.parse(localStorage.getItem(`myzkool_academic_years_${schoolId}`) || "[]");
+        const cur = stored.find((y: any) => y.is_current);
+        if (cur?.id && mounted) {
+          setYearId(cur.id);
+          if (cur.label || cur.name) setYearLabel(cur.label || cur.name);
           return;
         }
-      } catch {
-        // ignore
-      }
-
-      // Fallback: Query active academic year via academicService
+      } catch { /* ignore */ }
       try {
         const { academicYear } = await getCurrentAcademicYear(schoolId);
-        if (academicYear?.id && isMounted) {
+        if (academicYear?.id && mounted) {
           setYearId(academicYear.id);
+          const y = academicYear as any;
+          if (y.label || y.name) setYearLabel(y.label || y.name);
         }
-      } catch {
-        // ignore
-      }
-    }
-    resolveYear();
-    return () => {
-      isMounted = false;
-    };
+      } catch { /* ignore */ }
+    })();
+    return () => { mounted = false; };
   }, [schoolId]);
 
+  // Load all dashboard data
   const loadDashboardData = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     setError(null);
 
     try {
-      const currentMonthPrefix = todayDate.slice(0, 7);
+      const curMonthPfx = todayDate.slice(0, 7);
+      const lastMonthDate = new Date(todayDate);
+      lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+      const lstMonthPfx = lastMonthDate.toISOString().slice(0, 7);
 
-      // ─── 1. Receipts & Daily Collections ────────────────────────────────────
+      // 1. Receipts
       const { receipts: allReceipts } = await getReceipts(schoolId, undefined, yearId || undefined);
-      const activeReceipts = allReceipts.filter((r) => r.status === "active");
+      const active = allReceipts.filter((r) => r.status === "active");
 
-      let todaySum = 0;
-      let monthSum = 0;
-
-      for (const r of activeReceipts) {
-        if (r.receipt_date === todayDate) {
-          todaySum += r.total_paise;
-        }
-        if (r.receipt_date.startsWith(currentMonthPrefix)) {
-          monthSum += r.total_paise;
-        }
+      let yearSum = 0, monthSum = 0, lastSum = 0;
+      for (const r of active) {
+        yearSum += r.total_paise;
+        if (r.receipt_date.startsWith(curMonthPfx)) monthSum += r.total_paise;
+        if (r.receipt_date.startsWith(lstMonthPfx)) lastSum += r.total_paise;
       }
-
-      setCollectedTodayPaise(todaySum);
+      setCollectedYearPaise(yearSum);
       setCollectedMonthPaise(monthSum);
+      setCollectedLastMonthPaise(lastSum);
 
-      // ─── 2. Recent Transactions (Top 8 with student info & mode) ───────────
-      const recentSlice = allReceipts.slice(0, 8);
-      const studentIds = Array.from(new Set(recentSlice.map((r) => r.student_id).filter(Boolean)));
-      const receiptIds = recentSlice.map((r) => r.id);
+      // 2. Monthly chart data
+      const monthMap: Record<string, { label: string; collectedPaise: number; pendingPaise: number }> = {};
+      const now = new Date();
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = d.toISOString().slice(0, 7);
+        const label = d.toLocaleDateString("en-IN", { month: "short" });
+        monthMap[key] = { label, collectedPaise: 0, pendingPaise: 0 };
+      }
+      for (const r of active) {
+        const key = r.receipt_date.slice(0, 7);
+        if (monthMap[key]) monthMap[key].collectedPaise += r.total_paise;
+      }
 
-      const studentMap: Record<string, { name: string; admission_no: string; class_name: string }> = {};
-      const modeMap: Record<string, string> = {};
+      // 3. Recent transactions (top 10)
+      const slice = allReceipts.slice(0, 10);
+      const sids = Array.from(new Set(slice.map((r) => r.student_id).filter(Boolean)));
+      const rids = slice.map((r) => r.id);
+      const sMap: Record<string, { name: string; admission_no: string; class_name: string }> = {};
+      const mMap: Record<string, string> = {};
 
-      if (isSupabaseConfigured && studentIds.length > 0) {
+      if (isSupabaseConfigured && sids.length > 0) {
         try {
-          const { data: studentsData } = await supabase
+          const { data: sd } = await supabase
             .from("students")
-            .select("id, first_name, last_name, admission_no, class_id, classes(name)")
-            .in("id", studentIds);
-
-          if (studentsData) {
-            for (const st of studentsData as any[]) {
-              studentMap[st.id] = {
-                name: `${st.first_name || ""} ${st.last_name || ""}`.trim() || "Student",
-                admission_no: st.admission_no || "—",
-                class_name: st.classes?.name || "Class",
+            .select("id, first_name, last_name, admission_no, classes(name)")
+            .eq("school_id", schoolId)
+            .in("id", sids);
+          if (sd) {
+            for (const s of sd as any[]) {
+              sMap[s.id] = {
+                name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || "Student",
+                admission_no: s.admission_no || "—",
+                class_name: s.classes?.name || "Class",
               };
             }
           }
-
-          if (receiptIds.length > 0) {
-            const { data: paymentsData } = await supabase
-              .from("fee_payments")
-              .select("receipt_id, mode")
-              .in("receipt_id", receiptIds);
-
-            if (paymentsData) {
-              for (const p of paymentsData as any[]) {
-                if (p.receipt_id && !modeMap[p.receipt_id]) {
-                  modeMap[p.receipt_id] = p.mode;
-                }
-              }
-            }
+          if (rids.length > 0) {
+            const { data: pd } = await supabase
+              .from("fee_payments").select("receipt_id, mode").eq("school_id", schoolId).in("receipt_id", rids);
+            if (pd) for (const p of pd as any[]) { if (p.receipt_id && !mMap[p.receipt_id]) mMap[p.receipt_id] = p.mode; }
           }
-        } catch (supabaseErr) {
-          console.warn("Supabase student lookup warning, falling back to local:", supabaseErr);
-        }
+        } catch (e) { console.warn("Student lookup:", e); }
       }
-
-      // Local storage fallback for students/classes/payments if missing
-      if (typeof localStorage !== "undefined") {
-        try {
-          const localStudents = JSON.parse(
-            localStorage.getItem(`myzkool_students_${schoolId}`) || "[]"
-          );
-          const localClasses = JSON.parse(
-            localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]"
-          );
-          const localPayments = JSON.parse(
-            localStorage.getItem(`myzkool_fee_payments_${schoolId}`) || "[]"
-          );
-
-          for (const st of localStudents) {
-            if (!studentMap[st.id]) {
-              const cls = localClasses.find((c: any) => c.id === st.class_id);
-              studentMap[st.id] = {
-                name: `${st.first_name || ""} ${st.last_name || ""}`.trim() || "Student",
-                admission_no: st.admission_no || "—",
-                class_name: cls?.name || "Class",
-              };
-            }
+      // localStorage fallback
+      try {
+        const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
+        const lc = JSON.parse(localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]");
+        const lp = JSON.parse(localStorage.getItem(`myzkool_fee_payments_${schoolId}`) || "[]");
+        for (const s of ls) {
+          if (!sMap[s.id]) {
+            const cls = lc.find((c: any) => c.id === s.class_id);
+            sMap[s.id] = { name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || "Student", admission_no: s.admission_no || "—", class_name: cls?.name || "Class" };
           }
-
-          for (const p of localPayments) {
-            if (p.receipt_id && !modeMap[p.receipt_id]) {
-              modeMap[p.receipt_id] = p.mode;
-            }
-          }
-        } catch {
-          // ignore
         }
-      }
+        for (const p of lp) { if (p.receipt_id && !mMap[p.receipt_id]) mMap[p.receipt_id] = p.mode; }
+      } catch { /* ignore */ }
 
-      const formattedRecent: RecentTransaction[] = recentSlice.map((r) => {
-        const studentInfo = studentMap[r.student_id] || {
-          name: "Student",
-          admission_no: "—",
-          class_name: "Class",
-        };
-        const paymentMode = modeMap[r.id] || r.source || "cash";
-
+      setRecentTransactions(slice.map((r) => {
+        const s = sMap[r.student_id] || { name: "Student", admission_no: "—", class_name: "Class" };
         return {
-          id: r.id,
-          receipt_no: r.receipt_no,
-          student_id: r.student_id,
-          student_name: studentInfo.name,
-          admission_no: studentInfo.admission_no,
-          class_name: studentInfo.class_name,
+          id: r.id, receipt_no: r.receipt_no, student_id: r.student_id,
+          student_name: s.name, admission_no: s.admission_no, class_name: s.class_name,
           total_paise: r.total_paise,
-          payment_mode: paymentMode,
-          receipt_date: r.receipt_date,
-          status: r.status,
+          payment_mode: mMap[r.id] || r.source || "Cash",
+          receipt_date: r.receipt_date, status: r.status,
         };
-      });
+      }));
 
-      setRecentTransactions(formattedRecent);
-
-      // ─── 3. Outstanding and Overdue Fees ───────────────────────────────────
-      let totalOutstanding = 0;
-      let totalOverdue = 0;
-      const classMap: Record<string, { amountPaise: number; studentCount: number }> = {};
-      let totalDuesCount = 0;
+      // 4. Dues
+      let totalOut = 0, totalOvd = 0, duesCount = 0;
+      const topDues: TopPendingDue[] = [];
 
       if (isSupabaseConfigured) {
         try {
-          let duesQuery = supabase
+          let q = supabase
             .from("student_dues")
-            .select(`
-              id, student_id, balance_paise, due_date, status,
-              students(id, class_id, classes(name))
-            `)
+            .select(`id, student_id, balance_paise, due_date, status,
+              students(id, first_name, last_name, admission_no, class_id, classes(name))`)
             .eq("school_id", schoolId)
             .in("status", ["pending", "partial"])
-            .gt("balance_paise", 0);
-
-          if (yearId) {
-            duesQuery = duesQuery.eq("academic_year_id", yearId);
-          }
-
-          const { data: duesData, error: duesError } = await duesQuery;
-
-          if (!duesError && duesData) {
-            totalDuesCount = duesData.length;
-            for (const d of duesData as any[]) {
+            .gt("balance_paise", 0)
+            .order("balance_paise", { ascending: false });
+          if (yearId) q = q.eq("academic_year_id", yearId);
+          const { data: dd } = await q;
+          if (dd) {
+            duesCount = dd.length;
+            const seen = new Set<string>();
+            for (const d of dd as any[]) {
               const bal = Number(d.balance_paise) || 0;
-              totalOutstanding += bal;
-
-              if (d.due_date && d.due_date < todayDate) {
-                totalOverdue += bal;
+              totalOut += bal;
+              if (d.due_date && d.due_date < todayDate) totalOvd += bal;
+              if (d.due_date && monthMap[d.due_date.slice(0, 7)]) {
+                monthMap[d.due_date.slice(0, 7)].pendingPaise += bal;
               }
-
-              const clsName = d.students?.classes?.name || "General";
-              if (!classMap[clsName]) {
-                classMap[clsName] = { amountPaise: 0, studentCount: 0 };
+              if (topDues.length < 6 && !seen.has(d.student_id)) {
+                seen.add(d.student_id);
+                topDues.push({
+                  studentId: d.student_id,
+                  studentName: `${d.students?.first_name || ""} ${d.students?.last_name || ""}`.trim() || "Student",
+                  admissionNo: d.students?.admission_no || "—",
+                  className: d.students?.classes?.name || "Class",
+                  balancePaise: bal,
+                  daysPastDue: d.due_date ? calcDaysOverdue(d.due_date, todayDate) : 0,
+                });
               }
-              classMap[clsName].amountPaise += bal;
-              classMap[clsName].studentCount += 1;
             }
           }
-        } catch (duesSupabaseErr) {
-          console.warn("Supabase dues query warning, checking local storage:", duesSupabaseErr);
-        }
+        } catch (e) { console.warn("Dues query:", e); }
       }
-
-      // If Supabase yielded no dues or was offline, evaluate local storage
-      if (totalDuesCount === 0 && typeof localStorage !== "undefined") {
+      if (duesCount === 0) {
         try {
-          const localDues = JSON.parse(
-            localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]"
-          );
-          const localStudents = JSON.parse(
-            localStorage.getItem(`myzkool_students_${schoolId}`) || "[]"
-          );
-          const localClasses = JSON.parse(
-            localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]"
-          );
-
-          const pendingDues = localDues.filter(
-            (d: any) =>
-              (d.status === "pending" || d.status === "partial") &&
-              (Number(d.balance_paise) || 0) > 0 &&
-              (!yearId || d.academic_year_id === yearId)
-          );
-
-          totalDuesCount = pendingDues.length;
-
-          for (const d of pendingDues) {
+          const ld = JSON.parse(localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]");
+          const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
+          const lc = JSON.parse(localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]");
+          const pnd = ld
+            .filter((d: any) => ["pending", "partial"].includes(d.status) && (Number(d.balance_paise) || 0) > 0 && (!yearId || d.academic_year_id === yearId))
+            .sort((a: any, b: any) => (Number(b.balance_paise) || 0) - (Number(a.balance_paise) || 0));
+          const seen = new Set<string>();
+          for (const d of pnd) {
             const bal = Number(d.balance_paise) || 0;
-            totalOutstanding += bal;
-
-            if (d.due_date && d.due_date < todayDate) {
-              totalOverdue += bal;
+            totalOut += bal;
+            if (d.due_date && d.due_date < todayDate) totalOvd += bal;
+            if (d.due_date && monthMap[d.due_date.slice(0, 7)]) {
+              monthMap[d.due_date.slice(0, 7)].pendingPaise += bal;
             }
-
-            const student = localStudents.find((s: any) => s.id === d.student_id);
-            const cls = localClasses.find((c: any) => c.id === student?.class_id);
-            const clsName = cls?.name || "General";
-
-            if (!classMap[clsName]) {
-              classMap[clsName] = { amountPaise: 0, studentCount: 0 };
+            if (topDues.length < 6 && !seen.has(d.student_id)) {
+              seen.add(d.student_id);
+              const st = ls.find((s: any) => s.id === d.student_id);
+              const cls = lc.find((c: any) => c.id === st?.class_id);
+              topDues.push({
+                studentId: d.student_id,
+                studentName: `${st?.first_name || ""} ${st?.last_name || ""}`.trim() || "Student",
+                admissionNo: st?.admission_no || "—",
+                className: cls?.name || "Class",
+                balancePaise: bal,
+                daysPastDue: d.due_date ? calcDaysOverdue(d.due_date, todayDate) : 0,
+              });
             }
-            classMap[clsName].amountPaise += bal;
-            classMap[clsName].studentCount += 1;
           }
-        } catch {
-          // ignore
-        }
+        } catch { /* ignore */ }
       }
 
-      setOutstandingPaise(totalOutstanding);
-      setOverduePaise(totalOverdue);
+      setOutstandingPaise(totalOut);
+      setOverduePaise(totalOvd);
+      setTopPendingDues(topDues);
+      setMonthlyData(Object.entries(monthMap).map(([month, v]) => ({ month, ...v })));
 
-      const classList: ClassOutstandingItem[] = Object.entries(classMap)
-        .map(([className, item]) => ({
-          className,
-          amountPaise: item.amountPaise,
-          studentCount: item.studentCount,
-        }))
-        .sort((a, b) => b.amountPaise - a.amountPaise);
+      // 5. Student count
+      let sc = 0;
+      if (isSupabaseConfigured) {
+        try {
+          const { count } = await supabase
+            .from("students").select("id", { count: "exact", head: true })
+            .eq("school_id", schoolId).in("status", ["active", "enrolled"]);
+          sc = count || 0;
+        } catch { /* ignore */ }
+      }
+      if (sc === 0) {
+        try {
+          const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
+          sc = ls.filter((s: any) => !["inactive", "left"].includes(s.status)).length;
+        } catch { /* ignore */ }
+      }
+      setTotalStudents(sc);
 
-      setClassOutstanding(classList);
-
-      // ─── 4. Setup Steps Verification ───────────────────────────────────────
-      const [headsRes, termsRes, structuresRes] = await Promise.all([
+      // 6. Setup steps
+      const [hr, tr, sr] = await Promise.all([
         getFeeHeads(schoolId, true).catch(() => ({ heads: [] })),
         getFeeTerms(schoolId, yearId || undefined).catch(() => ({ terms: [] })),
         getFeeStructures(schoolId, yearId || undefined).catch(() => ({ structures: [] })),
       ]);
-
-      const hasHeads = (headsRes.heads || []).length > 0;
-      const hasTerms = (termsRes.terms || []).length > 0;
-      const hasStructures = (structuresRes.structures || []).length > 0;
-      const hasDues = totalDuesCount > 0;
-      const hasReceipts = allReceipts.length > 0;
-
       setSetupSteps((prev) => [
-        { ...prev[0], isComplete: hasHeads },
-        { ...prev[1], isComplete: hasTerms },
-        { ...prev[2], isComplete: hasStructures },
-        { ...prev[3], isComplete: hasDues },
-        { ...prev[4], isComplete: hasReceipts },
+        { ...prev[0], isComplete: (hr.heads || []).length > 0 },
+        { ...prev[1], isComplete: (tr.terms || []).length > 0 },
+        { ...prev[2], isComplete: (sr.structures || []).length > 0 },
+        { ...prev[3], isComplete: duesCount > 0 },
+        { ...prev[4], isComplete: allReceipts.length > 0 },
       ]);
-
-      // ─── 5. Operational Highlights (Cheques, Approvals, Day Status) ────────
-      const [cheques, approvalsCount, isClosed, followups] = await Promise.all([
-        getCheques(schoolId).catch(() => []),
-        getPendingCount(schoolId).catch(() => 0),
-        isBusinessDateClosed(schoolId, todayDate).catch(() => false),
-        getFollowups(schoolId, undefined, true).catch(() => []),
-      ]);
-
-      setPendingChequesCount(cheques.filter((c) => c.status === "received").length);
-      setPendingApprovalsCount(approvalsCount);
-      setDayClosed(isClosed);
-      setPromisedTodayCount(followups.length);
     } catch (err: any) {
-      console.error("Failed to load fee dashboard data:", err);
-      setError(err?.message || "An unexpected error occurred while loading fee data.");
+      console.error("Fee dashboard error:", err);
+      setError(err?.message || "Failed to load dashboard data.");
     } finally {
       setLoading(false);
     }
   }, [schoolId, yearId, todayDate]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+  useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
 
-  // Determine current incomplete setup step
+  // Setup helpers
   const completedCount = setupSteps.filter((s) => s.isComplete).length;
   const isSetupComplete = completedCount === setupSteps.length;
   const currentStep = setupSteps.find((s) => !s.isComplete) || setupSteps[0];
+  const handleDismissSetup = () => {
+    setSetupDismissed(true);
+    try { sessionStorage.setItem("myzkool_fee_setup_dismissed", "true"); } catch { /* ignore */ }
+  };
+
+  // Month-over-month change
+  const monthChange =
+    collectedLastMonthPaise > 0
+      ? Math.round(((collectedMonthPaise - collectedLastMonthPaise) / collectedLastMonthPaise) * 100)
+      : null;
+
+  // Drawer
+  const handleOpenTransaction = async (tx: RecentTransaction) => {
+    setSelectedTx(tx);
+    if (!schoolId) return;
+    setDrawerLoading(true);
+    try {
+      const res = await getReceiptById(schoolId, tx.id);
+      if (res.receipt) setDrawerReceipt(res.receipt);
+      if (res.items) setDrawerItems(res.items);
+      if (res.payments) setDrawerPayments(res.payments);
+    } catch (e) { console.warn("Drawer load:", e); }
+    finally { setDrawerLoading(false); }
+  };
+  const handleCloseDrawer = () => {
+    setSelectedTx(null); setDrawerReceipt(null); setDrawerItems([]); setDrawerPayments([]);
+  };
+  const handlePrintReceipt = (paper: "a5" | "thermal80" = "a5") => {
+    if (!drawerReceipt || !selectedTx) return;
+    try {
+      const html = generateReceiptHTML(
+        drawerReceipt, drawerItems, drawerPayments,
+        { student_name: selectedTx.student_name, admission_no: selectedTx.admission_no },
+        { name: "MyZkool School" }, paper, (drawerReceipt.print_count ?? 0) > 0
+      );
+      const w = window.open("", "_blank");
+      if (!w) return;
+      w.document.write(html); w.document.close(); w.focus(); w.print();
+    } catch (e) { console.error("Print:", e); }
+  };
+
+  // Overdue badge helper
+  const overdueBadge = (days: number) => {
+    if (days >= 45) return "bg-red-100 text-red-700";
+    if (days >= 30) return "bg-orange-100 text-orange-700";
+    if (days >= 15) return "bg-amber-100 text-amber-700";
+    if (days > 0) return "bg-yellow-100 text-yellow-700";
+    return "bg-slate-100 text-slate-500";
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* ─── A. Page Header & Persistent Sub-navigation ──────────────────── */}
-      <FeeNavHeader
-        title="Fees"
-        subtitle="Manage fee structures, collections, invoices, and outstanding balances."
-      />
+    <div className="space-y-5">
 
-      {/* ─── Error Notification if query fails ────────────────────────────── */}
+      {/* A. Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[#141A2E]">Fee Management</h1>
+          <p className="text-sm text-[#5B6478] mt-0.5">
+            Track collections, manage dues and streamline your school's fee process.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <Link
+            to="/admin/fees/invoices"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-[#2563EB] border border-[#2563EB] rounded-xl hover:bg-blue-50 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Create Invoice
+          </Link>
+          <Link
+            to="/admin/fees/collect"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#2563EB] hover:bg-[#1D4ED8] rounded-xl shadow-sm transition-colors"
+          >
+            <CreditCard className="w-4 h-4" /> Collect Payment
+          </Link>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+              <span className="hidden sm:inline">More</span>
+            </button>
+            {moreMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1.5 w-52 bg-white border border-[#E6EAF3] rounded-xl shadow-lg z-20 p-1.5">
+                  {[
+                    { label: "Assign Dues", href: "/admin/fees/dues", icon: FileCheck2 },
+                    { label: "Fee Collections", href: "/admin/fees/collections", icon: Receipt },
+                    { label: "Defaulters List", href: "/admin/fees/defaulters", icon: AlertTriangle },
+                    { label: "Day Close", href: "/admin/fees/day-close", icon: BarChart3 },
+                    { label: "Fee Reports", href: "/admin/fees/reports", icon: BarChart3 },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link key={item.href} to={item.href} onClick={() => setMoreMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
+                        <Icon className="w-4 h-4 text-slate-400 shrink-0" /> {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center justify-between gap-3 text-red-800 text-xs">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-3 text-red-800 text-sm">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
             <span>{error}</span>
           </div>
-          <button
-            onClick={() => loadDashboardData()}
-            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-red-300 rounded-lg font-semibold hover:bg-red-100 transition-colors cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Retry
+          <button onClick={() => loadDashboardData()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-semibold hover:bg-red-50 transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
           </button>
         </div>
       )}
 
-      {/* ─── B. Fee Setup Status ─────────────────────────────────────────── */}
-      {!loading && !isSetupComplete ? (
-        <div className="bg-white border border-blue-200 rounded-2xl p-5 shadow-xs transition-all">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-[#2158E0] border border-blue-100">
-                <span>Setup Progress: {completedCount} of 5 Completed</span>
-              </div>
-              <h2 className="text-base font-bold text-[#141A2E]">
-                Set up your school fee system
-              </h2>
-              <p className="text-xs text-[#5B6478]">
-                Next: <strong className="text-slate-800 font-semibold">{currentStep.title}</strong> — {currentStep.description}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => navigate(currentStep.href)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#2158E0] hover:bg-[#1A46B8] text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-              >
-                <span>Continue Setup</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/admin/fees/setup")}
-                className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
-              >
-                Setup Hub
-              </button>
-            </div>
-          </div>
-
-          {/* Compact 5-step Horizontal Progress Track */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-4 mt-4 border-t border-slate-100">
-            {setupSteps.map((step) => {
-              const StepIcon = step.icon;
-              const isCurrent = !step.isComplete && step.id === currentStep.id;
-
-              return (
-                <button
-                  key={step.id}
-                  onClick={() => navigate(step.href)}
-                  className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${step.isComplete
-                      ? "bg-slate-50/70 border-slate-200 hover:border-slate-300"
-                      : isCurrent
-                        ? "bg-blue-50/60 border-blue-300 ring-1 ring-blue-200"
-                        : "bg-white border-slate-200 opacity-60 hover:opacity-100"
-                    }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold text-slate-400">Step {step.stepNumber}</span>
-                    {step.isComplete ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    ) : (
-                      <StepIcon className={`w-3.5 h-3.5 ${isCurrent ? "text-[#2158E0]" : "text-slate-400"}`} />
-                    )}
-                  </div>
-                  <div className="text-xs font-semibold text-slate-900 truncate">{step.title}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : !loading && isSetupComplete ? (
-        <div className="bg-white border border-emerald-200 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
-              <CheckCircle2 className="w-5 h-5" />
+      {/* B. Setup Reminder */}
+      {!loading && !isSetupComplete && !setupDismissed && (
+        <div className="bg-blue-50/80 border border-blue-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 text-[#2563EB] flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xs font-bold text-slate-900">Fee System Configured</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">5/5 Steps Active</span>
-              </div>
-              <p className="text-[11px] text-[#5B6478]">
-                Heads, cycles, class fee structures, and invoicing are active for the current academic session.
+              <p className="text-xs font-semibold text-slate-900">Complete your fee setup to start assigning student dues.</p>
+              <p className="text-[11px] text-slate-500">
+                Step {currentStep.stepNumber} of 5:{" "}
+                <span className="font-medium text-slate-700">{currentStep.title}</span> — {currentStep.description}
               </p>
             </div>
           </div>
-          <Link
-            to="/admin/fees/setup"
-            className="text-xs font-semibold text-[#2158E0] hover:underline flex items-center gap-1 self-start sm:self-center"
-          >
-            <span>Review Fee Setup</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      ) : null}
-
-      {/* ─── C. Key Metrics Grid ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {/* Metric 1: Collected Today */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#5B6478]">Collected Today</span>
-            <div className="p-1.5 rounded-lg bg-blue-50 text-[#2158E0]">
-              <IndianRupee className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2.5">
-            {loading ? (
-              <div className="h-7 w-24 bg-slate-100 animate-pulse rounded" />
-            ) : (
-              <div className="text-xl sm:text-2xl font-bold text-[#141A2E] tabular-nums font-display">
-                {fmt(collectedTodayPaise)}
-              </div>
-            )}
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              {todayDate ? formatDate(todayDate) : "Today"}
-            </span>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button type="button" onClick={() => navigate(currentStep.href)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors">
+              Continue Setup <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            <button type="button" onClick={handleDismissSetup}
+              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md transition-colors" title="Dismiss">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Metric 2: Collected This Month */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#5B6478]">Collected This Month</span>
-            <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-              <TrendingUp className="w-4 h-4" />
+      {/* C. 4 Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* Total Fee Collected */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center mb-3">
+            <IndianRupee className="w-5 h-5 text-emerald-600" />
+          </div>
+          {loading
+            ? <div className="h-7 w-28 bg-slate-100 rounded animate-pulse mb-1" />
+            : <div className="text-2xl font-bold text-[#141A2E] tabular-nums">{fmt(collectedYearPaise)}</div>
+          }
+          <p className="text-xs text-slate-400 mt-1">Total Fee Collected</p>
+          {!loading && monthChange !== null && (
+            <div className={`flex items-center gap-1 mt-2 text-xs font-semibold ${monthChange >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+              {monthChange >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+              {monthChange >= 0 ? "+" : ""}{monthChange}% from last month
             </div>
-          </div>
-          <div className="mt-2.5">
-            {loading ? (
-              <div className="h-7 w-28 bg-slate-100 animate-pulse rounded" />
-            ) : (
-              <div className="text-xl sm:text-2xl font-bold text-[#141A2E] tabular-nums font-display">
-                {fmt(collectedMonthPaise)}
-              </div>
-            )}
-            <span className="text-[11px] text-slate-400 mt-1 block">Month to date</span>
-          </div>
+          )}
         </div>
 
-        {/* Metric 3: Outstanding Fees */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#5B6478]">Outstanding Fees</span>
-            <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600">
-              <Receipt className="w-4 h-4" />
+        {/* Pending Dues */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center mb-3">
+            <Clock className="w-5 h-5 text-blue-500" />
+          </div>
+          {loading
+            ? <div className="h-7 w-28 bg-slate-100 rounded animate-pulse mb-1" />
+            : <div className="text-2xl font-bold text-[#141A2E] tabular-nums">{fmt(Math.max(0, outstandingPaise - overduePaise))}</div>
+          }
+          <p className="text-xs text-slate-400 mt-1">Pending Dues</p>
+          {!loading && outstandingPaise > 0 && (
+            <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-amber-600">
+              <TrendingUp className="w-3.5 h-3.5" /> Needs follow-up
             </div>
-          </div>
-          <div className="mt-2.5">
-            {loading ? (
-              <div className="h-7 w-28 bg-slate-100 animate-pulse rounded" />
-            ) : (
-              <div className="text-xl sm:text-2xl font-bold text-amber-700 tabular-nums font-display">
-                {fmt(outstandingPaise)}
-              </div>
-            )}
-            <span className="text-[11px] text-slate-400 mt-1 block">Total pending student dues</span>
-          </div>
+          )}
         </div>
 
-        {/* Metric 4: Overdue Fees */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#5B6478]">Overdue Fees</span>
-            <div className="p-1.5 rounded-lg bg-red-50 text-red-600">
-              <AlertTriangle className="w-4 h-4" />
+        {/* Overdue Fees */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center mb-3">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+          </div>
+          {loading
+            ? <div className="h-7 w-24 bg-slate-100 rounded animate-pulse mb-1" />
+            : <div className="text-2xl font-bold text-red-500 tabular-nums">{fmt(overduePaise)}</div>
+          }
+          <p className="text-xs text-slate-400 mt-1">Overdue (30+ days)</p>
+          {!loading && overduePaise > 0 && (
+            <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-red-500">
+              <TrendingUp className="w-3.5 h-3.5" /> Immediate action needed
             </div>
+          )}
+        </div>
+
+        {/* Total Students */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mb-3">
+            <Users className="w-5 h-5 text-purple-500" />
           </div>
-          <div className="mt-2.5">
-            {loading ? (
-              <div className="h-7 w-24 bg-slate-100 animate-pulse rounded" />
-            ) : (
-              <div className="text-xl sm:text-2xl font-bold text-red-700 tabular-nums font-display">
-                {fmt(overduePaise)}
-              </div>
-            )}
-            <span className="text-[11px] text-slate-400 mt-1 block">Past scheduled due dates</span>
-          </div>
+          {loading
+            ? <div className="h-7 w-16 bg-slate-100 rounded animate-pulse mb-1" />
+            : <div className="text-2xl font-bold text-[#141A2E] tabular-nums">{totalStudents.toLocaleString("en-IN")}</div>
+          }
+          <p className="text-xs text-slate-400 mt-1">Total Students</p>
+          {!loading && totalStudents > 0 && (
+            <p className="text-xs text-slate-400 mt-2">Active enrollment</p>
+          )}
         </div>
       </div>
 
-      {/* ─── Operational Highlights Bar ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link
-          to="/admin/fees/cheques"
-          className="bg-white border border-[#E6EAF3] rounded-xl p-3 shadow-2xs hover:border-blue-300 transition-colors flex items-center justify-between"
-        >
-          <div>
-            <span className="text-[11px] font-medium text-slate-500 block">Cheques to deposit</span>
-            <span className="text-base font-bold text-slate-900 tabular-nums">{pendingChequesCount}</span>
-          </div>
-          <CheckSquare className="w-4 h-4 text-blue-600" />
-        </Link>
-
-        <Link
-          to="/admin/approvals"
-          className="bg-white border border-[#E6EAF3] rounded-xl p-3 shadow-2xs hover:border-amber-300 transition-colors flex items-center justify-between"
-        >
-          <div>
-            <span className="text-[11px] font-medium text-slate-500 block">Approvals pending</span>
-            <span className="text-base font-bold text-slate-900 tabular-nums">{pendingApprovalsCount}</span>
-          </div>
-          <ShieldAlert className="w-4 h-4 text-amber-600" />
-        </Link>
-
-        <Link
-          to="/admin/fees/day-close"
-          className="bg-white border border-[#E6EAF3] rounded-xl p-3 shadow-2xs hover:border-emerald-300 transition-colors flex items-center justify-between"
-        >
-          <div>
-            <span className="text-[11px] font-medium text-slate-500 block">Day Close</span>
-            <span className="text-xs font-bold block mt-0.5">
-              {dayClosed ? (
-                <span className="text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Closed
-                </span>
-              ) : (
-                <span className="text-amber-700 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> Open
-                </span>
-              )}
-            </span>
-          </div>
-          <Clock className="w-4 h-4 text-slate-400" />
-        </Link>
-
-        <Link
-          to="/admin/fees/defaulters"
-          className="bg-white border border-[#E6EAF3] rounded-xl p-3 shadow-2xs hover:border-purple-300 transition-colors flex items-center justify-between"
-        >
-          <div>
-            <span className="text-[11px] font-medium text-slate-500 block">Promised today</span>
-            <span className="text-base font-bold text-slate-900 tabular-nums">{promisedTodayCount}</span>
-          </div>
-          <Calendar className="w-4 h-4 text-purple-600" />
-        </Link>
-      </div>
-
-      {/* ─── D. Quick Actions Area ───────────────────────────────────────── */}
-      <div className="bg-white border border-[#E6EAF3] rounded-2xl p-5 shadow-xs">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3.5">
-          Quick Actions
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          <Link
-            to="/admin/fees/collect"
-            className="group flex flex-col p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center mb-2 group-hover:bg-[#2158E0] group-hover:text-white transition-colors">
-              <CreditCard className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-900 group-hover:text-[#2158E0]">Collect Fee</span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Receive counter payments</span>
-          </Link>
-
-          <Link
-            to="/admin/fees/dues"
-            className="group flex flex-col p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center mb-2 group-hover:bg-[#2158E0] group-hover:text-white transition-colors">
-              <FileCheck2 className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-900 group-hover:text-[#2158E0]">Assign Dues</span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Generate class fees</span>
-          </Link>
-
-          <Link
-            to="/admin/fees/invoices"
-            className="group flex flex-col p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center mb-2 group-hover:bg-[#2158E0] group-hover:text-white transition-colors">
-              <Receipt className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-900 group-hover:text-[#2158E0]">View Invoices</span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Browse student invoices</span>
-          </Link>
-
-          <Link
-            to="/admin/fees/setup/structures"
-            className="group flex flex-col p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center mb-2 group-hover:bg-[#2158E0] group-hover:text-white transition-colors">
-              <Grid3X3 className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-900 group-hover:text-[#2158E0]">Fee Structures</span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Class fee matrix</span>
-          </Link>
-
-          <Link
-            to="/admin/fees/receipts"
-            className="group flex flex-col p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2158E0] flex items-center justify-center mb-2 group-hover:bg-[#2158E0] group-hover:text-white transition-colors">
-              <FileText className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-900 group-hover:text-[#2158E0]">View Receipts</span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Receipt register & reprint</span>
-          </Link>
-
-          <Link
-            to="/admin/fees/defaulters"
-            className="group flex flex-col p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
-          >
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center mb-2 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-900 group-hover:text-amber-700">Manage Defaulters</span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Aging & reminders</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* ─── E & F. Main Content Split: Overview & Outstanding ─────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* E. Fee Collection Overview (Recent Transactions) — 8 columns on lg */}
-        <div className="lg:col-span-8 bg-white border border-[#E6EAF3] rounded-2xl p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      {/* D. Analytics Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Bar Chart */}
+        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-sm font-bold text-[#141A2E] font-display">Fee Collection Overview</h2>
-              <p className="text-[11px] text-[#5B6478]">Most recent receipts recorded across all collection points</p>
+              <h2 className="text-sm font-bold text-[#141A2E]">Collection Overview</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Monthly fee collection trend</p>
             </div>
-            <Link
-              to="/admin/fees/receipts"
-              className="text-xs font-semibold text-[#2158E0] hover:underline flex items-center gap-1"
-            >
-              <span>View All</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-2.5 rounded bg-[#22C55E] inline-block" /> Collected
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-2.5 rounded bg-[#BFDBFE] inline-block" /> Pending
+              </span>
+            </div>
+          </div>
+          <CollectionBarChart data={monthlyData} loading={loading} />
+        </div>
+
+        {/* Donut Chart */}
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="mb-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-[#141A2E]">Fee Collection Status</h2>
+              <span className="text-xs text-slate-400">{yearLabel}</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">Academic year breakdown</p>
+          </div>
+          <DonutChart
+            collected={collectedYearPaise}
+            pending={outstandingPaise}
+            overdue={overduePaise}
+            loading={loading}
+          />
+        </div>
+      </div>
+
+      {/* E. Quick Actions */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        {[
+          { label: "Generate Fee Invoices", desc: "Create invoices for students in bulk or individually", icon: FileText, bg: "bg-blue-50", ic: "text-blue-500", border: "border-blue-100", href: "/admin/fees/invoices" },
+          { label: "Record Payment", desc: "Collect fee payment and generate receipt", icon: CreditCard, bg: "bg-emerald-50", ic: "text-emerald-500", border: "border-emerald-100", href: "/admin/fees/collect" },
+          { label: "Manage Fee Structure", desc: "Create and manage class-wise fee structures", icon: Grid3X3, bg: "bg-red-50", ic: "text-red-500", border: "border-red-100", href: "/admin/fees/setup/structures" },
+          { label: "Send Reminders", desc: "Send payment reminders to parents via WhatsApp", icon: Bell, bg: "bg-amber-50", ic: "text-amber-500", border: "border-amber-100", href: "/admin/fees/defaulters" },
+        ].map((a) => {
+          const Icon = a.icon;
+          return (
+            <Link key={a.href} to={a.href}
+              className={`bg-white rounded-2xl border ${a.border} p-4 flex items-center gap-3 group hover:shadow-md transition-all`}>
+              <div className={`w-10 h-10 rounded-xl ${a.bg} flex items-center justify-center shrink-0`}>
+                <Icon className={`w-5 h-5 ${a.ic}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800 group-hover:text-[#2563EB] transition-colors leading-snug">{a.label}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">{a.desc}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#2563EB] shrink-0 transition-colors" />
             </Link>
-          </div>
+          );
+        })}
+      </div>
 
+      {/* F. Two-Column Tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Recent Fee Collections */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-[#141A2E]">Recent Fee Collections</h2>
+            <Link to="/admin/fees/collections" className="text-xs font-semibold text-[#2563EB] hover:underline">View All</Link>
+          </div>
           {loading ? (
-            <div className="space-y-2 py-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-10 bg-slate-50 rounded-lg animate-pulse" />
-              ))}
+            <div className="space-y-2.5">
+              {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-9 bg-slate-50 rounded-lg animate-pulse" />)}
             </div>
           ) : recentTransactions.length === 0 ? (
-            <div className="py-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center mx-auto border border-slate-200">
-                <Receipt className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-800">No fee transactions recorded yet</h4>
-                <p className="text-[11px] text-slate-500 max-w-sm mx-auto mt-1">
-                  Once payments are recorded through Counter Collection or Online Payment gateways, receipts will appear here.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate("/admin/fees/collect")}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2158E0] text-white text-xs font-semibold rounded-xl hover:bg-[#1A46B8] transition-colors cursor-pointer"
-              >
-                <CreditCard className="w-3.5 h-3.5" />
-                <span>Collect First Fee</span>
-              </button>
+            <div className="py-10 text-center space-y-2">
+              <Receipt className="w-8 h-8 text-slate-200 mx-auto" />
+              <p className="text-xs text-slate-400">No fee collections yet.</p>
+              <Link to="/admin/fees/collect"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2563EB] text-white text-xs font-semibold rounded-lg hover:bg-[#1D4ED8] transition-colors">
+                <CreditCard className="w-3.5 h-3.5" /> Collect First Fee
+              </Link>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full text-xs min-w-[400px]">
                 <thead>
-                  <tr className="border-b border-slate-100 text-[#5B6478] font-semibold">
-                    <th className="py-2.5 px-3">Student Name</th>
-                    <th className="py-2.5 px-3">Receipt / Adm No</th>
-                    <th className="py-2.5 px-3">Class</th>
-                    <th className="py-2.5 px-3">Amount</th>
-                    <th className="py-2.5 px-3">Payment Method</th>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3 text-right">Status</th>
+                  <tr className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide border-b border-slate-50">
+                    <th className="py-2 px-2 text-left">Date</th>
+                    <th className="py-2 px-2 text-left">Student</th>
+                    <th className="py-2 px-2 text-left">Class</th>
+                    <th className="py-2 px-2 text-right">Amount</th>
+                    <th className="py-2 px-2 text-left hidden sm:table-cell">Mode</th>
+                    <th className="py-2 px-2 text-center">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-800">
+                <tbody className="divide-y divide-slate-50">
                   {recentTransactions.map((tx) => (
-                    <tr
-                      key={tx.id}
-                      onClick={() => navigate("/admin/fees/receipts")}
-                      className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                    >
-                      <td className="py-3 px-3 font-semibold text-slate-900">
-                        {tx.student_name}
+                    <tr key={tx.id} onClick={() => handleOpenTransaction(tx)}
+                      className="hover:bg-slate-50/80 cursor-pointer transition-colors">
+                      <td className="py-2.5 px-2 text-slate-500 whitespace-nowrap">{formatDateShort(tx.receipt_date)}</td>
+                      <td className="py-2.5 px-2">
+                        <span className="font-semibold text-slate-800 block truncate max-w-[90px]">{tx.student_name}</span>
                       </td>
-                      <td className="py-3 px-3">
-                        <span className="font-mono text-[#2158E0] font-medium block">
-                          {tx.receipt_no}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {tx.admission_no}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-slate-600">{tx.class_name}</td>
-                      <td className="py-3 px-3 font-bold tabular-nums text-slate-900">
-                        {fmt(tx.total_paise)}
-                      </td>
-                      <td className="py-3 px-3 capitalize">
-                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
-                          {tx.payment_mode}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-slate-500 tabular-nums">
-                        {formatDate(tx.receipt_date)}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        {tx.status === "active" ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Active
-                          </span>
-                        ) : tx.status === "cancelled" ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
-                            Cancelled
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                            {tx.status}
-                          </span>
-                        )}
+                      <td className="py-2.5 px-2 text-slate-500 whitespace-nowrap">{tx.class_name}</td>
+                      <td className="py-2.5 px-2 font-bold text-slate-900 tabular-nums text-right whitespace-nowrap">{fmt(tx.total_paise)}</td>
+                      <td className="py-2.5 px-2 capitalize text-slate-500 whitespace-nowrap hidden sm:table-cell">{tx.payment_mode}</td>
+                      <td className="py-2.5 px-2 text-center">
+                        {tx.status === "active"
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Paid</span>
+                          : tx.status === "cancelled"
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />Cancelled</span>
+                          : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{tx.status}</span>
+                        }
                       </td>
                     </tr>
                   ))}
@@ -936,80 +980,152 @@ export default function FeeDashboard() {
           )}
         </div>
 
-        {/* F. Outstanding Fees Grouped by Class — 4 columns on lg */}
-        <div className="lg:col-span-4 bg-white border border-[#E6EAF3] rounded-2xl p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-sm font-bold text-[#141A2E] font-display">Outstanding by Class</h2>
-              <p className="text-[11px] text-[#5B6478]">Pending balances grouped by grade</p>
-            </div>
-            <Link
-              to="/admin/fees/dues"
-              className="text-xs font-semibold text-[#2158E0] hover:underline"
-            >
-              View Dues
-            </Link>
+        {/* Top Pending Dues */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-[#141A2E]">Top Pending Dues</h2>
+            <Link to="/admin/fees/defaulters" className="text-xs font-semibold text-[#2563EB] hover:underline">View All</Link>
           </div>
-
-          {/* Overdue alert indicator */}
-          {overduePaise > 0 && (
-            <div className="p-3 bg-red-50/70 border border-red-200 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                <span className="text-xs font-semibold text-red-800">Overdue Balances</span>
-              </div>
-              <span className="text-xs font-bold text-red-800 tabular-nums">{fmt(overduePaise)}</span>
-            </div>
-          )}
-
           {loading ? (
-            <div className="space-y-3 py-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-9 bg-slate-50 rounded-lg animate-pulse" />
-              ))}
+            <div className="space-y-2.5">
+              {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-9 bg-slate-50 rounded-lg animate-pulse" />)}
             </div>
-          ) : classOutstanding.length === 0 ? (
+          ) : topPendingDues.length === 0 ? (
             <div className="py-10 text-center space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto opacity-75" />
-              <div className="text-xs font-bold text-slate-800">No outstanding dues</div>
-              <p className="text-[11px] text-slate-400">All student dues are paid or have not yet been assigned.</p>
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+              <p className="text-xs text-slate-400">All payments are up to date.</p>
             </div>
           ) : (
-            <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
-              {classOutstanding.map((item) => {
-                const percent = outstandingPaise > 0
-                  ? Math.min(100, Math.round((item.amountPaise / outstandingPaise) * 100))
-                  : 0;
-
-                return (
-                  <div
-                    key={item.className}
-                    onClick={() => navigate(`/admin/fees/dues?class=${encodeURIComponent(item.className)}`)}
-                    className="p-2 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer space-y-1.5"
-                  >
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-slate-800">{item.className}</span>
-                      <span className="font-bold text-slate-900 tabular-nums">{fmt(item.amountPaise)}</span>
-                    </div>
-
-                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="bg-[#2158E0] h-full rounded-full transition-all duration-300"
-                        style={{ width: `${Math.max(5, percent)}%` }}
-                      />
-                    </div>
-
-                    <div className="flex justify-between text-[10px] text-slate-400">
-                      <span>{item.studentCount} student{item.studentCount !== 1 ? "s" : ""} with dues</span>
-                      <span>{percent}% of total</span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full text-xs min-w-[360px]">
+                <thead>
+                  <tr className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide border-b border-slate-50">
+                    <th className="py-2 px-2 text-left">Student</th>
+                    <th className="py-2 px-2 text-left">Class</th>
+                    <th className="py-2 px-2 text-right">Pending</th>
+                    <th className="py-2 px-2 text-center">Days Overdue</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {topPendingDues.map((due, idx) => (
+                    <tr key={`${due.studentId}-${idx}`}
+                      onClick={() => navigate(`/admin/fees/students/${due.studentId}`)}
+                      className="hover:bg-slate-50/80 cursor-pointer transition-colors">
+                      <td className="py-2.5 px-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
+                            {due.studentName.charAt(0)}
+                          </div>
+                          <span className="font-semibold text-slate-800 truncate max-w-[80px] block">{due.studentName}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2 text-slate-500 whitespace-nowrap">{due.className}</td>
+                      <td className="py-2.5 px-2 font-bold text-slate-900 tabular-nums text-right whitespace-nowrap">{fmt(due.balancePaise)}</td>
+                      <td className="py-2.5 px-2 text-center">
+                        {due.daysPastDue > 0
+                          ? <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${overdueBadge(due.daysPastDue)}`}>{due.daysPastDue} days</span>
+                          : <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-400">Not due</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
+
+      {/* G. Receipt Detail Drawer */}
+      {selectedTx && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={handleCloseDrawer} />
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col z-10 border-l border-slate-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Transaction Details</span>
+                <h3 className="text-base font-bold text-slate-900 font-mono">{selectedTx.receipt_no}</h3>
+              </div>
+              <button type="button" onClick={handleCloseDrawer}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {drawerLoading ? (
+                <div className="space-y-4 py-8">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-slate-100 rounded-lg animate-pulse" />)}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-xs text-slate-500">Receipt Status</span>
+                    {selectedTx.status === "active"
+                      ? <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active</span>
+                      : <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> {selectedTx.status}</span>
+                    }
+                  </div>
+                  <div className="space-y-2 border-b border-slate-100 pb-4">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Student Information</h4>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {[
+                        { label: "Student Name", value: selectedTx.student_name },
+                        { label: "Admission No", value: selectedTx.admission_no },
+                        { label: "Class", value: selectedTx.class_name },
+                        { label: "Payment Date", value: formatDate(selectedTx.receipt_date) },
+                      ].map((f) => (
+                        <div key={f.label}>
+                          <span className="text-slate-400 block text-[11px]">{f.label}</span>
+                          <span className="font-semibold text-slate-900">{f.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2 border-b border-slate-100 pb-4">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payment Summary</h4>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Payment Mode</span>
+                        <span className="capitalize font-semibold text-slate-800">{selectedTx.payment_mode}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-2">
+                        <span className="text-slate-900">Total Collected</span>
+                        <span className="text-[#2563EB] tabular-nums">{fmt(selectedTx.total_paise)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {drawerItems.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fee Breakdown</h4>
+                      <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden text-xs">
+                        {drawerItems.map((item, idx) => (
+                          <div key={idx} className="p-2.5 flex justify-between items-center">
+                            <div>
+                              <span className="font-semibold text-slate-800 block">{item.fee_head_name || "Tuition Fee"}</span>
+                              {item.remarks && <span className="text-[10px] text-slate-400">{item.remarks}</span>}
+                            </div>
+                            <span className="font-semibold text-slate-900 tabular-nums">{fmt(item.amount_paise)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-2">
+              <button type="button" onClick={() => handlePrintReceipt("a5")}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors cursor-pointer">
+                <Printer className="w-3.5 h-3.5" /> Print Receipt
+              </button>
+              <Link to="/admin/fees/collections"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold transition-colors">
+                Collections Register <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

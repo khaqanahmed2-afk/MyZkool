@@ -39,11 +39,12 @@ export interface FeeReceipt {
 
 export interface FeeReceiptItem {
   id: string;
+  school_id?: string;
   receipt_id: string;
   due_id: string;
   fee_head_id: string;
   amount_paise: number;
-  concession_paise: number;
+  concession_paise?: number;
 }
 
 export interface FeePayment {

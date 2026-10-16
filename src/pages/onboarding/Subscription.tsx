@@ -18,6 +18,7 @@ import type {
   PlanPriceCalculation,
 } from "../../types/subscription";
 import type { School } from "../../types/school";
+import { initiateSubscriptionCheckout } from "../../services/razorpayService";
 import {
   Check,
   ShieldCheck,
@@ -31,6 +32,9 @@ import {
   Clock,
   Sparkles,
   X,
+  CreditCard,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
 
 export default function Subscription() {
@@ -48,6 +52,13 @@ export default function Subscription() {
   const [isDirty, setIsDirty] = useState<boolean>(false);
 
   // UI State
+  const [paymentMode, setPaymentMode] = useState<"pay_now" | "free_trial">("pay_now");
+  const [isPayingRazorpay, setIsPayingRazorpay] = useState<boolean>(false);
+  const [verifiedPaymentInfo, setVerifiedPaymentInfo] = useState<{
+    orderId: string;
+    paymentId: string;
+    amount: string;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isSavingAndExiting, setIsSavingAndExiting] = useState<boolean>(false);
@@ -192,6 +203,78 @@ export default function Subscription() {
     }
   };
 
+  // Dedicated Razorpay Standard Web Checkout Handler for School Subscription
+  const handleRazorpaySubscriptionPay = async () => {
+    if (!school || !user || !selectedPlan) {
+      setErrorMessage("Authentication session or school profile is missing.");
+      return;
+    }
+
+    if (selectedPlan.slug === "custom") {
+      setErrorMessage(
+        "Custom enterprise plans require tailored SLA terms. Please continue with the 14-day free trial or contact support."
+      );
+      return;
+    }
+
+    setIsPayingRazorpay(true);
+    setErrorMessage(null);
+
+    try {
+      await initiateSubscriptionCheckout({
+        schoolId: school.id,
+        schoolName: school.name,
+        planSlug: selectedPlanSlug,
+        planName: selectedPlan.name,
+        billingCycle,
+        userEmail: user.email,
+        userPhone: school.contact_phone,
+        userName: profile?.full_name || user.email,
+        onSuccess: async (_verifyResult, paymentData) => {
+          setIsPayingRazorpay(false);
+          setVerifiedPaymentInfo({
+            orderId: paymentData.razorpay_order_id,
+            paymentId: paymentData.razorpay_payment_id,
+            amount: pricingCalculation?.formattedTotal || "₹0.00",
+          });
+
+          // Sync local subscription state
+          try {
+            await selectSchoolPlan({
+              schoolId: school.id,
+              userId: user.id,
+              planSlug: selectedPlanSlug,
+              billingCycle,
+              startTrial: false, // Paid activation!
+              notes: `Razorpay verified: ${paymentData.razorpay_payment_id}`,
+            });
+          } catch (cacheErr) {
+            console.warn("Local subscription sync note:", cacheErr);
+          }
+
+          if (refreshSession) {
+            await refreshSession();
+          }
+
+          // Automatically proceed to Step 5 (Website Setup) after brief confirmation
+          setTimeout(() => {
+            navigate("/onboarding/website");
+          }, 1500);
+        },
+        onError: (errMsg) => {
+          setIsPayingRazorpay(false);
+          setErrorMessage(errMsg || "Payment could not be completed.");
+        },
+        onDismiss: () => {
+          setIsPayingRazorpay(false);
+        },
+      });
+    } catch (err: any) {
+      setIsPayingRazorpay(false);
+      setErrorMessage(err?.message || "Failed to initialize payment gateway.");
+    }
+  };
+
   // Form Submit Handler: Proceed to Step 5 (Website Setup)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,6 +285,12 @@ export default function Subscription() {
 
     if (!selectedPlan) {
       setErrorMessage("Please select a valid school subscription plan.");
+      return;
+    }
+
+    // If user chose to pay now with Razorpay and not a custom quote
+    if (paymentMode === "pay_now" && !pricingCalculation?.isCustomQuote) {
+      await handleRazorpaySubscriptionPay();
       return;
     }
 
@@ -654,14 +743,108 @@ export default function Subscription() {
               </div>
             </div>
 
-            {/* Trial Zero-Charge Banner */}
-            <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">
-                <strong className="font-semibold">₹0 Due Today: </strong>
-                Your 14-day fully featured trial is active through <strong>{trialEndFormatted}</strong>. No payment or credit card is required today. You can upgrade, change billing periods, or cancel anytime from your School Admin settings.
+            {/* Payment Choice Selector (Pay Now vs Free Trial) */}
+            {!pricingCalculation.isCustomQuote && (
+              <div className="pt-1 space-y-2.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#5B6478]">
+                  Select Payment Option
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Option 1: Pay Now via Razorpay */}
+                  <div
+                    onClick={() => setPaymentMode("pay_now")}
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                      paymentMode === "pay_now"
+                        ? "border-[#2158E0] bg-blue-50/50 shadow-xs"
+                        : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                            paymentMode === "pay_now"
+                              ? "border-[#2158E0] bg-[#2158E0]"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {paymentMode === "pay_now" && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-[#141A2E]">
+                          Pay &amp; Activate Now
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-[#2158E0] text-white">
+                        Recommended
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#5B6478] mt-2 leading-relaxed">
+                      Instant paid activation with Razorpay Standard Checkout &amp; official GST tax invoice.
+                    </p>
+                    <div className="mt-2 text-xs font-extrabold text-[#2158E0]">
+                      Payable: {pricingCalculation.formattedTotal}
+                    </div>
+                  </div>
+
+                  {/* Option 2: 14-Day Free Trial (Pay Later) */}
+                  <div
+                    onClick={() => setPaymentMode("free_trial")}
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                      paymentMode === "free_trial"
+                        ? "border-[#2158E0] bg-blue-50/50 shadow-xs"
+                        : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                            paymentMode === "free_trial"
+                              ? "border-[#2158E0] bg-[#2158E0]"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {paymentMode === "free_trial" && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-[#141A2E]">
+                          Start 14-Day Free Trial
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-100 text-emerald-800">
+                        ₹0 Today
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#5B6478] mt-2 leading-relaxed">
+                      Zero upfront charge today. Test all ERP modules risk-free through {trialEndFormatted}.
+                    </p>
+                    <div className="mt-2 text-xs font-extrabold text-emerald-700">
+                      ₹0.00 Due Today
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Verified Payment Success Confirmation Banner */}
+            {verifiedPaymentInfo && (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs space-y-2 text-emerald-900 animate-in fade-in">
+                <div className="flex items-center gap-2 font-bold text-sm text-emerald-800">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>Payment Verified &amp; Subscription Activated!</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px] text-emerald-700">
+                  <div>Payment ID: {verifiedPaymentInfo.paymentId}</div>
+                  <div>Order ID: {verifiedPaymentInfo.orderId}</div>
+                </div>
+                <p className="text-emerald-700 font-medium pt-1">
+                  Advancing to Step 5: Website Setup...
+                </p>
+              </div>
+            )}
 
             {/* Financial Breakdown (Itemized) */}
             {!pricingCalculation.isCustomQuote && (
@@ -696,13 +879,17 @@ export default function Subscription() {
                 </div>
 
                 <div className="flex justify-between text-sm font-bold text-[#141A2E] pt-2 border-t border-[#E6EAF3]">
-                  <span>Total Amount (after trial)</span>
+                  <span>
+                    {paymentMode === "pay_now" ? "Total Payable Today" : "Total Amount (after trial)"}
+                  </span>
                   <div className="text-right">
                     <span className="text-base font-extrabold text-[#2158E0]">
                       {pricingCalculation.formattedTotal}
                     </span>
                     <div className="text-[11px] font-normal text-[#5B6478]">
-                      ₹0.00 charged today
+                      {paymentMode === "pay_now"
+                        ? "Includes 18% GST • Razorpay Secured"
+                        : "₹0.00 charged today"}
                     </div>
                   </div>
                 </div>
@@ -734,30 +921,57 @@ export default function Subscription() {
             <span>Back to classes</span>
           </Link>
 
-          <button
-            type="submit"
-            id="continue-to-website-btn"
-            disabled={isSubmitting}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Saving plan...</span>
-              </>
-            ) : (
-              <>
-                <span>
-                  {pricingCalculation?.isCustomQuote
-                    ? "Continue with Custom Plan"
-                    : isExistingTrialActive
-                    ? "Continue to Website Setup"
-                    : "Start 14-Day Free Trial"}
-                </span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
+          {paymentMode === "pay_now" && !pricingCalculation?.isCustomQuote ? (
+            <button
+              type="submit"
+              id="pay-and-continue-btn"
+              disabled={isPayingRazorpay || isSubmitting || !!verifiedPaymentInfo}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
+            >
+              {isPayingRazorpay ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Opening Razorpay Checkout...</span>
+                </>
+              ) : verifiedPaymentInfo ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Payment Complete</span>
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-4 h-4" />
+                  <span>Pay {pricingCalculation?.formattedTotal} &amp; Continue</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              id="continue-to-website-btn"
+              disabled={isSubmitting}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Saving plan...</span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {pricingCalculation?.isCustomQuote
+                      ? "Continue with Custom Plan"
+                      : isExistingTrialActive
+                      ? "Continue to Website Setup"
+                      : "Start 14-Day Free Trial"}
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          )}
         </div>
       </form>
     </OnboardingLayout>

@@ -7,6 +7,7 @@ import {
   createOnlinePaymentOrder,
   finaliseOnlineOrderCapture,
 } from "../../services/onlinePaymentService";
+import { initiateRazorpayCheckout } from "../../services/razorpayService";
 import type { ParentPayContext } from "../../types/onlinePayment";
 import {
   School as SchoolIcon,
@@ -247,7 +248,7 @@ export default function ParentPayPage() {
     };
   }, [context, selectedDueIds]);
 
-  // 3. Initiate Checkout
+  // 3. Initiate Checkout via Razorpay Standard Web Checkout
   const handleCheckout = async () => {
     if (!sessionToken || selectedDueIds.length === 0 || !context) return;
 
@@ -264,25 +265,58 @@ export default function ParentPayPage() {
         return;
       }
 
-      // 2. Gateway execution (mock adapter auto-captures for dev/tests)
-      const captureRes = await finaliseOnlineOrderCapture(
-        context.school_id,
-        orderRes.gateway_order_id!,
-        `pay_${crypto.randomUUID().slice(0, 10)}`
-      );
+      // 2. Open official Razorpay Checkout Modal
+      const totalAmountPaise = orderRes.total_paise || computedTotals.totalPaise;
 
-      if (captureRes.success) {
-        setSuccessReceiptIds(captureRes.receipt_ids);
-        setPaidTotalPaise(orderRes.total_paise || computedTotals.totalPaise);
-        setStep("success");
-      } else {
-        setStep("failed");
-      }
+      await initiateRazorpayCheckout({
+        amount: totalAmountPaise,
+        currency: "INR",
+        receipt: `RCPT_${orderRes.order.id.slice(0, 20)}`,
+        name: context.school_name || "MyZkool School ERP",
+        description: `School Fee Payment (${selectedDueIds.length} dues)`,
+        notes: {
+          school_id: context.school_id,
+          order_id: orderRes.order.id,
+        },
+        prefill: {
+          contact: context.parent_mobile || "",
+        },
+        themeColor: "#2158E0",
+        onSuccess: async (_verifyResult, paymentData) => {
+          try {
+            // Finalise capture in DB & generate official receipts
+            const captureRes = await finaliseOnlineOrderCapture(
+              context.school_id,
+              orderRes.gateway_order_id || paymentData.razorpay_order_id,
+              paymentData.razorpay_payment_id
+            );
+
+            if (captureRes.success) {
+              setSuccessReceiptIds(captureRes.receipt_ids);
+              setPaidTotalPaise(totalAmountPaise);
+              setStep("success");
+            } else {
+              setCheckoutError(captureRes.error || "Failed to record payment receipt.");
+              setStep("failed");
+            }
+          } catch (e: any) {
+            setCheckoutError(e.message || "Failed to finalize receipt generation.");
+            setStep("failed");
+          } finally {
+            setIsCheckingOut(false);
+          }
+        },
+        onError: (errMsg) => {
+          setCheckoutError(errMsg);
+          setIsCheckingOut(false);
+        },
+        onDismiss: () => {
+          setIsCheckingOut(false);
+        },
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Payment execution failed.";
       setCheckoutError(msg);
-      setStep("failed");
-    } finally {
       setIsCheckingOut(false);
     }
   };

@@ -22,6 +22,7 @@ import {
   Printer,
   MessageSquare,
   AlertTriangle,
+  AlertCircle,
 } from "lucide-react";
 import { getRoutes, getTransportSettings } from "../../../services/transportCoreService";
 import {
@@ -40,7 +41,7 @@ interface AssignTransportDrawerProps {
   studentName: string;
   className?: string;
   isPrePrimary?: boolean;
-  academicYearId: string;
+  academicYearId?: string;
   existingAssignment?: TransportAssignment | null;
   onSuccess?: () => void;
 }
@@ -53,7 +54,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
   studentName,
   className = "",
   isPrePrimary = false,
-  academicYearId,
+  academicYearId = "",
   existingAssignment,
   onSuccess,
 }) => {
@@ -66,7 +67,18 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
     new Date().toISOString().split("T")[0]
   );
   const [requiresHandover, setRequiresHandover] = useState<boolean>(isPrePrimary);
-  const [monthlyFeePaise, setMonthlyFeePaise] = useState<number>(120000);
+  const [monthlyFeePaise, setMonthlyFeePaise] = useState<number>(0);
+  const [feeStatus, setFeeStatus] = useState<{
+    loading: boolean;
+    feePaise: number | null;
+    isFree: boolean;
+    error: string | null;
+  }>({
+    loading: false,
+    feePaise: null,
+    isFree: false,
+    error: null,
+  });
   const [overrideReason, setOverrideReason] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -118,10 +130,40 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
 
   // Recalculate fee live when stop or serviceType changes
   useEffect(() => {
-    if (!pickupStopId) return;
-    calculateStopMonthlyFee(schoolId, pickupStopId, serviceType).then((fee) => {
-      setMonthlyFeePaise(fee);
-    });
+    if (!pickupStopId || !schoolId) {
+      setMonthlyFeePaise(0);
+      setFeeStatus({ loading: false, feePaise: null, isFree: false, error: null });
+      return;
+    }
+
+    let active = true;
+    setFeeStatus({ loading: true, feePaise: null, isFree: false, error: null });
+
+    calculateStopMonthlyFee(schoolId, pickupStopId, serviceType)
+      .then((fee) => {
+        if (!active) return;
+        setMonthlyFeePaise(fee);
+        setFeeStatus({
+          loading: false,
+          feePaise: fee,
+          isFree: fee === 0,
+          error: null,
+        });
+      })
+      .catch((err: any) => {
+        if (!active) return;
+        setMonthlyFeePaise(0);
+        setFeeStatus({
+          loading: false,
+          feePaise: null,
+          isFree: false,
+          error: err?.message || "Transport fee has not been configured for this stop.",
+        });
+      });
+
+    return () => {
+      active = false;
+    };
   }, [schoolId, pickupStopId, serviceType]);
 
   if (!isOpen) return null;
@@ -147,12 +189,26 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
     if (r && r.stops && r.stops.length > 0) {
       setPickupStopId(r.stops[0].id);
       setDropStopId(r.stops[0].id);
+    } else {
+      setPickupStopId("");
+      setDropStopId("");
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    if (!selectedRouteId || !pickupStopId) {
+      setErrorMessage("Please select a route and stop.");
+      return;
+    }
+
+    if (feeStatus.error) {
+      setErrorMessage(feeStatus.error);
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -422,10 +478,35 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   3. Service Type
                 </label>
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  ₹{(monthlyFeePaise / 100).toFixed(0)} per month
-                </span>
+                {feeStatus.loading ? (
+                  <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-md animate-pulse">
+                    Calculating fee...
+                  </span>
+                ) : feeStatus.error ? (
+                  <span className="text-xs font-semibold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-md border border-rose-200">
+                    Fee Unconfigured
+                  </span>
+                ) : feeStatus.isFree ? (
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                    ₹0/mo (Free)
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                    ₹{((feeStatus.feePaise ?? 0) / 100).toLocaleString("en-IN")}/month
+                  </span>
+                )}
               </div>
+
+              {feeStatus.error && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-xs text-amber-800">
+                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="font-semibold block">Transport fee required</span>
+                    No monthly fee is configured for this stop and service type. Please configure stop pricing in Fee Management before assigning students.
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { key: "both", label: "Both ways" },
@@ -507,7 +588,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={submitting || (isFull && !overrideReason.trim())}
+                disabled={submitting || !!feeStatus.error || feeStatus.loading || (isFull && !overrideReason.trim())}
                 className={`px-5 py-2 rounded-xl text-xs font-semibold text-white transition-colors cursor-pointer ${
                   isFull
                     ? "bg-amber-600 hover:bg-amber-700 disabled:opacity-50"

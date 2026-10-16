@@ -2064,7 +2064,7 @@ export default function StudentProfileView() {
               studentName={`${profile.first_name} ${profile.last_name || ""}`.trim()}
               className={profile.class_name}
               isPrePrimary={profile.class_name?.toLowerCase().includes("kg") || profile.class_name?.toLowerCase().includes("nursery")}
-              academicYearId={profile.academic_year_id || "ay-2026-27"}
+              academicYearId={profile.academic_year_id || undefined}
               existingAssignment={isEditingTransport ? transportInfo?.assignment : null}
               onSuccess={() => {
                 setShowAssignDrawer(false);

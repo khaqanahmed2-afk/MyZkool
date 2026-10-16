@@ -104,7 +104,7 @@ export interface FeeTerm {
   updated_at: string;
 }
 
-export type FeeCycleFrequency = 'monthly' | 'quarterly' | 'three_term' | 'half_yearly' | 'yearly' | 'custom';
+export type FeeCycleFrequency = 'monthly' | 'quarterly' | 'three_term' | 'half_yearly' | 'yearly' | 'annual' | 'custom';
 
 export type StructureTargetType = 'all_classes' | 'specific_classes' | 'specific_sections' | 'specific_students';
 
@@ -197,6 +197,7 @@ export interface StudentDue {
   balance_paise: number;
   due_date: string;
   status: DueStatus;
+  invoice_no?: string | null;
   created_at: string;
   updated_at: string;
   created_by?: string | null;
@@ -204,6 +205,24 @@ export interface StudentDue {
   fee_head_name?: string;
   term_name?: string;
 }
+
+export type StudentConcessionStatus =
+  | 'draft'
+  | 'pending'
+  | 'approved'
+  | 'active'
+  | 'scheduled'
+  | 'expired'
+  | 'revoked'
+  | 'rejected';
+
+export type ConcessionCategory =
+  | 'sibling'
+  | 'merit'
+  | 'financial_aid'
+  | 'staff_ward'
+  | 'management'
+  | 'other';
 
 export interface ConcessionRule {
   id: string;
@@ -217,6 +236,9 @@ export interface ConcessionRule {
   auto_apply: boolean;
   needs_approval: boolean;
   is_active: boolean;
+  description?: string | null;
+  max_cap_paise?: number | null;
+  academic_year_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -235,9 +257,44 @@ export interface StudentConcession {
   from_term_id?: string | null;
   approved_by?: string | null;
   approved_at?: string | null;
-  status: 'active' | 'revoked';
+  status: StudentConcessionStatus;
   created_at: string;
   updated_at: string;
+  // Enhanced fields
+  valid_from?: string | null;
+  valid_to?: string | null;
+  concession_type?: string;
+  billing_period?: string;
+  document_url?: string | null;
+  document_name?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
+  rejection_reason?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+  // Joined fields for display
+  student_name?: string;
+  admission_no?: string;
+  class_name?: string;
+  section_name?: string;
+  rule_name?: string;
+}
+
+export interface ConcessionSummaryMetrics {
+  activeCount: number;
+  discountThisMonthPaise: number;
+  pendingCount: number;
+  scheduledCount: number;
+  totalCount: number;
+}
+
+export interface ConcessionFilters {
+  search?: string;
+  academicYearId?: string;
+  classId?: string;
+  concessionType?: string;
+  status?: string;
+  chipFilter?: string;
 }
 
 export interface LateFeeRule {
@@ -386,10 +443,32 @@ export interface ConcessionRuleInput {
   type: ConcessionType;
   value: number;
   fee_head_ids?: string[];
-  sibling_from_rank?: number;
+  description?: string;
+  max_cap_paise?: number;
+  academic_year_id?: string;
   auto_apply?: boolean;
   needs_approval?: boolean;
+  sibling_from_rank?: number;
 }
+
+export interface StudentConcessionInput {
+  student_id: string;
+  academic_year_id: string;
+  rule_id?: string | null;
+  concession_type: string;
+  type: ConcessionType;
+  value: number;
+  fee_head_ids: string[];
+  valid_from: string;
+  valid_to: string;
+  billing_period: string;
+  reason: string;
+  document_url?: string | null;
+  document_name?: string | null;
+  notes?: string | null;
+  status?: StudentConcessionStatus;
+}
+
 
 export interface LateFeeRuleInput {
   name: string;
@@ -508,4 +587,98 @@ export const ACCOUNTANT_FEE_PERMISSIONS: FeePermission[] = [
   'fees.read', 'fees.setup', 'fees.dues.manage', 'fees.collect',
   'fees.concession.give', 'fees.day_close', 'fees.reports', 'fees.remind',
 ];
+
+// ─── Student Invoice Domain Types ───────────────────────────────────────────
+
+export type InvoiceStatus = 'paid' | 'partial' | 'unpaid' | 'overdue' | 'cancelled' | 'draft';
+
+export interface InvoiceLineItem {
+  due_id: string;
+  fee_head_id: string;
+  fee_head_name: string;
+  fee_head_code?: string;
+  source: DueSource;
+  source_ref?: string | null;
+  description?: string | null;
+  gross_paise: number;
+  concession_paise: number;
+  net_paise: number;
+  paid_paise: number;
+  balance_paise: number;
+  due_date: string;
+  status: DueStatus;
+  is_transport: boolean;
+}
+
+export interface InvoicePaymentRecord {
+  receipt_id: string;
+  receipt_no: string;
+  receipt_date: string;
+  amount_paise: number;
+  payment_mode: string;
+  collected_by_name?: string;
+}
+
+export interface StudentInvoice {
+  id: string;
+  invoice_no: string;
+  school_id: string;
+  academic_year_id: string;
+  academic_year_name?: string;
+  student_id: string;
+  student_name: string;
+  admission_no: string;
+  roll_no?: string;
+  class_id?: string;
+  class_name: string;
+  section_id?: string;
+  section_name?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
+  term_id: string;
+  billing_period: string;
+  invoice_date: string;
+  due_date: string;
+  total_paise: number;
+  net_paise?: number;
+  gross_paise: number;
+  concession_paise: number;
+  late_fee_paise: number;
+  transport_paise: number;
+  tuition_paise: number;
+  paid_paise: number;
+  balance_paise: number;
+  status: InvoiceStatus;
+  line_items: InvoiceLineItem[];
+  payments: InvoicePaymentRecord[];
+  whatsapp_sent_at?: string | null;
+  notes?: string;
+  created_at: string;
+}
+
+export interface InvoiceSummaryMetrics {
+  totalInvoicedPaise: number;
+  totalPaidPaise: number;
+  outstandingPaise: number;
+  overdueCount: number;
+  overduePaise: number;
+  invoiceCount: number;
+  paidCount: number;
+  pendingCount: number;
+  draftCount?: number;
+  cancelledCount?: number;
+}
+
+export interface InvoiceFilters {
+  academic_year_id?: string;
+  class_id?: string;
+  section_id?: string;
+  term_id?: string;
+  status?: 'all' | InvoiceStatus | string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: 'date' | 'due_date' | 'amount' | 'student' | 'invoice_no';
+  sortOrder?: 'asc' | 'desc';
+}
 

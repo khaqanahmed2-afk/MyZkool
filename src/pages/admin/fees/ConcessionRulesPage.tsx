@@ -1,288 +1,448 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Edit2, Loader2, AlertCircle, Tag } from "lucide-react";
-import {
-  getConcessionRules, createConcessionRule, updateConcessionRule,
-} from "../../../services/feeSetupService";
-import type { ConcessionRule, ConcessionRuleInput, ConcessionBasis, ConcessionType } from "../../../types/fees";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { Sliders, Plus, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
-import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
-
-const BASIS_LABELS: Record<ConcessionBasis, string> = {
-  sibling: "Sibling",
-  staff_ward: "Staff Ward",
-  rte: "RTE",
-  ews: "EWS",
-  merit: "Merit",
-  management: "Management",
-  other: "Other",
-};
-
-const DEFAULT_RULES: Array<Partial<ConcessionRuleInput> & { note: string }> = [
-  { name: "Sibling Concession", basis: "sibling", type: "percent", value: 10, sibling_from_rank: 2, auto_apply: false, note: "Second and later children, percent on tuition" },
-  { name: "RTE Concession", basis: "rte", type: "percent", value: 100, auto_apply: true, note: "100% on heads flagged RTE waivable, applied automatically" },
-  { name: "Staff Ward", basis: "staff_ward", type: "percent", value: 25, auto_apply: false, note: "25% concession for children of staff" },
-];
+import type {
+  StudentConcession,
+  ConcessionSummaryMetrics,
+  ConcessionFilters,
+  ConcessionRule,
+  FeeHead,
+  StudentConcessionInput,
+} from "../../../types/fees";
+import {
+  getConcessionsOverview,
+  createStudentConcession,
+  approveStudentConcession,
+  rejectStudentConcession,
+  revokeStudentConcession,
+  deleteStudentConcession,
+} from "../../../services/concessionService";
+import { getConcessionRules, getFeeHeads } from "../../../services/feeSetupService";
+import { getClassesWithSections } from "../../../services/classSectionService";
+import { ConcessionSummaryCards } from "../../../components/admin/fees/concessions/ConcessionSummaryCards";
+import { ConcessionFilterPanel } from "../../../components/admin/fees/concessions/ConcessionFilterPanel";
+import { ConcessionTable } from "../../../components/admin/fees/concessions/ConcessionTable";
+import { AddConcessionDrawer } from "../../../components/admin/fees/concessions/AddConcessionDrawer";
+import { ConcessionDetailDrawer } from "../../../components/admin/fees/concessions/ConcessionDetailDrawer";
+import { ConcessionPoliciesDrawer } from "../../../components/admin/fees/concessions/ConcessionPoliciesDrawer";
+import { supabase, isSupabaseConfigured } from "../../../lib/supabase";
 
 export default function ConcessionRulesPage() {
-  const { school: authSchool, schoolId: authSchoolId, loading: authLoading } = useAuth() as any;
-  const activeSchoolId = authSchool?.id || authSchoolId || null;
-  const school = authSchool || (activeSchoolId ? { id: activeSchoolId } : null);
+  const { school: authSchool, schoolId: authSchoolId, user, role } = useAuth() as any;
+  const activeSchoolId = authSchool?.id || authSchoolId || "";
 
-  const [rules, setRules] = useState<ConcessionRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showDefaults, setShowDefaults] = useState(false);
-  const [drawer, setDrawer] = useState<{ open: boolean; rule?: ConcessionRule }>({ open: false });
-  const [form, setForm] = useState<ConcessionRuleInput>({
-    name: "", basis: "other", type: "percent", value: 0, auto_apply: false, needs_approval: false,
+  // Data States
+  const [concessions, setConcessions] = useState<StudentConcession[]>([]);
+  const [metrics, setMetrics] = useState<ConcessionSummaryMetrics>({
+    activeCount: 0,
+    discountThisMonthPaise: 0,
+    pendingCount: 0,
+    scheduledCount: 0,
+    totalCount: 0,
   });
-  const [formError, setFormError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (authLoading) return;
-    if (!activeSchoolId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
+  // Metadata
+  const [academicYears, setAcademicYears] = useState<{ id: string; label: string }[]>([]);
+  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
+  const [concessionRules, setConcessionRules] = useState<ConcessionRule[]>([]);
+
+  // Filtering & Pagination
+  const [filters, setFilters] = useState<ConcessionFilters>({
+    search: "",
+    academicYearId: "all",
+    classId: "all",
+    concessionType: "all",
+    status: "all",
+    chipFilter: "all",
+  });
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(8);
+
+  // Drawers
+  const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
+  const [isPoliciesDrawerOpen, setIsPoliciesDrawerOpen] = useState(false);
+  const [selectedConcessionForDetail, setSelectedConcessionForDetail] = useState<StudentConcession | null>(null);
+  const [selectedConcessionForEdit, setSelectedConcessionForEdit] = useState<StudentConcession | null>(null);
+
+  // Feedback Toasts
+  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const showToast = (type: "success" | "error", text: string) => {
+    setToastMessage({ type, text });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // ─── Fetch Metadata ────────────────────────────────────────────────────────
+  const loadMetadata = useCallback(async () => {
+    if (!activeSchoolId) return;
     try {
-      const { rules: r, error: e } = await getConcessionRules(activeSchoolId);
-      setRules(r || []);
-      setError(e ?? null);
+      // 1. Academic Years
+      if (isSupabaseConfigured) {
+        const { data: years } = await supabase
+          .from("academic_years")
+          .select("id, label, is_current")
+          .eq("school_id", activeSchoolId);
+        if (years && years.length > 0) {
+          setAcademicYears(
+            years.map((y) => ({ id: y.id, label: y.label || "2026–2027" }))
+          );
+        } else {
+          setAcademicYears([{ id: "default_year", label: "2025–2026" }]);
+        }
+
+        // 2. Classes
+        const { classes: cls } = await getClassesWithSections(activeSchoolId);
+        setClasses(cls || []);
+
+        // 3. Students
+        const { data: stds } = await supabase
+          .from("students")
+          .select("id, first_name, last_name, admission_no, admission_class_id, status")
+          .eq("school_id", activeSchoolId)
+          .is("deleted_at", null);
+        setStudents(stds || []);
+      } else {
+        setAcademicYears([
+          { id: "2025_2026", label: "2025–2026" },
+          { id: "2026_2027", label: "2026–2027" },
+        ]);
+        const { classes: cls } = await getClassesWithSections(activeSchoolId);
+        setClasses(cls || []);
+      }
+
+      // 4. Fee Heads & Concession Rules
+      const [headsRes, rulesRes] = await Promise.all([
+        getFeeHeads(activeSchoolId, false),
+        getConcessionRules(activeSchoolId),
+      ]);
+      setFeeHeads(headsRes.heads || []);
+      setConcessionRules(rulesRes.rules || []);
     } catch (err: any) {
-      setError(err.message || "Failed to load concession rules.");
+      console.warn("Error loading metadata:", err?.message);
+    }
+  }, [activeSchoolId]);
+
+  // ─── Load Concessions Overview ─────────────────────────────────────────────
+  const loadConcessions = useCallback(async (isSilent = false) => {
+    if (!activeSchoolId) return;
+    if (!isSilent) setLoading(true);
+    else setRefreshing(true);
+    setError(null);
+
+    try {
+      const { concessions: list, metrics: m, error: err } = await getConcessionsOverview(
+        activeSchoolId,
+        filters
+      );
+      if (err) {
+        setError(err);
+      } else {
+        setConcessions(list);
+        setMetrics(m);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to load concessions.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [activeSchoolId, authLoading]);
+  }, [activeSchoolId, filters]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadMetadata();
+  }, [loadMetadata]);
 
-  function openAdd() {
-    setForm({ name: "", basis: "other", type: "percent", value: 0, auto_apply: false, needs_approval: false });
-    setFormError(null);
-    setDrawer({ open: true });
-  }
-  function openEdit(rule: ConcessionRule) {
-    setForm({ name: rule.name, basis: rule.basis, type: rule.type, value: rule.value, sibling_from_rank: rule.sibling_from_rank ?? undefined, auto_apply: rule.auto_apply, needs_approval: rule.needs_approval });
-    setFormError(null);
-    setDrawer({ open: true, rule });
-  }
+  useEffect(() => {
+    loadConcessions();
+  }, [loadConcessions]);
 
-  async function handleSave() {
-    if (!form.name.trim() || form.value <= 0) { setFormError("Name and a positive value are required."); return; }
-    setSaving(true);
-    if (drawer.rule) {
-      const { error: e } = await updateConcessionRule(school.id, drawer.rule.id, form);
-      if (e) { setFormError(e); setSaving(false); return; }
+  // Reset to first page when filters change
+  const handleFilterChange = (newFilters: ConcessionFilters) => {
+    setFilters(newFilters);
+    setPage(1);
+  };
+
+  // ─── Actions ───────────────────────────────────────────────────────────────
+  const handleCreateConcession = async (input: StudentConcessionInput): Promise<boolean> => {
+    const actorId = user?.id || null;
+    const actorRole = role || "school_admin";
+    const res = await createStudentConcession(activeSchoolId, input, actorId, actorRole);
+    if (res.error) {
+      showToast("error", res.error);
+      return false;
+    }
+    if (res.approvalRequired) {
+      showToast("success", "Concession submitted for administrator approval.");
     } else {
-      const { error: e } = await createConcessionRule(school.id, form);
-      if (e) { setFormError(e); setSaving(false); return; }
+      showToast("success", "Concession created and applied successfully.");
     }
-    await load();
-    setSaving(false);
-    setDrawer({ open: false });
-  }
+    await loadConcessions(true);
+    return true;
+  };
 
-  async function addDefaults(idx: number) {
-    setSaving(true);
-    const r = DEFAULT_RULES[idx];
-    await createConcessionRule(school.id, {
-      name: r.name!, basis: r.basis!, type: r.type!, value: r.value!,
-      sibling_from_rank: r.sibling_from_rank, auto_apply: r.auto_apply ?? false,
-    });
-    await load();
-    setSaving(false);
+  const handleApprove = async (concessionId: string, note?: string) => {
+    const actorId = user?.id || activeSchoolId;
+    const res = await approveStudentConcession(activeSchoolId, concessionId, actorId, note);
+    if (res.success) {
+      showToast("success", "Concession approved and applied to student dues.");
+      await loadConcessions(true);
+    } else {
+      showToast("error", res.error || "Failed to approve concession.");
+    }
+  };
+
+  const handleReject = async (concessionId: string, reason: string) => {
+    const actorId = user?.id || activeSchoolId;
+    const res = await rejectStudentConcession(activeSchoolId, concessionId, actorId, reason);
+    if (res.success) {
+      showToast("success", "Concession request rejected.");
+      await loadConcessions(true);
+    } else {
+      showToast("error", res.error || "Failed to reject concession.");
+    }
+  };
+
+  const handleRevoke = async (concessionId: string, reason?: string) => {
+    const actorId = user?.id || activeSchoolId;
+    const res = await revokeStudentConcession(activeSchoolId, concessionId, actorId, reason);
+    if (res.success) {
+      showToast("success", "Concession revoked. Un-paid dues have been restored.");
+      await loadConcessions(true);
+    } else {
+      showToast("error", res.error || "Failed to revoke concession.");
+    }
+  };
+
+  const handleDelete = async (concessionId: string) => {
+    const res = await deleteStudentConcession(activeSchoolId, concessionId);
+    if (res.success) {
+      showToast("success", "Concession deleted.");
+      await loadConcessions(true);
+    } else {
+      showToast("error", res.error || "Failed to delete concession.");
+    }
+  };
+
+  // ─── Export CSV ────────────────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    if (concessions.length === 0) {
+      showToast("error", "No concession records to export.");
+      return;
+    }
+    const headers = [
+      "Student Name",
+      "Admission No",
+      "Class",
+      "Concession Type",
+      "Discount Type",
+      "Discount Value",
+      "Status",
+      "Valid From",
+      "Valid To",
+      "Billing Period",
+      "Reason",
+    ];
+
+    const rows = concessions.map((c) => [
+      `"${c.student_name || ""}"`,
+      `"${c.admission_no || ""}"`,
+      `"${c.class_name || ""} ${c.section_name || ""}"`,
+      `"${c.concession_type || ""}"`,
+      `"${c.type}"`,
+      `"${c.value}"`,
+      `"${c.status}"`,
+      `"${c.valid_from || ""}"`,
+      `"${c.valid_to || ""}"`,
+      `"${c.billing_period || ""}"`,
+      `"${(c.reason || "").replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `concessions_${activeSchoolId}_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("success", `Exported ${concessions.length} concession records to CSV.`);
+  };
+
+  if (!activeSchoolId) {
+    return (
+      <div className="min-h-[60vh] bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-1">School Context Required</h2>
+        <p className="text-sm text-slate-500 max-w-md">
+          Please select or log into an authenticated school context to view and configure fee concessions.
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-6 px-4">
-      <FeeNavHeader
-        title="Discounts & Concessions"
-        subtitle="Sibling, RTE, staff-ward, merit, and category concessions."
-        action={
-          <div className="flex gap-2">
-            {rules.length === 0 && (
-              <button
-                onClick={() => setShowDefaults(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-[#E6EAF3] bg-white rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                <Tag className="w-3.5 h-3.5 text-blue-600" />
-                <span>Add Defaults</span>
-              </button>
-            )}
+    <div className="space-y-5 max-w-[1440px] mx-auto pb-12">
+      {/* Toast Feedback */}
+      {toastMessage && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-bottom duration-200 ${
+            toastMessage.type === "success"
+              ? "bg-[#00875A] text-white"
+              : "bg-rose-600 text-white"
+          }`}
+        >
+          {toastMessage.type === "success" ? (
+            <CheckCircle className="w-4 h-4 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0" />
+          )}
+          <span>{toastMessage.text}</span>
+        </div>
+      )}
+
+      {/* Top Header Section */}
+      <div>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1.5">
+          <span>Fee Management</span>
+          <span>›</span>
+          <span className="text-slate-700 font-semibold">Discounts & Concessions</span>
+        </div>
+
+        {/* Title, Subtitle, and Top Action Buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Discounts & Concessions
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1 font-normal">
+              Manage student discounts, scholarships and fee concessions.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* Secondary Button: Concession Policies */}
             <button
-              onClick={openAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 cursor-pointer"
+              type="button"
+              onClick={() => setIsPoliciesDrawerOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 border border-[#E6EAF3] text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Rule</span>
+              <Sliders className="w-4 h-4 text-slate-500" />
+              <span>Concession Policies</span>
+            </button>
+
+            {/* Primary Action: Add Concession */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedConcessionForEdit(null);
+                setIsAddDrawerOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#00875A] hover:bg-[#007048] text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Concession</span>
             </button>
           </div>
-        }
-      />
+        </div>
+      </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-[#5B6478]"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-      ) : error ? (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-600 text-sm">{error}</div>
-      ) : rules.length === 0 ? (
-        <div className="bg-white border border-[#E6EAF3] rounded-xl py-16 text-center">
-          <Tag className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-          <p className="text-[#141A2E] font-medium mb-1">No concession rules yet</p>
-          <p className="text-[#5B6478] text-sm mb-4">Add defaults to get started quickly</p>
-          <button onClick={() => setShowDefaults(true)} className="px-6 py-2.5 bg-[#2158E0] text-white rounded-lg text-sm font-medium hover:bg-[#1a46b8]">
-            Add Default Rules
+      {/* Error Alert if any */}
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadConcessions()}
+            className="flex items-center gap-1 font-bold underline hover:no-underline cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
           </button>
         </div>
-      ) : (
-        <div className="bg-white border border-[#E6EAF3] rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#E6EAF3] bg-gray-50/50">
-                <th className="text-left px-5 py-3 text-xs text-[#5B6478] font-medium">Name</th>
-                <th className="text-left px-3 py-3 text-xs text-[#5B6478] font-medium">Basis</th>
-                <th className="text-left px-3 py-3 text-xs text-[#5B6478] font-medium">Discount</th>
-                <th className="text-center px-3 py-3 text-xs text-[#5B6478] font-medium">Auto-apply</th>
-                <th className="text-center px-3 py-3 text-xs text-[#5B6478] font-medium">Needs approval</th>
-                <th className="text-center px-3 py-3 text-xs text-[#5B6478] font-medium">Active</th>
-                <th className="px-5 py-3 w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {rules.map(rule => (
-                <tr key={rule.id} className="border-b border-[#E6EAF3] last:border-0 hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium text-[#141A2E]">{rule.name}</td>
-                  <td className="px-3 py-3">
-                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
-                      {BASIS_LABELS[rule.basis]}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-[#141A2E]">
-                    {rule.type === "percent" ? `${rule.value}%` : `₹${rule.value / 100}`}
-                    {rule.sibling_from_rank ? ` (from rank ${rule.sibling_from_rank})` : ""}
-                  </td>
-                  <td className="px-3 py-3 text-center">{rule.auto_apply ? "✓" : "—"}</td>
-                  <td className="px-3 py-3 text-center">{rule.needs_approval ? "✓" : "—"}</td>
-                  <td className="px-3 py-3 text-center">
-                    <span className={`inline-block w-2 h-2 rounded-full ${rule.is_active ? "bg-green-500" : "bg-gray-300"}`} />
-                  </td>
-                  <td className="px-5 py-3">
-                    <button onClick={() => openEdit(rule)} className="p-1.5 text-[#5B6478] hover:text-[#2158E0] rounded">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       )}
 
-      {/* Add/Edit Drawer */}
-      {drawer.open && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/40" onClick={() => setDrawer({ open: false })} />
-          <div className="w-96 bg-white h-full shadow-xl flex flex-col">
-            <div className="px-6 py-4 border-b border-[#E6EAF3]">
-              <h2 className="text-base font-bold text-[#141A2E]">{drawer.rule ? "Edit Rule" : "Add Concession Rule"}</h2>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              {formError && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm flex gap-2"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{formError}</div>}
-              <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Name *</label>
-                <input className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                  value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Basis</label>
-                <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                  value={form.basis} onChange={e => setForm(f => ({ ...f, basis: e.target.value as ConcessionBasis }))}>
-                  {Object.entries(BASIS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-[#141A2E] mb-1">Type</label>
-                  <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as ConcessionType }))}>
-                    <option value="percent">Percent (%)</option>
-                    <option value="fixed">Fixed (₹)</option>
-                  </select>
-                </div>
-                <div className="w-28">
-                  <label className="block text-xs font-medium text-[#141A2E] mb-1">Value *</label>
-                  <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={Number.isNaN(form.value) ? "" : (form.value ?? "")}
-                    onChange={e => {
-                      const val = parseFloat(e.target.value);
-                      setForm(f => ({ ...f, value: isNaN(val) ? 0 : val }));
-                    }} />
-                </div>
-              </div>
-              {form.basis === "sibling" && (
-                <div>
-                  <label className="block text-xs font-medium text-[#141A2E] mb-1">Apply from sibling rank</label>
-                  <input type="number" min={1} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
-                    value={Number.isNaN(form.sibling_from_rank) ? 2 : (form.sibling_from_rank ?? 2)}
-                    onChange={e => {
-                      const val = parseInt(e.target.value, 10);
-                      setForm(f => ({ ...f, sibling_from_rank: isNaN(val) ? 2 : val }));
-                    }} />
-                  <p className="text-xs text-[#5B6478] mt-1">e.g. 2 = second and later children get the concession</p>
-                </div>
-              )}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={form.auto_apply ?? false} onChange={e => setForm(f => ({ ...f, auto_apply: e.target.checked }))} className="w-4 h-4 accent-[#2158E0]" />
-                <span className="text-sm text-[#141A2E]">Apply automatically</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={form.needs_approval ?? false} onChange={e => setForm(f => ({ ...f, needs_approval: e.target.checked }))} className="w-4 h-4 accent-[#2158E0]" />
-                <span className="text-sm text-[#141A2E]">Needs owner approval</span>
-              </label>
-            </div>
-            <div className="px-6 py-4 border-t border-[#E6EAF3] flex gap-3">
-              <button onClick={() => setDrawer({ open: false })} className="flex-1 px-4 py-2 border border-[#E6EAF3] rounded-lg text-sm text-[#5B6478]">Cancel</button>
-              <button onClick={handleSave} disabled={saving}
-                className="flex-1 px-4 py-2 bg-[#2158E0] text-white rounded-lg text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 4 Summary Cards */}
+      <ConcessionSummaryCards metrics={metrics} loading={loading} />
 
-      {/* Defaults modal */}
-      {showDefaults && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-[#E6EAF3]">
-              <h2 className="text-base font-bold text-[#141A2E]">Default Concession Rules</h2>
-              <p className="text-xs text-[#5B6478] mt-0.5">All are off until you turn them on</p>
-            </div>
-            <div className="px-6 py-4 space-y-3">
-              {DEFAULT_RULES.map((r, i) => (
-                <div key={i} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-[#E6EAF3]">
-                  <div>
-                    <p className="text-sm font-medium text-[#141A2E]">{r.name}</p>
-                    <p className="text-xs text-[#5B6478] mt-0.5">{r.note}</p>
-                  </div>
-                  <button onClick={() => addDefaults(i)} disabled={saving}
-                    className="shrink-0 px-3 py-1.5 text-xs bg-[#2158E0] text-white rounded-lg hover:bg-[#1a46b8] disabled:opacity-60">
-                    Add
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="px-6 py-4 border-t border-[#E6EAF3]">
-              <button onClick={() => setShowDefaults(false)} className="w-full px-4 py-2 border border-[#E6EAF3] rounded-lg text-sm text-[#5B6478]">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Filter Panel */}
+      <ConcessionFilterPanel
+        filters={filters}
+        onChange={handleFilterChange}
+        academicYears={academicYears}
+        classes={classes}
+      />
+
+      {/* Concession Records Table */}
+      <ConcessionTable
+        concessions={concessions}
+        loading={loading}
+        onViewDetails={(c) => setSelectedConcessionForDetail(c)}
+        onEdit={(c) => {
+          setSelectedConcessionForEdit(c);
+          setIsAddDrawerOpen(true);
+        }}
+        onApprove={(c) => handleApprove(c.id)}
+        onReject={(c) => handleReject(c.id, "Rejected by administrator")}
+        onRevoke={(c) => handleRevoke(c.id, "Revoked by administrator")}
+        onDelete={(c) => handleDelete(c.id)}
+        onExport={handleExportCSV}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(newSize) => {
+          setPageSize(newSize);
+          setPage(1);
+        }}
+      />
+
+      {/* Add Concession Drawer */}
+      <AddConcessionDrawer
+        isOpen={isAddDrawerOpen}
+        onClose={() => setIsAddDrawerOpen(false)}
+        onSubmit={handleCreateConcession}
+        schoolId={activeSchoolId}
+        students={students}
+        academicYears={academicYears}
+        classes={classes}
+        feeHeads={feeHeads}
+        concessionRules={concessionRules}
+      />
+
+      {/* Concession Details Drawer */}
+      <ConcessionDetailDrawer
+        concession={selectedConcessionForDetail}
+        isOpen={!!selectedConcessionForDetail}
+        onClose={() => setSelectedConcessionForDetail(null)}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onRevoke={handleRevoke}
+        onDelete={handleDelete}
+      />
+
+      {/* Concession Policies Drawer */}
+      <ConcessionPoliciesDrawer
+        isOpen={isPoliciesDrawerOpen}
+        onClose={() => setIsPoliciesDrawerOpen(false)}
+        rules={concessionRules}
+        feeHeads={feeHeads}
+        schoolId={activeSchoolId}
+        onRefresh={async () => {
+          const { rules: r } = await getConcessionRules(activeSchoolId);
+          setConcessionRules(r || []);
+        }}
+      />
     </div>
   );
 }
-

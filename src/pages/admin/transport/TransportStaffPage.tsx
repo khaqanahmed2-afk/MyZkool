@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Users,
   Plus,
@@ -12,6 +13,7 @@ import {
   ShieldCheck,
   Edit2,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import {
   getTransportStaff,
@@ -32,13 +34,43 @@ import { useAuth } from "../../../hooks/useAuth";
 import { checkSchoolFeature } from "../../../middleware/features";
 import { TransportLockedPreview } from "./TransportLockedPreview";
 
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 export function TransportStaffPage() {
+  const navigate = useNavigate();
   const { schoolId } = useAuth();
   const [hasFeature, setHasFeature] = useState<boolean | null>(null);
   const [staffList, setStaffList] = useState<EnrichedStaff[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+
+  // Safe Back Navigation
+  const handleBack = () => {
+    if (showModal && (fullName.trim() || phone10.trim() || licenseNo.trim())) {
+      if (!window.confirm("You have unsaved staff details. Are you sure you want to discard them and go back?")) {
+        return;
+      }
+    }
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate("/admin/transport");
+    }
+  };
 
   // Add / Edit staff modal state
   const [showModal, setShowModal] = useState(false);
@@ -311,13 +343,26 @@ export function TransportStaffPage() {
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-[#141A2E] tracking-tight">
-            Drivers & Attendants
-          </h1>
-          <p className="text-xs text-[#5B6478]">
-            Manage driver licenses, police verification dates, and app invites
-          </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
+            title="Return to Transport Dashboard"
+          >
+            <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
+            <span>Back to Transport</span>
+          </button>
+
+          <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div>
+            <h1 className="text-2xl font-black text-[#141A2E] tracking-tight">
+              Drivers & Attendants
+            </h1>
+            <p className="text-xs text-[#5B6478]">
+              Manage driver licenses, police verification dates, and app invites
+            </p>
+          </div>
         </div>
         <button
           onClick={handleOpenAdd}
@@ -414,6 +459,11 @@ export function TransportStaffPage() {
                             <span className="font-semibold text-[#141A2E]">
                               {s.license_no || "N/A"}
                             </span>
+                            {s.license_expires_on && (
+                              <p className="text-[11px] text-[#5B6478]">
+                                Exp: {formatDate(s.license_expires_on)}
+                              </p>
+                            )}
                             {lChip && (
                               <div>
                                 <span
@@ -438,7 +488,7 @@ export function TransportStaffPage() {
                         {s.police_verified_on ? (
                           <span className="inline-flex items-center gap-1 text-green-700 font-semibold">
                             <ShieldCheck className="w-3.5 h-3.5" />
-                            {s.police_verified_on}
+                            {formatDate(s.police_verified_on)}
                           </span>
                         ) : (
                           <span className="text-amber-700 font-semibold">Pending</span>
