@@ -580,8 +580,15 @@ export function StudentFeeLedgerDrawer({
                           {(ledgerDetails?.fee_breakdown || []).slice(0, 6).map((b) => (
                             <tr
                               key={b.id}
+                              tabIndex={0}
                               onClick={() => setSelectedDueDetail(b)}
-                              className="hover:bg-blue-50/40 transition-colors cursor-pointer"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedDueDetail(b);
+                                }
+                              }}
+                              className="hover:bg-blue-50/40 transition-colors cursor-pointer focus:outline-none focus:bg-blue-50/50"
                               title="Click to view payment allocation & obligation details"
                             >
                               <td className="py-2 px-3 font-semibold text-slate-800 text-[11px]">
@@ -648,9 +655,17 @@ export function StudentFeeLedgerDrawer({
                     <div className="space-y-2">
                       {ledgerDetails?.transactions.slice(0, 6).map((tx) => (
                         <div
+                          role="button"
+                          tabIndex={0}
                           key={tx.id}
                           onClick={() => setSelectedTxDetail(tx)}
-                          className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 bg-white hover:border-blue-300 hover:bg-blue-50/20 transition-all shadow-2xs cursor-pointer"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedTxDetail(tx);
+                            }
+                          }}
+                          className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 bg-white hover:border-blue-300 hover:bg-blue-50/20 transition-all shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
                           title="Click to view payment allocation & transaction details"
                         >
                           <div className="flex items-center gap-3 min-w-0">
@@ -897,8 +912,16 @@ export function StudentFeeLedgerDrawer({
                           return (
                             <React.Fragment key={t.id}>
                               <tr
+                                tabIndex={0}
                                 onClick={() => setSelectedTxDetail(t)}
-                                className="hover:bg-blue-50/40 transition-colors cursor-pointer"
+                                onKeyDown={(e) => {
+                                  if (e.target !== e.currentTarget) return;
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setSelectedTxDetail(t);
+                                  }
+                                }}
+                                className="hover:bg-blue-50/40 transition-colors cursor-pointer focus:outline-none focus:bg-blue-50/50"
                                 title="Click to view full transaction and payment allocation details"
                               >
                                 <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-[11px]">
@@ -913,7 +936,10 @@ export function StudentFeeLedgerDrawer({
                                     {t.internal_note && (
                                       <button
                                         type="button"
-                                        onClick={() => setExpandedAuditTxId(isAuditOpen ? null : t.id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedAuditTxId(isAuditOpen ? null : t.id);
+                                        }}
                                         className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
                                         title="View reconciliation audit note"
                                       >
