@@ -17,9 +17,11 @@ interface OnboardingLayoutProps {
   isSavingAndExiting?: boolean;
 }
 
+const EMPTY_COMPLETED_STEP_NUMBERS: number[] = [];
+
 export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
   currentStepNumber,
-  completedStepNumbers = [],
+  completedStepNumbers = EMPTY_COMPLETED_STEP_NUMBERS,
   title,
   subtitle,
   children,

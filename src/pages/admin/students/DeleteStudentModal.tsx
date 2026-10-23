@@ -107,7 +107,7 @@ export function DeleteStudentModal({
               </p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-red-100 transition-colors cursor-pointer"
@@ -142,12 +142,12 @@ export function DeleteStudentModal({
 
           {/* Deletion Mode Selector */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 block">Choose Deletion Type:</label>
+            <span className="text-xs font-bold text-slate-700 block">Choose Deletion Type:</span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* Permanent Purge */}
-              <div
+              <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                 onClick={() => setMode("permanent")}
-                className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`p-3 rounded-xl border-2 cursor-pointer transition-colors ${
                   mode === "permanent"
                     ? "border-red-500 bg-red-50/40 text-red-900"
                     : "border-slate-200 hover:border-slate-300 text-slate-700"
@@ -166,9 +166,9 @@ export function DeleteStudentModal({
               </div>
 
               {/* Archive / Soft Delete */}
-              <div
+              <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                 onClick={() => setMode("archive")}
-                className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`p-3 rounded-xl border-2 cursor-pointer transition-colors ${
                   mode === "archive"
                     ? "border-blue-600 bg-blue-50/40 text-blue-900"
                     : "border-slate-200 hover:border-slate-300 text-slate-700"
@@ -190,8 +190,8 @@ export function DeleteStudentModal({
 
           {/* Reason Input */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 block">Reason for deletion:</label>
-            <select
+            <label htmlFor="deletestudentmodal-reason-for-deletion" className="text-xs font-semibold text-slate-700 block">Reason for deletion:</label>
+            <select id="deletestudentmodal-reason-for-deletion" aria-label="Reason for deletion:"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
@@ -206,16 +206,15 @@ export function DeleteStudentModal({
 
           {/* Type to confirm safeguard */}
           <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-semibold text-slate-800 block">
+            <label htmlFor="deletestudentmodal-to-confirm-type-expectedconfir" className="text-xs font-semibold text-slate-800 block">
               To confirm, type <span className="font-mono font-bold text-red-600 select-all">{expectedConfirmation}</span> below:
             </label>
-            <input
+            <input id="deletestudentmodal-to-confirm-type-expectedconfir"
               type="text"
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={`Type "${expectedConfirmation}"`}
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
-              autoFocus
             />
           </div>
 
@@ -232,7 +231,7 @@ export function DeleteStudentModal({
             <button
               type="submit"
               disabled={!isConfirmed || isDeleting}
-              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                 mode === "permanent" ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
               }`}
             >

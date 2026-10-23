@@ -640,23 +640,24 @@ export async function saveSchoolProfile({
     try {
       if (existingUserSchool) {
         // Enforce update strictly bounded to user's verified school and created_by
+        const schoolUpdatePayload = {
+          name: schoolRecord.name,
+          subdomain: schoolRecord.subdomain,
+          school_type: schoolRecord.school_type,
+          affiliation_board: schoolRecord.affiliation_board,
+          official_email: schoolRecord.official_email,
+          contact_phone: schoolRecord.contact_phone,
+          address: schoolRecord.address,
+          city: schoolRecord.city,
+          district: schoolRecord.district,
+          state: schoolRecord.state,
+          pin_code: schoolRecord.pin_code,
+          onboarding_step: nextStep,
+          updated_at: timestamp,
+        };
         const { error: schoolError } = await supabase
           .from("schools")
-          .update({
-            name: schoolRecord.name,
-            subdomain: schoolRecord.subdomain,
-            school_type: schoolRecord.school_type,
-            affiliation_board: schoolRecord.affiliation_board,
-            official_email: schoolRecord.official_email,
-            contact_phone: schoolRecord.contact_phone,
-            address: schoolRecord.address,
-            city: schoolRecord.city,
-            district: schoolRecord.district,
-            state: schoolRecord.state,
-            pin_code: schoolRecord.pin_code,
-            onboarding_step: nextStep,
-            updated_at: timestamp,
-          })
+          .update(schoolUpdatePayload)
           .eq("id", schoolRecord.id)
           .eq("created_by", userId);
 
@@ -675,7 +676,7 @@ export async function saveSchoolProfile({
         }
       } else {
         // Fresh creation with created_by = userId
-        const { error: schoolError } = await supabase.from("schools").insert({
+        const schoolInsertPayload = {
           id: schoolRecord.id,
           name: schoolRecord.name,
           subdomain: schoolRecord.subdomain,
@@ -693,7 +694,8 @@ export async function saveSchoolProfile({
           created_by: userId,
           created_at: timestamp,
           updated_at: timestamp,
-        });
+        };
+        const { error: schoolError } = await supabase.from("schools").insert(schoolInsertPayload);
 
         if (schoolError) {
           console.warn("Supabase school insert error:", schoolError.message);
@@ -713,14 +715,15 @@ export async function saveSchoolProfile({
       // Bind school_id to the user's profile
       try {
         if (userId) {
+          const profileUpdatePayload = {
+            school_id: schoolRecord.id,
+            onboarding_completed: false,
+            current_onboarding_step: "/onboarding/academics",
+            updated_at: timestamp,
+          };
           const { error: updateErr, data: updatedRows } = await supabase
             .from("profiles")
-            .update({
-              school_id: schoolRecord.id,
-              onboarding_completed: false,
-              current_onboarding_step: "/onboarding/academics",
-              updated_at: timestamp,
-            })
+            .update(profileUpdatePayload)
             .eq("auth_id", userId)
             .select();
 
@@ -732,19 +735,20 @@ export async function saveSchoolProfile({
           if (!updateErr && (!updatedRows || updatedRows.length === 0)) {
             const { data: authData } = await supabase.auth.getUser();
             const authUser = authData?.user;
+            const profileUpsertPayload = {
+              auth_id: userId,
+              email: authUser?.email || profileInput.official_email || "",
+              full_name:
+                authUser?.user_metadata?.full_name ||
+                authUser?.email?.split("@")[0] ||
+                "School Administrator",
+              school_id: schoolRecord.id,
+              onboarding_completed: false,
+              current_onboarding_step: "/onboarding/academics",
+              updated_at: timestamp,
+            };
             await supabase.from("profiles").upsert(
-              {
-                auth_id: userId,
-                email: authUser?.email || profileInput.official_email || "",
-                full_name:
-                  authUser?.user_metadata?.full_name ||
-                  authUser?.email?.split("@")[0] ||
-                  "School Administrator",
-                school_id: schoolRecord.id,
-                onboarding_completed: false,
-                current_onboarding_step: "/onboarding/academics",
-                updated_at: timestamp,
-              },
+              profileUpsertPayload,
               { onConflict: "auth_id" }
             );
           }
@@ -814,22 +818,24 @@ export async function completeOnboarding({
   // 1. Supabase update
   if (isSupabaseConfigured) {
     try {
+      const schoolCompletePayload = {
+        onboarding_completed: true,
+        onboarding_step: 6,
+        updated_at: timestamp,
+      };
       await supabase
         .from("schools")
-        .update({
-          onboarding_completed: true,
-          onboarding_step: 6,
-          updated_at: timestamp,
-        })
+        .update(schoolCompletePayload)
         .eq("id", schoolId);
 
+      const profileCompletePayload = {
+        onboarding_completed: true,
+        current_onboarding_step: "/admin",
+        updated_at: timestamp,
+      };
       await supabase
         .from("profiles")
-        .update({
-          onboarding_completed: true,
-          current_onboarding_step: "/admin",
-          updated_at: timestamp,
-        })
+        .update(profileCompletePayload)
         .eq("auth_id", userId);
 
       await supabase.auth.updateUser({

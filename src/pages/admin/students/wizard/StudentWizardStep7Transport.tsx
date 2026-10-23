@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Bus, MapPin, CheckCircle2, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AdmissionWizardPayload } from "../../../../types/students";
@@ -24,6 +24,14 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
   const [routes, setRoutes] = useState<EnrichedRoute[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const transportRouteIdRef = useRef(transport.route_id);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    transportRouteIdRef.current = transport.route_id;
+    onChangeRef.current = onChange;
+  });
+
   useEffect(() => {
     if (!schoolId) return;
     let mounted = true;
@@ -32,10 +40,10 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
       .then((res) => {
         if (mounted) {
           setRoutes(res || []);
-          if (res && res.length > 0 && !transport.route_id) {
+          if (res && res.length > 0 && !transportRouteIdRef.current) {
             const firstRoute = res[0];
             const firstStop = firstRoute.stops?.[0]?.id || "";
-            onChange({ route_id: firstRoute.id, stop_id: firstStop });
+            onChangeRef.current({ route_id: firstRoute.id, stop_id: firstStop });
           }
         }
       })
@@ -53,6 +61,11 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
 
   const selectedRoute = routes.find((r) => r.id === transport.route_id) || routes[0];
   const availableStops = selectedRoute?.stops || [];
+  const selectedStop = availableStops.find((s) => s.id === transport.stop_id) || availableStops[0];
+
+  const pickup = transport.pickup !== false;
+  const dropoff = transport.dropoff !== false;
+  const serviceSelectionError = transport.opt_in && !pickup && !dropoff;
 
   return (
     <div className="space-y-6">
@@ -67,49 +80,52 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
         {/* Opt in toggle */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#2158E0]">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#2158E0] shrink-0">
               <Bus className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-semibold text-slate-900 text-sm">Avail School Bus Transport</h3>
               <p className="text-xs text-slate-500">
-                Transport dues will be automatically added to the student's monthly fee statement.
+                Transport dues will be automatically added to the student's monthly fee ledger upon enrollment.
               </p>
             </div>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
+          <label htmlFor="transport-opt-in-toggle" className="relative inline-flex items-center cursor-pointer shrink-0">
+            <span className="sr-only">Avail School Bus Transport</span>
             <input
+              id="transport-opt-in-toggle"
               type="checkbox"
+              aria-label="Avail School Bus Transport"
               checked={Boolean(transport.opt_in)}
               onChange={(e) => onChange({ opt_in: e.target.checked })}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2158E0]"></div>
+            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:bg-[#2158E0]"></div>
           </label>
         </div>
 
         {transport.opt_in && (
           <div className="space-y-4 pt-2">
             {loading ? (
-              <div className="p-4 text-center text-xs text-slate-500">
-                Loading available routes...
+              <div className="p-4 text-center text-xs text-slate-500 font-medium">
+                Loading available school bus routes...
               </div>
             ) : routes.length === 0 ? (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2.5">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold">No transport routes configured yet</p>
-                  <p className="mt-0.5">
-                    Your school hasn't set up transport routes yet. You can{" "}
+                  <p className="font-bold">No transport routes configured yet</p>
+                  <p className="mt-0.5 text-slate-700">
+                    Your school hasn't configured transport routes yet. You can{" "}
                     <Link
                       to="/admin/transport/routes"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 underline font-medium"
+                      className="text-blue-600 underline font-semibold"
                     >
-                      configure routes here
+                      configure routes in Transport Settings
                     </Link>{" "}
-                    or leave transport opted out for now and assign it later.
+                    or leave transport opted out for now and assign a stop later from the Student Profile.
                   </p>
                 </div>
               </div>
@@ -117,8 +133,11 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Bus Route</label>
+                    <label htmlFor="transport-route-select" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Select Bus Route
+                    </label>
                     <select
+                      id="transport-route-select"
                       value={transport.route_id || selectedRoute?.id || ""}
                       onChange={(e) => {
                         const newRouteId = e.target.value;
@@ -137,8 +156,11 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Bus Stop</label>
+                    <label htmlFor="transport-stop-select" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Select Boarding Stop & Fee
+                    </label>
                     <select
+                      id="transport-stop-select"
                       value={transport.stop_id || availableStops[0]?.id || ""}
                       onChange={(e) => onChange({ stop_id: e.target.value })}
                       className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -146,36 +168,53 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
                       {availableStops.length > 0 ? (
                         availableStops.map((stop) => (
                           <option key={stop.id} value={stop.id}>
-                            {stop.name} {stop.monthly_fee_paise ? `(₹${Math.round(stop.monthly_fee_paise / 100)}/mo)` : ""}
+                            {stop.name} {stop.monthly_fee_paise ? `— ₹${Math.round(stop.monthly_fee_paise / 100)}/month` : ""}
                           </option>
                         ))
                       ) : (
-                        <option value="">No stops on this route</option>
+                        <option value="">No stops configured on this route</option>
                       )}
                     </select>
+                    {selectedStop?.monthly_fee_paise && (
+                      <p className="text-[11px] text-emerald-700 font-medium mt-1">
+                        Monthly charge: ₹{Math.round(selectedStop.monthly_fee_paise / 100)} / month
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                <div className="pt-2 flex items-center gap-6">
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={transport.pickup !== false}
-                      onChange={(e) => onChange({ pickup: e.target.checked })}
-                      className="rounded text-[#2158E0] focus:ring-[#2158E0]"
-                    />
-                    <span>Morning Pickup</span>
-                  </label>
+                {/* Service Types: Pickup and Drop */}
+                <div className="pt-2 border-t border-slate-100 space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">Service Options</p>
+                  <div className="flex items-center gap-6">
+                    <label htmlFor="transport-pickup" className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                      <input
+                        id="transport-pickup"
+                        type="checkbox"
+                        checked={pickup}
+                        onChange={(e) => onChange({ pickup: e.target.checked })}
+                        className="rounded text-[#2158E0] focus:ring-[#2158E0]"
+                      />
+                      <span>Morning Pickup</span>
+                    </label>
 
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={transport.dropoff !== false}
-                      onChange={(e) => onChange({ dropoff: e.target.checked })}
-                      className="rounded text-[#2158E0] focus:ring-[#2158E0]"
-                    />
-                    <span>Afternoon Drop-off</span>
-                  </label>
+                    <label htmlFor="transport-dropoff" className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                      <input
+                        id="transport-dropoff"
+                        type="checkbox"
+                        checked={dropoff}
+                        onChange={(e) => onChange({ dropoff: e.target.checked })}
+                        className="rounded text-[#2158E0] focus:ring-[#2158E0]"
+                      />
+                      <span>Afternoon Drop-off</span>
+                    </label>
+                  </div>
+
+                  {serviceSelectionError && (
+                    <p className="text-xs text-rose-600 flex items-center gap-1 font-medium pt-1">
+                      <AlertCircle className="w-3.5 h-3.5" /> Please select at least one of Morning Pickup or Afternoon Drop-off.
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -185,4 +224,3 @@ export const StudentWizardStep7Transport: React.FC<Step7Props> = ({
     </div>
   );
 };
-

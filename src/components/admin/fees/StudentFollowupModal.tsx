@@ -57,7 +57,7 @@ export function StudentFollowupModal({
               <p className="text-[11px] text-[#5B6478]">{row.studentName} ({row.classSection})</p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1 rounded-lg text-gray-400 hover:text-gray-700"
@@ -90,10 +90,10 @@ export function StudentFollowupModal({
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">
+            <label htmlFor="studentfollowupmodal-discussion-follow-up-note" className="block text-[11px] font-semibold text-[#5B6478] mb-1">
               Discussion / Follow-up Note <span className="text-red-500">*</span>
             </label>
-            <textarea
+            <textarea id="studentfollowupmodal-discussion-follow-up-note"
               rows={3}
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -103,11 +103,11 @@ export function StudentFollowupModal({
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">
+            <label htmlFor="studentfollowupmodal-promised-payment-date-optional" className="block text-[11px] font-semibold text-[#5B6478] mb-1">
               Promised Payment Date (Optional)
             </label>
             <div className="relative">
-              <input
+              <input id="studentfollowupmodal-promised-payment-date-optional" aria-label="Promised Payment Date (Optional)"
                 type="date"
                 value={promiseDate}
                 onChange={(e) => setPromiseDate(e.target.value)}

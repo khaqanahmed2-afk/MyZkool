@@ -484,7 +484,7 @@ export async function assignSubjectToMultipleClasses({
   classIds: string[];
 }): Promise<{ success: boolean; count: number }> {
   let count = 0;
-  for (const cId of classIds) {
+  for await (const cId of classIds) {
     const res = await assignSubjectToClass({
       schoolId,
       academicYearId,
@@ -511,21 +511,23 @@ export async function syncClassSubjects({
   selectedSubjectIds: string[];
 }): Promise<{ success: boolean; error?: string }> {
   const { classSubjects } = await getClassSubjects(schoolId, academicYearId);
-  const currentAssignedIds = classSubjects
-    .filter((cs) => cs.class_id === classId)
-    .map((cs) => cs.subject_id);
+  const currentAssignedIdSet = new Set(
+    classSubjects
+      .filter((cs) => cs.class_id === classId)
+      .map((cs) => cs.subject_id)
+  );
+  const selectedSubjectIdSet = new Set(selectedSubjectIds);
 
   // Remove unselected
-  for (const subId of currentAssignedIds) {
-    if (!selectedSubjectIds.includes(subId)) {
+  for await (const subId of currentAssignedIdSet) {
+    if (!selectedSubjectIdSet.has(subId)) {
       await removeSubjectFromClass({ schoolId, academicYearId, classId, subjectId: subId });
     }
   }
 
   // Add newly selected
-  for (let idx = 0; idx < selectedSubjectIds.length; idx++) {
-    const subId = selectedSubjectIds[idx];
-    if (!currentAssignedIds.includes(subId)) {
+  for await (const [idx, subId] of selectedSubjectIds.entries()) {
+    if (!currentAssignedIdSet.has(subId)) {
       await assignSubjectToClass({
         schoolId,
         academicYearId,
@@ -555,7 +557,7 @@ export async function importStandardSubjectPresets({
   const { subjects: existing } = await getSubjects(schoolId, academicYearId);
   let createdCount = 0;
 
-  for (const p of targetPresets) {
+  for await (const p of targetPresets) {
     const exists = existing.some(
       (s) => s.name.trim().toLowerCase() === p.name.trim().toLowerCase()
     );

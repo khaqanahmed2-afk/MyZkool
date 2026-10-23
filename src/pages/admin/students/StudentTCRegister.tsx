@@ -6,8 +6,9 @@
  * allows issuing duplicate copies with original TC number, and prints letterheads.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
+import { StudentPageHeader } from "./StudentPageHeader";
 import {
   ArrowLeft,
   FileText,
@@ -28,10 +29,10 @@ import { StudentTransferCertificate } from "../../../types/students";
 
 export default function StudentTCRegister() {
   const { user, profile } = useAuth();
-  const [schoolId, setSchoolId] = useState<string>("");
+  const schoolIdRef = useRef<string>("");
   const [tcs, setTcs] = useState<StudentTransferCertificate[]>([]);
   const [search, setSearch] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
+  const isLoadingRef = useRef(true);
 
   // Duplicate Issue Dialog
   const [duplicateTargetTc, setDuplicateTargetTc] = useState<StudentTransferCertificate | null>(null);
@@ -40,25 +41,36 @@ export default function StudentTCRegister() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const targetSchoolId = (profile as any)?.school_id || "school-1";
+
+  const loadTCs = useCallback(async (sId: string) => {
+    const list = await getTransferCertificates(sId);
+    setTcs(list);
+  }, []);
+
   useEffect(() => {
+    let isMounted = true;
     async function loadData() {
       try {
-        const sId = (profile as any)?.school_id || "school-1";
-        setSchoolId(sId);
-        await loadTCs(sId);
+        schoolIdRef.current = targetSchoolId;
+        const list = await getTransferCertificates(targetSchoolId);
+        if (!isMounted) return;
+        setTcs(list);
       } catch (err: any) {
+        if (!isMounted) return;
         setErrorMsg(err.message || "Failed to load TC Register");
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          isLoadingRef.current = false;
+        }
       }
     }
     loadData();
-  }, []);
 
-  const loadTCs = async (sId: string) => {
-    const list = await getTransferCertificates(sId);
-    setTcs(list);
-  };
+    return () => {
+      isMounted = false;
+    };
+  }, [targetSchoolId]);
 
   const handleIssueDuplicate = async () => {
     if (!duplicateTargetTc || !duplicateReason.trim()) return;
@@ -66,7 +78,7 @@ export default function StudentTCRegister() {
     setErrorMsg(null);
     try {
       const dup = await issueDuplicateTransferCertificate(
-        schoolId,
+        schoolIdRef.current,
         duplicateTargetTc.id,
         user?.id || "admin",
         duplicateReason
@@ -74,7 +86,7 @@ export default function StudentTCRegister() {
       setSuccessMsg(`Duplicate copy of TC ${dup.tc_no} successfully generated.`);
       setDuplicateTargetTc(null);
       setDuplicateReason("");
-      await loadTCs(schoolId);
+      await loadTCs(schoolIdRef.current);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to issue duplicate TC");
     } finally {
@@ -96,19 +108,11 @@ export default function StudentTCRegister() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-            <Link to="/admin/students" className="hover:text-blue-600 flex items-center gap-1">
-              <ArrowLeft className="w-4 h-4" /> Students
-            </Link>
-            <span>/</span>
-            <span className="font-medium text-gray-900">TC Register</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Transfer Certificate Register</h1>
-          <p className="text-sm text-gray-600">
-            Audit-backed register of all issued and duplicate Transfer Certificates.
-          </p>
-        </div>
+        <StudentPageHeader
+          currentPage="TC Register"
+          title="Transfer Certificate Register"
+          description="Audit-backed register of all issued and duplicate Transfer Certificates."
+        />
       </div>
 
       {errorMsg && (
@@ -129,7 +133,7 @@ export default function StudentTCRegister() {
       <div className="flex items-center justify-between gap-4 bg-white p-4 rounded-xl border shadow-sm">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-          <input
+          <input aria-label="Search transfer certificates"
             type="text"
             placeholder="Search by TC number, reason, remarks..."
             value={search}
@@ -231,10 +235,10 @@ export default function StudentTCRegister() {
             </p>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
+              <label htmlFor="studenttcregister-reason-for-duplicate-issuance-" className="block text-xs font-semibold text-gray-700 mb-1">
                 Reason for Duplicate Issuance (Required)
               </label>
-              <textarea
+              <textarea id="studenttcregister-reason-for-duplicate-issuance-"
                 rows={3}
                 placeholder="e.g. Original copy lost during transit, requested by parent..."
                 value={duplicateReason}

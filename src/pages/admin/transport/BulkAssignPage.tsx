@@ -7,7 +7,7 @@
  * Confirmation summary lists students, stop, fee, and total demand change.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bus,
@@ -102,7 +102,7 @@ export const BulkAssignPage: React.FC = () => {
   // End Assignment Modal state
   const [endingAssignment, setEndingAssignment] = useState<TransportAssignment | null>(null);
   const [endEffectiveDate, setEndEffectiveDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    () => new Date().toISOString().split("T")[0]
   );
   const [endReasonPreset, setEndReasonPreset] = useState<string>("Parent requested cancellation");
   const [endReasonCustom, setEndReasonCustom] = useState<string>("");
@@ -114,7 +114,7 @@ export const BulkAssignPage: React.FC = () => {
   const [selectedStopId, setSelectedStopId] = useState<string>("");
   const [serviceType, setServiceType] = useState<ServiceType>("both");
   const [effectiveFrom, setEffectiveFrom] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    () => new Date().toISOString().split("T")[0]
   );
   const [monthlyFeePaise, setMonthlyFeePaise] = useState<number>(0);
   const [feeStatus, setFeeStatus] = useState<{
@@ -146,7 +146,17 @@ export const BulkAssignPage: React.FC = () => {
     }
   }, [authSchoolId]);
 
-  const loadData = async (overrideYearId?: string) => {
+  const selectedRouteIdRef = useRef(selectedRouteId);
+  const selectedStopIdRef = useRef(selectedStopId);
+  const academicYearIdRef = useRef(academicYearId);
+
+  useEffect(() => {
+    selectedRouteIdRef.current = selectedRouteId;
+    selectedStopIdRef.current = selectedStopId;
+    academicYearIdRef.current = academicYearId;
+  });
+
+  const loadData = useCallback(async (overrideYearId?: string) => {
     if (!schoolId) {
       setLoading(false);
       return;
@@ -157,7 +167,7 @@ export const BulkAssignPage: React.FC = () => {
       const ayRes = await getAcademicYearsForSchool(schoolId);
       const years = ayRes.academicYears || [];
       setAcademicYears(years);
-      let targetYearId = overrideYearId || academicYearId;
+      let targetYearId = overrideYearId || academicYearIdRef.current;
       if (!targetYearId && years.length > 0) {
         const currentYear = years.find((y) => y.is_current) || years[0];
         targetYearId = currentYear.id;
@@ -168,10 +178,10 @@ export const BulkAssignPage: React.FC = () => {
       const allRoutes = await getRoutes(schoolId);
       setRoutes(allRoutes);
       if (allRoutes.length > 0) {
-        const activeRoute = allRoutes.find((r) => r.id === selectedRouteId) || allRoutes[0];
+        const activeRoute = allRoutes.find((r) => r.id === selectedRouteIdRef.current) || allRoutes[0];
         setSelectedRouteId(activeRoute.id);
         if (activeRoute.stops.length > 0) {
-          const hasStop = activeRoute.stops.some((s) => s.id === selectedStopId);
+          const hasStop = activeRoute.stops.some((s) => s.id === selectedStopIdRef.current);
           if (!hasStop) setSelectedStopId(activeRoute.stops[0].id);
         } else {
           setSelectedStopId("");
@@ -311,12 +321,12 @@ export const BulkAssignPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId]);
 
   useEffect(() => {
     if (!schoolId) return;
     loadData();
-  }, [schoolId]);
+  }, [schoolId, loadData]);
 
   // Recalculate fee live with clear error differentiation
   useEffect(() => {
@@ -538,7 +548,7 @@ export const BulkAssignPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
             title="Return to Transport Dashboard"
           >
             <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
@@ -671,7 +681,7 @@ export const BulkAssignPage: React.FC = () => {
             <div className="flex flex-col md:flex-row items-center gap-3">
               <div className="relative flex-1 w-full">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
+                <input aria-label="Search assigned transport students"
                   type="text"
                   placeholder="Search by student name, admission #, route, or stop..."
                   value={assignedSearchQuery}
@@ -682,7 +692,7 @@ export const BulkAssignPage: React.FC = () => {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full md:w-auto">
                 {/* Class filter */}
-                <select
+                <select aria-label="Class filter"
                   value={assignedSelectedClass}
                   onChange={(e) => setAssignedSelectedClass(e.target.value)}
                   className="text-xs px-2.5 py-2 border border-[#E6EAF3] rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -694,7 +704,7 @@ export const BulkAssignPage: React.FC = () => {
                 </select>
 
                 {/* Route filter */}
-                <select
+                <select aria-label="Route filter"
                   value={assignedSelectedRoute}
                   onChange={(e) => {
                     setAssignedSelectedRoute(e.target.value);
@@ -709,7 +719,7 @@ export const BulkAssignPage: React.FC = () => {
                 </select>
 
                 {/* Stop filter */}
-                <select
+                <select aria-label="Stop filter"
                   value={assignedSelectedStop}
                   onChange={(e) => setAssignedSelectedStop(e.target.value)}
                   className="text-xs px-2.5 py-2 border border-[#E6EAF3] rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -721,7 +731,7 @@ export const BulkAssignPage: React.FC = () => {
                 </select>
 
                 {/* Status filter */}
-                <select
+                <select aria-label="Status filter"
                   value={assignedSelectedStatus}
                   onChange={(e) => setAssignedSelectedStatus(e.target.value as any)}
                   className="text-xs px-2.5 py-2 border border-[#E6EAF3] rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -962,7 +972,7 @@ export const BulkAssignPage: React.FC = () => {
                 <div className="flex flex-col sm:flex-row items-center gap-3">
                   <div className="relative flex-1 w-full">
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
+                    <input aria-label="Search unassigned transport students"
                       type="text"
                       placeholder="Search by student, admission #, locality, or landmark..."
                       value={searchQuery}
@@ -970,7 +980,7 @@ export const BulkAssignPage: React.FC = () => {
                       className="w-full pl-9 pr-3 py-2 text-xs border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
                     />
                   </div>
-                  <select
+                  <select aria-label="Filter by class"
                     value={selectedClass}
                     onChange={(e) => setSelectedClass(e.target.value)}
                     className="text-xs px-3 py-2 border border-[#E6EAF3] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -1016,7 +1026,7 @@ export const BulkAssignPage: React.FC = () => {
                     filteredStudents.map((s) => {
                       const isSelected = selectedStudentIds.has(s.id);
                       return (
-                        <div
+                        <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                           key={s.id}
                           onClick={() => toggleSelectStudent(s.id)}
                           className={`p-3 rounded-xl border text-xs cursor-pointer flex items-center justify-between transition-colors ${
@@ -1137,10 +1147,10 @@ export const BulkAssignPage: React.FC = () => {
 
             {/* Route selector */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label htmlFor="bulkassignpage-route" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Route
               </label>
-              <select
+              <select id="bulkassignpage-route" aria-label="Route"
                 value={selectedRouteId}
                 onChange={(e) => {
                   const newRouteId = e.target.value;
@@ -1164,15 +1174,15 @@ export const BulkAssignPage: React.FC = () => {
 
             {/* Stop selector with seats */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Stop
-              </label>
+              </span>
               <div className="space-y-1 max-h-44 overflow-y-auto border border-[#E6EAF3] rounded-xl p-1.5">
                 {selectedRoute?.stops && selectedRoute.stops.length > 0 ? (
                   selectedRoute.stops.map((stop) => {
                     const isSelected = stop.id === selectedStopId;
                     return (
-                      <div
+                      <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                         key={stop.id}
                         onClick={() => setSelectedStopId(stop.id)}
                         className={`p-2 rounded-lg text-xs cursor-pointer flex items-center justify-between transition-colors ${
@@ -1204,9 +1214,9 @@ export const BulkAssignPage: React.FC = () => {
             {/* Service type & fee */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Service Type
-                </label>
+                </span>
                 {feeStatus.loading ? (
                   <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                     Calculating...
@@ -1263,10 +1273,10 @@ export const BulkAssignPage: React.FC = () => {
             {/* Academic Year */}
             {academicYears.length > 0 && (
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <label htmlFor="bulkassignpage-academic-year" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Academic Year
                 </label>
-                <select
+                <select id="bulkassignpage-academic-year" aria-label="Academic Year"
                   value={academicYearId}
                   onChange={(e) => {
                     setAcademicYearId(e.target.value);
@@ -1285,10 +1295,10 @@ export const BulkAssignPage: React.FC = () => {
 
             {/* Effective date */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label htmlFor="bulkassignpage-effective-date" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Effective Date
               </label>
-              <input
+              <input id="bulkassignpage-effective-date" aria-label="Effective Date"
                 type="date"
                 value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)}
@@ -1332,7 +1342,7 @@ export const BulkAssignPage: React.FC = () => {
                   Adding {selectedStudentIds.size} student(s) exceeds capacity ({seatsLeft} seats left).
                   Requires owner override reason to proceed.
                 </p>
-                <input
+                <input aria-label="Capacity override reason"
                   type="text"
                   placeholder="Type override reason..."
                   value={overrideReason}
@@ -1416,7 +1426,7 @@ export const BulkAssignPage: React.FC = () => {
                   <p className="text-xs text-slate-500">Stop bus service and cancel future dues</p>
                 </div>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setEndingAssignment(null)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
@@ -1452,8 +1462,8 @@ export const BulkAssignPage: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Effective End Date *</label>
-                <input
+                <label htmlFor="bulkassignpage-effective-end-date" className="font-bold text-slate-700 block mb-1">Effective End Date *</label>
+                <input id="bulkassignpage-effective-end-date" aria-label="Effective End Date"
                   type="date"
                   value={endEffectiveDate}
                   onChange={(e) => setEndEffectiveDate(e.target.value)}
@@ -1462,8 +1472,8 @@ export const BulkAssignPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Reason for Ending Transport *</label>
-                <select
+                <label htmlFor="bulkassignpage-reason-for-ending-transport" className="font-bold text-slate-700 block mb-1">Reason for Ending Transport *</label>
+                <select id="bulkassignpage-reason-for-ending-transport" aria-label="Reason for Ending Transport"
                   value={endReasonPreset}
                   onChange={(e) => setEndReasonPreset(e.target.value)}
                   className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -1479,8 +1489,8 @@ export const BulkAssignPage: React.FC = () => {
 
               {endReasonPreset === "Other" && (
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Specify Reason</label>
-                  <input
+                  <label htmlFor="bulkassignpage-specify-reason" className="font-bold text-slate-700 block mb-1">Specify Reason</label>
+                  <input id="bulkassignpage-specify-reason"
                     type="text"
                     placeholder="Enter details..."
                     value={endReasonCustom}

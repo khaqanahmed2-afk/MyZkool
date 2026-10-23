@@ -56,8 +56,12 @@ export class MockPaymentGateway implements PaymentGatewayAdapter {
     try {
       const parsed = JSON.parse(input.rawBody);
       const expectedSignature = `sig_mock_${parsed.event_id || "event"}_${input.secret}`;
-
-      if (input.signature !== expectedSignature) {
+      let mismatch = input.signature.length ^ expectedSignature.length;
+      const len = Math.min(input.signature.length, expectedSignature.length);
+      for (let i = 0; i < len; i++) {
+        mismatch |= input.signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+      }
+      if (mismatch !== 0) {
         return {
           isValid: false,
           error: "Invalid mock webhook signature.",

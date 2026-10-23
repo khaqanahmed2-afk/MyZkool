@@ -74,8 +74,8 @@ function CancelDialog({
           Cancelling this receipt will reverse all dues and ledger entries. This cannot be undone — you will need to collect again with a new receipt.
         </p>
         <div>
-          <label className="text-xs font-medium text-slate-700">Reason (minimum 10 characters)</label>
-          <textarea
+          <label htmlFor="receiptspage-reason-minimum-10-characters" className="text-xs font-medium text-slate-700">Reason (minimum 10 characters)</label>
+          <textarea id="receiptspage-reason-minimum-10-characters"
             rows={3}
             className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
             value={reason}
@@ -172,7 +172,7 @@ function ReceiptDrawer({
           </div>
           <div className="flex items-center gap-2">
             {statusChip(receipt.status)}
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
+            <button aria-label="Close" onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
               <X className="w-4 h-4 text-slate-500" />
             </button>
           </div>
@@ -297,9 +297,12 @@ export default function ReceiptsPage() {
   const load = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
-    const { receipts: r } = await getReceipts(schoolId);
-    setReceipts(r);
-    setLoading(false);
+    try {
+      const { receipts: r } = await getReceipts(schoolId);
+      setReceipts(r);
+    } finally {
+      setLoading(false);
+    }
   }, [schoolId]);
 
   useEffect(() => { load(); }, [load]);
@@ -339,7 +342,7 @@ export default function ReceiptsPage() {
         </div>
         <div className="mt-3 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
+          <input aria-label="Search receipts"
             type="text"
             placeholder="Search by receipt number or student…"
             className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -375,7 +378,14 @@ export default function ReceiptsPage() {
                   key={r.id}
                   className="hover:bg-slate-50 cursor-pointer"
                   style={{ height: 44 }}
+                  tabIndex={0}
                   onClick={() => setSelectedId(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedId(r.id);
+                    }
+                  }}
                 >
                   <td className="px-4 py-2 font-medium text-[#2158E0] tabular-nums">{r.receipt_no}</td>
                   <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{formatDate(r.receipt_date)}</td>
@@ -394,7 +404,7 @@ export default function ReceiptsPage() {
       {/* Drawer */}
       {selectedId && (
         <>
-          <div className="fixed inset-0 z-20 bg-black/20" onClick={() => setSelectedId(null)} />
+          <div aria-hidden="true" className="fixed inset-0 z-20 bg-black/20" onClick={() => setSelectedId(null)} />
           <ReceiptDrawer
             receiptId={selectedId}
             onClose={() => setSelectedId(null)}

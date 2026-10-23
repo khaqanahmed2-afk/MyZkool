@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { X, Phone, MessageSquare, ExternalLink, Calendar, Shield, Users, CreditCard, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { StudentListItem, StudentProfile } from "../../../types/students";
@@ -14,7 +14,7 @@ interface StudentQuickViewDrawerProps {
 export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }: StudentQuickViewDrawerProps) {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<StudentProfile | null>(null);
-  const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (!student) {
@@ -22,7 +22,7 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }:
       return;
     }
     let isMounted = true;
-    setLoading(true);
+    loadingRef.current = true;
     getStudentProfile(schoolId, student.id)
       .then(res => {
         if (isMounted && res.profile) {
@@ -30,7 +30,7 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }:
         }
       })
       .finally(() => {
-        if (isMounted) setLoading(false);
+        if (isMounted) loadingRef.current = false;
       });
 
     return () => {
@@ -62,7 +62,7 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }:
   return (
     <>
       {/* Backdrop */}
-      <div
+      <div aria-hidden="true"
         className="fixed inset-0 bg-black/40 z-50 transition-opacity backdrop-blur-2xs"
         onClick={onClose}
       />
@@ -79,7 +79,7 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }:
               {student.admission_no}
             </span>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
@@ -190,7 +190,7 @@ export function StudentQuickViewDrawer({ student, schoolId, onClose, onDelete }:
             {profile?.siblings && profile.siblings.length > 0 ? (
               <div className="space-y-2">
                 {profile.siblings.map(sib => (
-                  <div
+                  <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                     key={sib.sibling_id}
                     onClick={() => {
                       onClose();

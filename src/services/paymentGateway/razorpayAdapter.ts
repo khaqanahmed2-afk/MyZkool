@@ -90,7 +90,13 @@ export class RazorpayGateway implements PaymentGatewayAdapter {
   ): Promise<GatewayWebhookVerificationResult> {
     try {
       const computed = await computeHmacSha256(input.secret, input.rawBody);
-      if (computed !== input.signature) {
+      // Timing-safe comparison: XOR all bytes so runtime does not vary with mismatch position
+      let mismatch = computed.length ^ input.signature.length;
+      const len = Math.min(computed.length, input.signature.length);
+      for (let i = 0; i < len; i++) {
+        mismatch |= computed.charCodeAt(i) ^ input.signature.charCodeAt(i);
+      }
+      if (mismatch !== 0) {
         return {
           isValid: false,
           error: "Signature mismatch: verification failed.",

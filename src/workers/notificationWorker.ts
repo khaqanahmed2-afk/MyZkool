@@ -403,7 +403,7 @@ export class NotificationWorker {
       }
 
       // Process each notification
-      for (const notification of notifications) {
+      for await (const notification of notifications) {
         await this.processItem(notification as NotificationOutbox);
       }
     } catch (error) {

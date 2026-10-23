@@ -42,6 +42,8 @@ export async function previewYearClose(
 
   const students = lsGet<any>(`myzkool_students_${schoolId}`);
   const classes = lsGet<any>(`myzkool_classes_${schoolId}`);
+  const studentEntityMap = new Map<string, any>(students.map((st: any) => [st.id, st]));
+  const classEntityMap = new Map<string, any>(classes.map((cl: any) => [cl.id, cl]));
 
   const studentMap = new Map<string, { balance: number; count: number }>();
   for (const d of currentUnpaidDues) {
@@ -55,8 +57,8 @@ export async function previewYearClose(
   let totalOutstanding = 0;
 
   for (const [studentId, info] of studentMap.entries()) {
-    const s = students.find((st: any) => st.id === studentId);
-    const c = classes.find((cl: any) => cl.id === s?.class_id);
+    const s = studentEntityMap.get(studentId);
+    const c = s?.class_id ? classEntityMap.get(s.class_id) : undefined;
     previews.push({
       student_id: studentId,
       student_name: s ? `${s.first_name} ${s.last_name}`.trim() : `Student ${studentId.slice(0, 6)}`,
@@ -94,6 +96,7 @@ export async function executeYearClose(
   const carryHead = heads.find(h => h.name.toLowerCase().includes("previous year") || h.name.toLowerCase().includes("arrear")) || heads[0];
 
   const allDues = lsGet<StudentDue>(`myzkool_student_dues_${schoolId}`);
+  const allDuesMap = new Map<string, StudentDue>(allDues.map(d => [d.id, d]));
   const ledger = lsGet<FeeLedgerEntry>(`myzkool_fee_ledger_${schoolId}`);
   const years = lsGet<any>(`myzkool_academic_years_${schoolId}`);
 
@@ -140,7 +143,7 @@ export async function executeYearClose(
 
     // 1. Mark old dues as 'carried_forward' (not deleted)
     for (const dueId of data.dueIds) {
-      const oldDue = allDues.find(d => d.id === dueId);
+      const oldDue = allDuesMap.get(dueId);
       if (oldDue) {
         oldDue.status = "carried_forward" as any;
         oldDue.updated_at = new Date().toISOString();

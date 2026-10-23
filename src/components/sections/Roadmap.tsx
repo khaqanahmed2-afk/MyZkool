@@ -21,12 +21,12 @@ export const Roadmap: React.FC = () => {
 
         {/* Roadmap Chips Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {ROADMAP_ITEMS.map((item, idx) => {
+          {ROADMAP_ITEMS.map((item) => {
             const Icon = item.icon;
             return (
               <div
-                key={idx}
-                className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#E6EAF3] hover:border-[#2158E0]/30 hover:bg-white hover:shadow-sm transition-all group relative overflow-hidden"
+                key={item.title}
+                className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#E6EAF3] hover:border-[#2158E0]/30 hover:bg-white hover:shadow-sm transition group relative overflow-hidden"
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="w-9 h-9 rounded-xl bg-white border border-[#E6EAF3] flex items-center justify-center text-[#2158E0] group-hover:scale-105 transition-transform shadow-xs">

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   X,
   Shield,
@@ -61,7 +61,7 @@ export function VehicleProfileModal({
   const [showAddDoc, setShowAddDoc] = useState(false);
   const [docType, setDocType] = useState<VehicleDocType>("insurance");
   const [docNumber, setDocNumber] = useState("");
-  const [issuedOn, setIssuedOn] = useState("");
+  const issuedOnRef = useRef("");
   const [expiresOn, setExpiresOn] = useState("");
   const [docError, setDocError] = useState("");
   const [isSavingDoc, setIsSavingDoc] = useState(false);
@@ -70,8 +70,11 @@ export function VehicleProfileModal({
     const updated = { ...safetyItems, [key]: !safetyItems[key] };
     setSafetyItems(updated);
     setIsSavingSafety(true);
-    await updateVehicle(schoolId, vehicle.id, { safety_items: updated });
-    setIsSavingSafety(false);
+    try {
+      await updateVehicle(schoolId, vehicle.id, { safety_items: updated });
+    } finally {
+      setIsSavingSafety(false);
+    }
     onRefresh();
   }
 
@@ -84,26 +87,29 @@ export function VehicleProfileModal({
     setDocError("");
     setIsSavingDoc(true);
 
-    const res = await addVehicleDocument(schoolId, {
-      vehicle_id: vehicle.id,
-      doc_type: docType,
-      doc_number: docNumber.trim(),
-      issued_on: issuedOn || null,
-      expires_on: expiresOn,
-      is_mandatory: true,
-    });
+    try {
+      const res = await addVehicleDocument(schoolId, {
+        vehicle_id: vehicle.id,
+        doc_type: docType,
+        doc_number: docNumber.trim(),
+        issued_on: issuedOnRef.current || null,
+        expires_on: expiresOn,
+        is_mandatory: true,
+      });
 
-    setIsSavingDoc(false);
-    if (!res.success) {
-      setDocError(res.error || "Failed to add document.");
-      return;
+      if (!res.success) {
+        setDocError(res.error || "Failed to add document.");
+        return;
+      }
+
+      setShowAddDoc(false);
+      setDocNumber("");
+      issuedOnRef.current = "";
+      setExpiresOn("");
+      onRefresh();
+    } finally {
+      setIsSavingDoc(false);
     }
-
-    setShowAddDoc(false);
-    setDocNumber("");
-    setIssuedOn("");
-    setExpiresOn("");
-    onRefresh();
   }
 
   async function handleDeleteDoc(docId: string) {
@@ -140,7 +146,7 @@ export function VehicleProfileModal({
               {vehicle.make_model} • {vehicle.capacity} Student Seats • {vehicle.ownership === "owned" ? "School Owned" : "Contractual"}
             </p>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={onClose}
             className="p-2 text-[#5B6478] hover:bg-gray-200 rounded-lg transition-colors"
           >
@@ -286,8 +292,8 @@ export function VehicleProfileModal({
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div>
-                      <label className="block text-[#5B6478] mb-1 font-semibold">Document Type</label>
-                      <select
+                      <label htmlFor="vehicleprofilemodal-document-type" className="block text-[#5B6478] mb-1 font-semibold">Document Type</label>
+                      <select id="vehicleprofilemodal-document-type" aria-label="Document Type"
                         value={docType}
                         onChange={(e) => setDocType(e.target.value as VehicleDocType)}
                         className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium"
@@ -300,8 +306,8 @@ export function VehicleProfileModal({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[#5B6478] mb-1 font-semibold">Document Number</label>
-                      <input
+                      <label htmlFor="vehicleprofilemodal-document-number" className="block text-[#5B6478] mb-1 font-semibold">Document Number</label>
+                      <input id="vehicleprofilemodal-document-number"
                         type="text"
                         placeholder="e.g. POL-98765432"
                         value={docNumber}
@@ -311,8 +317,8 @@ export function VehicleProfileModal({
                       />
                     </div>
                     <div>
-                      <label className="block text-[#5B6478] mb-1 font-semibold">Expiry Date (Required)</label>
-                      <input
+                      <label htmlFor="vehicleprofilemodal-expiry-date-required" className="block text-[#5B6478] mb-1 font-semibold">Expiry Date (Required)</label>
+                      <input id="vehicleprofilemodal-expiry-date-required" aria-label="Expiry Date (Required)"
                         type="date"
                         value={expiresOn}
                         onChange={(e) => setExpiresOn(e.target.value)}

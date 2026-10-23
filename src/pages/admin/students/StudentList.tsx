@@ -41,7 +41,7 @@ export default function StudentList() {
   const [pageSize, setPageSize] = useState<number>(50);
 
   // Search with 300ms debounce
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") || "");
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
 
   useEffect(() => {
@@ -121,25 +121,30 @@ export default function StudentList() {
       }
       setError(null);
 
-      const res = await listStudents(schoolId, {
-        search: debouncedSearch || undefined,
-        class_id: filters.class_id,
-        section_id: filters.section_id,
-        status: filters.status,
-        has_dues: filters.has_dues,
-        cursor,
-        limit: pageSize,
-        userRole: profile?.role || "school_admin",
-      });
+      try {
+        const res = await listStudents(schoolId, {
+          search: debouncedSearch || undefined,
+          class_id: filters.class_id,
+          section_id: filters.section_id,
+          status: filters.status,
+          has_dues: filters.has_dues,
+          cursor,
+          limit: pageSize,
+          userRole: profile?.role || "school_admin",
+        });
 
-      if (res.error) {
-        setError(res.error);
-      } else if (res.response) {
-        setStudents((prev) => (cursor ? [...prev, ...res.response!.data] : res.response!.data));
-        setNextCursor(res.response.next_cursor || null);
-        setTotalCount(res.response.total_estimate || res.response.data.length);
+        if (res.error) {
+          setError(res.error);
+        } else if (res.response) {
+          setStudents((prev) => (cursor ? [...prev, ...res.response!.data] : res.response!.data));
+          setNextCursor(res.response.next_cursor || null);
+          setTotalCount(res.response.total_estimate || res.response.data.length);
+        }
+      } catch (err: any) {
+        setError(err?.message || "Failed to fetch students");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     },
     [schoolId, debouncedSearch, filters, profile?.role, pageSize]
   );
@@ -355,7 +360,7 @@ export default function StudentList() {
           {/* Simple Search Bar */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
+            <input aria-label="Search student directory"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -523,6 +528,13 @@ export default function StudentList() {
                       <tr
                         key={student.id}
                         onClick={() => setQuickViewStudent(student)}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setQuickViewStudent(student);
+                          }
+                        }}
                         className={`hover:bg-slate-50/90 transition-colors cursor-pointer ${
                           isSelected ? "bg-blue-50/50" : ""
                         }`}
@@ -637,7 +649,7 @@ export default function StudentList() {
                             <StudentRowActions
                               student={student}
                               onView={(s) => navigate(`/admin/students/${s.id}`)}
-                              onEdit={(s) => navigate(`/admin/students/${s.id}?edit=true`)}
+                              onEdit={(s) => navigate(`/admin/students/${s.id}/edit`)}
                               onGenerateIdCard={(s) => navigate(`/admin/students/id-cards?student=${s.id}`)}
                               onViewDocuments={(s) => navigate(`/admin/students/${s.id}?tab=documents`)}
                               onViewFees={(s) => navigate(`/admin/fees/collect?student=${s.id}`)}
@@ -665,52 +677,54 @@ export default function StudentList() {
               return (
                 <div
                   key={student.id}
-                  onClick={() => setQuickViewStudent(student)}
-                  className={`bg-white border rounded-2xl p-4 space-y-3 shadow-2xs cursor-pointer active:scale-[0.99] transition-all ${
+                  className={`bg-white border rounded-2xl p-4 space-y-3 shadow-2xs transition-colors ${
                     isSelected ? "border-[#2158E0] ring-1 ring-[#2158E0] bg-blue-50/20" : "border-[#E6EAF3]"
                   }`}
                 >
                   {/* Top Line: Avatar + Student info + Actions */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-3">
-                      <div
-                        onClick={(e) => toggleSelectRow(student.id, e)}
-                        className="p-1 -ml-1 cursor-pointer"
-                      >
+                      <div className="p-1 -ml-1">
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => {}}
+                          onChange={(e) => toggleSelectRow(student.id, e as unknown as React.MouseEvent)}
                           className="rounded border-slate-300 text-[#2158E0] focus:ring-[#2158E0] cursor-pointer"
                           aria-label={`Select ${student.first_name}`}
                         />
                       </div>
-                      <div className="w-10 h-10 rounded-full bg-blue-50 text-[#2158E0] flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-slate-200">
-                        {student.photo_path ? (
-                          <img
-                            src={student.photo_path}
-                            alt={student.first_name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          `${student.first_name[0] || ""}${student.last_name[0] || ""}`.toUpperCase()
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900 text-sm">
-                          {student.first_name} {student.last_name}
+                      <button
+                        type="button"
+                        onClick={() => setQuickViewStudent(student)}
+                        className="flex items-center gap-3 text-left cursor-pointer group"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-[#2158E0] flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-slate-200">
+                          {student.photo_path ? (
+                            <img
+                              src={student.photo_path}
+                              alt={student.first_name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            `${student.first_name[0] || ""}${student.last_name[0] || ""}`.toUpperCase()
+                          )}
                         </div>
-                        <div className="text-[11px] text-slate-500 font-mono">
-                          {student.admission_no}
+                        <div>
+                          <div className="font-semibold text-slate-900 text-sm group-hover:text-[#2158E0] transition-colors">
+                            {student.first_name} {student.last_name}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            {student.admission_no}
+                          </div>
                         </div>
-                      </div>
+                      </button>
                     </div>
 
-                    <div onClick={(e) => e.stopPropagation()}>
+                    <div>
                       <StudentRowActions
                         student={student}
                         onView={(s) => navigate(`/admin/students/${s.id}`)}
-                        onEdit={(s) => navigate(`/admin/students/${s.id}?edit=true`)}
+                        onEdit={(s) => navigate(`/admin/students/${s.id}/edit`)}
                         onGenerateIdCard={(s) => navigate(`/admin/students/id-cards?student=${s.id}`)}
                         onViewDocuments={(s) => navigate(`/admin/students/${s.id}?tab=documents`)}
                         onViewFees={(s) => navigate(`/admin/fees/collect?student=${s.id}`)}

@@ -35,6 +35,8 @@ export default function StudentIdCards() {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   useEffect(() => {
+    let isMounted = true;
+
     async function loadData() {
       if (!schoolId) {
         setLoading(false);
@@ -44,6 +46,7 @@ export default function StudentIdCards() {
       try {
         // Load classes for filter dropdown
         const clsRes = await getClassesWithSections(schoolId, "ay-2026");
+        if (!isMounted) return;
         if (clsRes.classes) {
           setClasses(clsRes.classes);
         }
@@ -53,15 +56,22 @@ export default function StudentIdCards() {
           studentId: targetStudentId || undefined,
           classId: selectedClass !== "all" ? selectedClass : undefined,
         });
+        if (!isMounted) return;
         setCards(data);
       } catch (err) {
         console.error("Failed to load ID card data:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [schoolId, targetStudentId, selectedClass]);
 
   const handlePrint = () => {
@@ -144,7 +154,7 @@ export default function StudentIdCards() {
               type="button"
               onClick={handlePrint}
               disabled={filteredCards.length === 0}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] text-white rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-4 h-4" />
               <span>Print Sheet ({filteredCards.length})</span>
@@ -157,7 +167,7 @@ export default function StudentIdCards() {
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-64">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
+              <input aria-label="Search student ID cards"
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -168,7 +178,7 @@ export default function StudentIdCards() {
 
             <div className="flex items-center gap-2">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <select
+              <select aria-label="Filter by class"
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
                 className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-[#2158E0]"
@@ -220,7 +230,7 @@ export default function StudentIdCards() {
             return (
               <div
                 key={card.student_id}
-                className="print-card bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between transition-all hover:shadow-md"
+                className="print-card bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between transition hover:shadow-md"
                 style={{
                   width: "86mm",
                   height: "54mm",

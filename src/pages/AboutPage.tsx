@@ -23,6 +23,7 @@ import { Navbar } from "../components/layout/Navbar";
 import { Footer } from "../components/layout/Footer";
 import { useLandingModals } from "../hooks/useLandingModals";
 import { FOUNDERS, BELIEFS } from "../data/aboutData";
+import { usePageMetadata } from "../hooks/usePageMetadata";
 
 // Lazy-load modals for performance
 const DemoModal = lazy(() =>
@@ -48,6 +49,13 @@ export default function AboutPage() {
     handleOpenLegal,
     handleCloseLegal,
   } = useLandingModals();
+
+  usePageMetadata({
+    title: "About Us — Built by Students, Designed for Schools",
+    description:
+      "Learn how MyZkool was built by students to empower Indian K-12 schools with modern websites, seamless fee management, and instant parent communication.",
+    canonical: "https://myzkool.in/about",
+  });
 
   return (
     <div className="min-h-screen bg-white text-[#141A2E] font-body selection:bg-blue-100 selection:text-[#2158E0]">
@@ -151,7 +159,7 @@ export default function AboutPage() {
 
                   {/* ── Floating Ecosystem Cards (Connected) ─────────────── */}
                   {/* Card 1: Teachers (Top-Left) */}
-                  <div className="absolute -top-6 -left-2 sm:-left-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 flex items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
+                  <div className="hidden sm:flex absolute -top-6 -left-2 sm:-left-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
                     <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
                       <BookOpen className="w-4 h-4" />
                     </div>
@@ -166,7 +174,7 @@ export default function AboutPage() {
                   </div>
 
                   {/* Card 2: Students (Top-Right) */}
-                  <div className="absolute -top-4 -right-2 sm:-right-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 flex items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
+                  <div className="hidden sm:flex absolute -top-4 -right-2 sm:-right-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
                     <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                       <GraduationCap className="w-4 h-4" />
                     </div>
@@ -181,7 +189,7 @@ export default function AboutPage() {
                   </div>
 
                   {/* Card 3: Parents (Bottom-Left) */}
-                  <div className="absolute -bottom-6 -left-2 sm:-left-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 flex items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
+                  <div className="hidden sm:flex absolute -bottom-6 -left-2 sm:-left-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
                     <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
                       <Users className="w-4 h-4" />
                     </div>
@@ -196,7 +204,7 @@ export default function AboutPage() {
                   </div>
 
                   {/* Card 4: School Management (Bottom-Right) */}
-                  <div className="absolute -bottom-6 -right-2 sm:-right-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 flex items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
+                  <div className="hidden sm:flex absolute -bottom-6 -right-2 sm:-right-6 z-20 bg-white/95 backdrop-blur-xs rounded-xl p-3 border border-slate-200/90 shadow-lg shadow-black/5 items-center gap-2.5 hover:-translate-y-0.5 transition-transform">
                     <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                       <School className="w-4 h-4" />
                     </div>
@@ -214,28 +222,34 @@ export default function AboutPage() {
                   <div className="relative z-10 py-8 px-4 sm:px-6">
                     {/* Primary Laptop Mockup */}
                     <div className="relative w-full rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(15,23,42,0.14)] border border-slate-200/80 bg-white">
-                      <img
-                        src="/hero-laptop.png"
-                        alt="MyZkool School Management System Dashboard"
-                        className="w-full h-auto object-contain block"
-                        width={1517}
-                        height={1037}
-                        loading="eager"
-                        decoding="async"
-                      />
+                      <picture>
+                        <source srcSet="/hero-laptop.webp" type="image/webp" />
+                        <img
+                          src="/hero-laptop.png"
+                          alt="MyZkool School Management System Dashboard"
+                          className="w-full h-auto object-contain block"
+                          width={1517}
+                          height={1037}
+                          loading="eager"
+                          decoding="async"
+                        />
+                      </picture>
                     </div>
 
                     {/* Secondary Parent Mobile Mockup overlapping gracefully */}
                     <div className="absolute -bottom-2 right-4 sm:right-8 w-[28%] sm:w-[26%] z-20 drop-shadow-[0_20px_35px_rgba(15,23,42,0.22)]">
-                      <img
-                        src="/myzkoolp.png"
-                        alt="MyZkool Parent Mobile App"
-                        className="w-full h-auto object-contain block select-none pointer-events-none"
-                        width={1024}
-                        height={1536}
-                        loading="eager"
-                        decoding="async"
-                      />
+                      <picture>
+                        <source srcSet="/myzkoolp.webp" type="image/webp" />
+                        <img
+                          src="/myzkoolp.png"
+                          alt="MyZkool Parent Mobile App"
+                          className="w-full h-auto object-contain block select-none pointer-events-none"
+                          width={1024}
+                          height={1536}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </picture>
                     </div>
                   </div>
                 </div>
@@ -294,19 +308,27 @@ export default function AboutPage() {
                   {FOUNDERS.map((founder) => (
                     <div
                       key={founder.name}
-                      className="bg-white rounded-2xl p-6 border border-[#E6EAF3] shadow-xs hover:shadow-lg hover:border-[#2158E0]/30 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group"
+                      className="bg-white rounded-2xl p-6 border border-[#E6EAF3] shadow-xs hover:shadow-lg hover:border-[#2158E0]/30 hover:-translate-y-1 transition duration-300 flex flex-col justify-between group"
                     >
                       <div>
                         {/* Founder Photo Container */}
                         <div className="relative mb-5 flex items-center justify-center">
                           <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-slate-200/90 shadow-md group-hover:border-[#2158E0] transition-colors bg-slate-100 shrink-0">
-                            <img
-                              src={founder.image}
-                              alt={founder.name}
-                              className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
-                              loading="lazy"
-                              decoding="async"
-                            />
+                            <picture>
+                              <source
+                                srcSet={founder.image.replace(/\.(png|jpg|jpeg)$/i, ".webp")}
+                                type="image/webp"
+                              />
+                              <img
+                                src={founder.image}
+                                alt={founder.name}
+                                className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                                width={112}
+                                height={112}
+                                loading="lazy"
+                                decoding="async"
+                              />
+                            </picture>
                           </div>
                           <div className="absolute -bottom-2 px-2.5 py-0.5 rounded-full bg-white border border-slate-200 text-[10px] font-bold text-slate-700 shadow-2xs">
                             {founder.badge}
@@ -429,7 +451,7 @@ export default function AboutPage() {
                 return (
                   <div
                     key={belief.title}
-                    className="bg-white rounded-2xl p-7 sm:p-8 border border-[#E2ECFC] shadow-xs hover:shadow-md hover:border-[#2158E0]/30 transition-all relative flex flex-col justify-between"
+                    className="bg-white rounded-2xl p-7 sm:p-8 border border-[#E2ECFC] shadow-xs hover:shadow-md hover:border-[#2158E0]/30 transition relative flex flex-col justify-between"
                   >
                     <div>
                       {/* Numbered Indicator & Icon */}
@@ -525,7 +547,7 @@ export default function AboutPage() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
               <Link
                 to="/"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-white bg-[#2158E0] hover:bg-[#1A47B8] rounded-xl shadow-lg shadow-[#2158E0]/25 hover:shadow-xl hover:shadow-[#2158E0]/35 active:scale-[0.98] transition-all cursor-pointer group"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-white bg-[#2158E0] hover:bg-[#1A47B8] rounded-xl shadow-lg shadow-[#2158E0]/25 hover:shadow-xl hover:shadow-[#2158E0]/35 active:scale-[0.98] transition cursor-pointer group"
               >
                 <span>Explore MyZkool</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
@@ -533,7 +555,7 @@ export default function AboutPage() {
 
               <button
                 onClick={handleOpenDemo}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-[#2158E0] bg-white border-2 border-[#2158E0] hover:bg-blue-50/60 rounded-xl active:scale-[0.98] transition-all cursor-pointer group"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-[#2158E0] bg-white border-2 border-[#2158E0] hover:bg-blue-50/60 rounded-xl active:scale-[0.98] transition cursor-pointer group"
               >
                 <span>Talk to Us</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />

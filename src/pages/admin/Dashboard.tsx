@@ -150,7 +150,7 @@ export default function DashboardHome() {
 
             <Link
               to="/admin/students"
-              className="inline-flex items-center gap-2 rounded-xl bg-[#2158E0] px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#1748C5] hover:shadow-md active:scale-[0.98]"
+              className="inline-flex items-center gap-2 rounded-xl bg-[#2158E0] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1748C5] hover:shadow-md active:scale-[0.98]"
             >
               <UserPlus className="h-4 w-4" />
               <span>Add Student</span>
@@ -182,7 +182,7 @@ export default function DashboardHome() {
               <Link
                 key={stat.label}
                 to={stat.href}
-                className="group rounded-2xl border border-[#E6EAF3] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#C9D6F7] hover:shadow-md"
+                className="group rounded-2xl border border-[#E6EAF3] bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#C9D6F7] hover:shadow-md"
               >
                 <div className="flex items-start justify-between">
                   <div
@@ -192,7 +192,7 @@ export default function DashboardHome() {
                   </div>
 
                   <ArrowUpRight
-                    className="h-4 w-4 text-[#B1B8C8] opacity-0 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#2158E0] group-hover:opacity-100"
+                    className="h-4 w-4 text-[#B1B8C8] opacity-0 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#2158E0] group-hover:opacity-100"
                   />
                 </div>
 
@@ -244,7 +244,7 @@ export default function DashboardHome() {
                 <Link
                   key={action.label}
                   to={action.href}
-                  className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#C9D6F7] hover:shadow-md"
+                  className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#C9D6F7] hover:shadow-md"
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#F0F5FE] text-[#2158E0] transition-colors group-hover:bg-[#2158E0] group-hover:text-white">
                     <Icon className="h-5 w-5" />
@@ -329,7 +329,7 @@ export default function DashboardHome() {
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Link
           to="/admin/students"
-          className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition-all hover:border-[#C9D6F7] hover:shadow-md"
+          className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition hover:border-[#C9D6F7] hover:shadow-md"
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
             <GraduationCap className="h-5 w-5" />
@@ -349,7 +349,7 @@ export default function DashboardHome() {
 
         <Link
           to="/admin/fees"
-          className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition-all hover:border-[#C9D6F7] hover:shadow-md"
+          className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition hover:border-[#C9D6F7] hover:shadow-md"
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
             <WalletCards className="h-5 w-5" />
@@ -369,7 +369,7 @@ export default function DashboardHome() {
 
         <Link
           to="/admin/communication"
-          className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition-all hover:border-[#C9D6F7] hover:shadow-md"
+          className="group flex items-center gap-4 rounded-2xl border border-[#E6EAF3] bg-white p-4 shadow-sm transition hover:border-[#C9D6F7] hover:shadow-md"
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
             <Send className="h-5 w-5" />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Bus,
@@ -27,16 +27,7 @@ export function TransportDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (!schoolId) return;
-    checkSchoolFeature(schoolId, "transport").then((enabled) => {
-      setHasFeature(enabled);
-      if (enabled) loadDashboard();
-      else setLoading(false);
-    });
-  }, [schoolId]);
-
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
@@ -47,7 +38,16 @@ export function TransportDashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [schoolId]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    checkSchoolFeature(schoolId, "transport").then((enabled) => {
+      setHasFeature(enabled);
+      if (enabled) loadDashboard();
+      else setLoading(false);
+    });
+  }, [schoolId, loadDashboard]);
 
   async function handleRefresh() {
     if (!schoolId || refreshing) return;
@@ -110,7 +110,7 @@ export function TransportDashboard() {
 
             <Link
               to="/admin/transport/assign"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white text-xs font-bold shadow-2xs transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white text-xs font-bold shadow-2xs transition-colors"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Assign Students
@@ -146,7 +146,7 @@ export function TransportDashboard() {
             {/* 1. Total Vehicles */}
             <Link
               to="/admin/transport/vehicles"
-              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-blue-300 shadow-xs hover:shadow-sm transition-all space-y-3"
+              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-blue-300 shadow-xs hover:shadow-sm transition space-y-3"
             >
               <div className="flex items-center justify-between">
                 <span className="p-2.5 rounded-xl bg-blue-50 text-[#2158E0] group-hover:scale-105 transition-transform">
@@ -175,7 +175,7 @@ export function TransportDashboard() {
             {/* 2. Active Routes */}
             <Link
               to="/admin/transport/routes"
-              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-indigo-300 shadow-xs hover:shadow-sm transition-all space-y-3"
+              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-indigo-300 shadow-xs hover:shadow-sm transition space-y-3"
             >
               <div className="flex items-center justify-between">
                 <span className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 group-hover:scale-105 transition-transform">
@@ -204,7 +204,7 @@ export function TransportDashboard() {
             {/* 3. Drivers and Attendants */}
             <Link
               to="/admin/transport/staff"
-              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-emerald-300 shadow-xs hover:shadow-sm transition-all space-y-3"
+              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-emerald-300 shadow-xs hover:shadow-sm transition space-y-3"
             >
               <div className="flex items-center justify-between">
                 <span className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-105 transition-transform">
@@ -233,7 +233,7 @@ export function TransportDashboard() {
             {/* 4. Students Using Transport */}
             <Link
               to="/admin/transport/assign"
-              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-amber-300 shadow-xs hover:shadow-sm transition-all space-y-3"
+              className="group bg-white p-5 rounded-2xl border border-[#E6EAF3] hover:border-amber-300 shadow-xs hover:shadow-sm transition space-y-3"
             >
               <div className="flex items-center justify-between">
                 <span className="p-2.5 rounded-xl bg-amber-50 text-amber-600 group-hover:scale-105 transition-transform">
@@ -284,13 +284,13 @@ export function TransportDashboard() {
                   <Link
                     key={item.id}
                     to={item.link}
-                    className="p-3 rounded-xl border border-rose-100 bg-rose-50/40 hover:bg-rose-50/80 transition-all flex items-start justify-between gap-3 group"
+                    className="p-3 rounded-xl border border-rose-100 bg-rose-50/40 hover:bg-rose-50/80 transition-colors flex items-start justify-between gap-3 group"
                   >
                     <div className="space-y-0.5 min-w-0">
                       <p className="font-bold text-xs text-rose-950 truncate">{item.title}</p>
                       <p className="text-[11px] text-rose-700 line-clamp-2">{item.subtitle}</p>
                     </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-rose-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5" />
+                    <ArrowRight className="w-3.5 h-3.5 text-rose-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition shrink-0 mt-0.5" />
                   </Link>
                 ))}
               </div>
@@ -312,7 +312,7 @@ export function TransportDashboard() {
               {/* 1. Fleet and Vehicles */}
               <Link
                 to="/admin/transport/vehicles"
-                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-blue-300 hover:bg-blue-50/30 transition-all flex items-start gap-3.5"
+                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-blue-300 hover:bg-blue-50/30 transition flex items-start gap-3.5"
               >
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2158E0] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <Bus className="w-5 h-5" />
@@ -322,7 +322,7 @@ export function TransportDashboard() {
                     <h3 className="text-xs font-bold text-[#141A2E] group-hover:text-[#2158E0] transition-colors">
                       Fleet and Vehicles
                     </h3>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#2158E0] group-hover:translate-x-0.5 transition-all" />
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#2158E0] group-hover:translate-x-0.5 transition" />
                   </div>
                   <p className="text-[11px] text-[#5B6478] mt-0.5 line-clamp-2">
                     Buses, vans, seat capacities, fitness certificates, and vehicle documents.
@@ -333,7 +333,7 @@ export function TransportDashboard() {
               {/* 2. Drivers and Staff */}
               <Link
                 to="/admin/transport/staff"
-                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-emerald-300 hover:bg-emerald-50/30 transition-all flex items-start gap-3.5"
+                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-emerald-300 hover:bg-emerald-50/30 transition flex items-start gap-3.5"
               >
                 <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <Users className="w-5 h-5" />
@@ -343,7 +343,7 @@ export function TransportDashboard() {
                     <h3 className="text-xs font-bold text-[#141A2E] group-hover:text-emerald-600 transition-colors">
                       Drivers and Staff
                     </h3>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" />
                   </div>
                   <p className="text-[11px] text-[#5B6478] mt-0.5 line-clamp-2">
                     Driver licenses, police verifications, badge numbers, and crew allocations.
@@ -354,7 +354,7 @@ export function TransportDashboard() {
               {/* 3. Route Builder */}
               <Link
                 to="/admin/transport/routes"
-                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-indigo-300 hover:bg-indigo-50/30 transition-all flex items-start gap-3.5"
+                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-indigo-300 hover:bg-indigo-50/30 transition flex items-start gap-3.5"
               >
                 <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <Compass className="w-5 h-5" />
@@ -364,7 +364,7 @@ export function TransportDashboard() {
                     <h3 className="text-xs font-bold text-[#141A2E] group-hover:text-indigo-600 transition-colors">
                       Route Builder
                     </h3>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
                   </div>
                   <p className="text-[11px] text-[#5B6478] mt-0.5 line-clamp-2">
                     Transit stops, pickup & drop sequences, timings, and seat capacity.
@@ -375,7 +375,7 @@ export function TransportDashboard() {
               {/* 4. Fee Management */}
               <Link
                 to="/admin/transport/fees"
-                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-purple-300 hover:bg-purple-50/30 transition-all flex items-start gap-3.5"
+                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-purple-300 hover:bg-purple-50/30 transition flex items-start gap-3.5"
               >
                 <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <IndianRupee className="w-5 h-5" />
@@ -385,7 +385,7 @@ export function TransportDashboard() {
                     <h3 className="text-xs font-bold text-[#141A2E] group-hover:text-purple-600 transition-colors">
                       Fee Management
                     </h3>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition-all" />
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
                   </div>
                   <p className="text-[11px] text-[#5B6478] mt-0.5 line-clamp-2">
                     Route-wise stop pricing, both-way and one-way rates, and billing months.
@@ -396,7 +396,7 @@ export function TransportDashboard() {
               {/* 5. Student Rosters */}
               <Link
                 to="/admin/transport/assign"
-                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-amber-300 hover:bg-amber-50/30 transition-all flex items-start gap-3.5"
+                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-amber-300 hover:bg-amber-50/30 transition flex items-start gap-3.5"
               >
                 <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <UserPlus className="w-5 h-5" />
@@ -406,7 +406,7 @@ export function TransportDashboard() {
                     <h3 className="text-xs font-bold text-[#141A2E] group-hover:text-amber-600 transition-colors">
                       Student Rosters
                     </h3>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition" />
                   </div>
                   <p className="text-[11px] text-[#5B6478] mt-0.5 line-clamp-2">
                     Bulk allocate students to routes and stops, view student lists, and generate dues.
@@ -417,7 +417,7 @@ export function TransportDashboard() {
               {/* 6. Year Renewal */}
               <Link
                 to="/admin/transport/renewal"
-                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-cyan-300 hover:bg-cyan-50/30 transition-all flex items-start gap-3.5"
+                className="group p-4 rounded-xl border border-[#E6EAF3] hover:border-cyan-300 hover:bg-cyan-50/30 transition flex items-start gap-3.5"
               >
                 <div className="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <CalendarSync className="w-5 h-5" />
@@ -427,7 +427,7 @@ export function TransportDashboard() {
                     <h3 className="text-xs font-bold text-[#141A2E] group-hover:text-cyan-600 transition-colors">
                       Year Renewal
                     </h3>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-cyan-600 group-hover:translate-x-0.5 transition-all" />
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-cyan-600 group-hover:translate-x-0.5 transition" />
                   </div>
                   <p className="text-[11px] text-[#5B6478] mt-0.5 line-clamp-2">
                     Rollover routes, vehicle assignments, and student transport for the new academic session.
@@ -497,7 +497,7 @@ export function TransportDashboard() {
                       </div>
                       <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                         <div
-                          className={`h-full transition-all duration-500 rounded-full ${
+                          className={`h-full transition-colors duration-500 rounded-full ${
                             r.is_over
                               ? "bg-rose-600"
                               : isNear

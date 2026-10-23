@@ -66,7 +66,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
       />
 
       {/* ─── MAIN CENTERED TWO-COLUMN CARD ─── */}
-      <div className="w-full max-w-5xl xl:max-w-6xl bg-white rounded-3xl lg:rounded-[32px] shadow-2xl shadow-blue-950/10 border-4 sm:border-[6px] border-white/95 overflow-hidden relative flex flex-col lg:flex-row my-auto z-10 transition-all duration-300">
+      <div className="w-full max-w-5xl xl:max-w-6xl bg-white rounded-3xl lg:rounded-[32px] shadow-2xl shadow-blue-950/10 border-4 sm:border-[6px] border-white/95 overflow-hidden relative flex flex-col lg:flex-row my-auto z-10 transition-colors duration-300">
         
         {/* ─── LEFT BRANDING PANEL (Approx 45% Width, Pale Blue Gradient) ─── */}
         <div className="w-full lg:w-[45%] xl:w-[44%] bg-gradient-to-b from-[#F2F7FF] via-[#EBF3FE] to-[#DFEEFD] p-6 sm:p-8 xl:p-10 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-blue-100/80 relative overflow-hidden">

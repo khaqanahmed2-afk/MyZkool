@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import {
   ArrowLeft,
   Phone,
@@ -72,12 +72,21 @@ import type { EnrichedStudentTransport, TransportAssignment } from "../../../typ
 
 
 
+import { PrintAdmissionForm } from "./wizard/PrintAdmissionForm";
+
 type ProfileTab = "overview" | "personal" | "family" | "academics" | "fees" | "transport" | "documents" | "medical" | "timeline";
 
 export default function StudentProfileView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { schoolId: authSchoolId, profile: currentUserProfile } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { schoolId: authSchoolId, profile: currentUserProfile, school } = useAuth();
+
+  useEffect(() => {
+    if (searchParams.get("edit") === "true" && id) {
+      navigate(`/admin/students/${id}/edit`, { replace: true });
+    }
+  }, [searchParams, id, navigate]);
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,6 +94,7 @@ export default function StudentProfileView() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isPrintAdmissionOpen, setIsPrintAdmissionOpen] = useState(false);
 
   // Inline editing state for Personal tab
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
@@ -109,7 +119,6 @@ export default function StudentProfileView() {
   const [isRevealingAadhaar, setIsRevealingAadhaar] = useState(false);
   const [aadhaarCountdown, setAadhaarCountdown] = useState(30);
   const [aadhaarCopied, setAadhaarCopied] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Medical state
   const [medicalData, setMedicalData] = useState<StudentMedical | null>(null);
@@ -135,7 +144,7 @@ export default function StudentProfileView() {
   const schoolId = authSchoolId || "";
   const rawRole = (currentUserProfile?.role || "admin").toLowerCase().trim().replace(/[\s-]+/g, "_");
   const userRole = rawRole;
-  const userPermissions: StudentPermissionKey[] = getPermissionsForRole(userRole);
+  const userPermissions: StudentPermissionKey[] = useMemo(() => getPermissionsForRole(userRole), [userRole]);
   const canReadMedical = userRole === "owner" || userRole === "super_admin" || userPermissions.includes("students.medical.read");
   const canWriteMedical = userRole === "owner" || userRole === "super_admin" || userPermissions.includes("students.medical.write");
 
@@ -162,10 +171,10 @@ export default function StudentProfileView() {
   const [isEditingTransport, setIsEditingTransport] = useState(false);
   const [showStopModal, setShowStopModal] = useState(false);
   const [stopReason, setStopReason] = useState("");
-  const [stopEffectiveDate, setStopEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
+  const [stopEffectiveDate, setStopEffectiveDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [showAbsenceModal, setShowAbsenceModal] = useState(false);
-  const [absenceFrom, setAbsenceFrom] = useState(new Date().toISOString().split("T")[0]);
-  const [absenceTo, setAbsenceTo] = useState(new Date().toISOString().split("T")[0]);
+  const [absenceFrom, setAbsenceFrom] = useState(() => new Date().toISOString().split("T")[0]);
+  const [absenceTo, setAbsenceTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [absenceReason, setAbsenceReason] = useState("");
   const [transportOpLoading, setTransportOpLoading] = useState(false);
   const [transportOpError, setTransportOpError] = useState<string | null>(null);
@@ -183,11 +192,45 @@ export default function StudentProfileView() {
     }
   }, [schoolId, id]);
 
-  useEffect(() => {
-    if (activeTab === "transport") {
+  const loadMedical = useCallback(async () => {
+    if (!id || !schoolId || !canReadMedical) return;
+    setMedicalLoading(true);
+    setMedicalError(null);
+    try {
+      const res = await getStudentMedical(schoolId, id, userPermissions);
+      if (res.error) {
+        setMedicalError(res.error);
+      } else {
+        setMedicalData(res.medical || null);
+        if (res.medical) {
+          setMedicalForm({
+            allergies: res.medical.allergies || "",
+            conditions: res.medical.conditions || "",
+            medications: res.medical.medications || "",
+            special_needs: res.medical.special_needs || "",
+            vision_hearing_aids: res.medical.vision_hearing_aids || "",
+            emergency_instructions: res.medical.emergency_instructions || "",
+            doctor_name: res.medical.doctor_name || "",
+            doctor_phone: res.medical.doctor_phone || "",
+            preferred_hospital: res.medical.preferred_hospital || "",
+          });
+        }
+      }
+    } catch (err: any) {
+      setMedicalError(err.message || "Failed to load medical records");
+    } finally {
+      setMedicalLoading(false);
+    }
+  }, [schoolId, id, canReadMedical, userPermissions]);
+
+  const handleTabChange = useCallback((tab: ProfileTab) => {
+    setActiveTab(tab);
+    if (tab === "medical") {
+      loadMedical();
+    } else if (tab === "transport") {
       loadTransport();
     }
-  }, [activeTab, loadTransport]);
+  }, [loadMedical, loadTransport]);
 
   const handleExecuteReAdmission = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,57 +330,27 @@ export default function StudentProfileView() {
       .finally(() => setLoading(false));
   }, [id, schoolId]);
 
-  // Load medical records if activeTab is medical
-  useEffect(() => {
-    if (activeTab === "medical" && id && schoolId && canReadMedical) {
-      setMedicalLoading(true);
-      setMedicalError(null);
-      getStudentMedical(schoolId, id, userPermissions)
-        .then(res => {
-          if (res.error) {
-            setMedicalError(res.error);
-          } else {
-            setMedicalData(res.medical || null);
-            if (res.medical) {
-              setMedicalForm({
-                allergies: res.medical.allergies || "",
-                conditions: res.medical.conditions || "",
-                medications: res.medical.medications || "",
-                special_needs: res.medical.special_needs || "",
-                vision_hearing_aids: res.medical.vision_hearing_aids || "",
-                emergency_instructions: res.medical.emergency_instructions || "",
-                doctor_name: res.medical.doctor_name || "",
-                doctor_phone: res.medical.doctor_phone || "",
-                preferred_hospital: res.medical.preferred_hospital || "",
-              });
-            }
-          }
-        })
-        .finally(() => setMedicalLoading(false));
-    }
-  }, [activeTab, id, schoolId, canReadMedical]);
 
   // Aadhaar auto-mask countdown timer
   useEffect(() => {
-    if (revealedAadhaar) {
-      setAadhaarCountdown(30);
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => {
-        setAadhaarCountdown(prev => {
-          if (prev <= 1) {
-            if (timerRef.current) clearInterval(timerRef.current);
-            setRevealedAadhaar(null);
-            setShowAadhaarModal(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    if (!revealedAadhaar) return;
+
+    setAadhaarCountdown(30);
+    const interval = setInterval(() => {
+      setAadhaarCountdown(prev => Math.max(0, prev - 1));
+    }, 1000);
+
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      clearInterval(interval);
     };
   }, [revealedAadhaar]);
+
+  useEffect(() => {
+    if (aadhaarCountdown === 0 && revealedAadhaar) {
+      setRevealedAadhaar(null);
+      setShowAadhaarModal(false);
+    }
+  }, [aadhaarCountdown, revealedAadhaar]);
 
   const handleRevealAadhaar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -379,35 +392,38 @@ export default function StudentProfileView() {
     if (!id || !profile) return;
 
     setIsSaving(true);
-    const actorId = currentUserProfile?.id || "user-admin";
-    const actorRole = currentUserProfile?.role || "admin";
+    try {
+      const actorId = currentUserProfile?.id || "user-admin";
+      const actorRole = currentUserProfile?.role || "admin";
 
-    const res = await updateStudent(
-      schoolId,
-      id,
-      {
-        first_name: personalForm.first_name,
-        last_name: personalForm.last_name,
-        dob: personalForm.dob,
-        gender: personalForm.gender as any,
-        blood_group: personalForm.blood_group || undefined,
-        category: personalForm.category as any,
-        religion: personalForm.religion || undefined,
-        mother_tongue: personalForm.mother_tongue || undefined,
-      },
-      actorId,
-      actorRole
-    );
+      const res = await updateStudent(
+        schoolId,
+        id,
+        {
+          first_name: personalForm.first_name,
+          last_name: personalForm.last_name,
+          dob: personalForm.dob,
+          gender: personalForm.gender as any,
+          blood_group: personalForm.blood_group || undefined,
+          category: personalForm.category as any,
+          religion: personalForm.religion || undefined,
+          mother_tongue: personalForm.mother_tongue || undefined,
+        },
+        actorId,
+        actorRole
+      );
 
-    if (res.error) {
-      alert(`Failed to save changes: ${res.error}`);
-    } else if (res.student) {
-      setProfile(prev => (prev ? { ...prev, ...res.student } : null));
-      setIsEditingPersonal(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      if (res.error) {
+        alert(`Failed to save changes: ${res.error}`);
+      } else if (res.student) {
+        setProfile(prev => (prev ? { ...prev, ...res.student } : null));
+        setIsEditingPersonal(false);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   };
 
   const handleSaveMedical = async (e: React.FormEvent) => {
@@ -415,23 +431,26 @@ export default function StudentProfileView() {
     if (!id || !schoolId) return;
 
     setIsSavingMedical(true);
-    const actorId = currentUserProfile?.id || "user-admin";
+    try {
+      const actorId = currentUserProfile?.id || "user-admin";
 
-    const res = await updateStudentMedical(
-      schoolId,
-      id,
-      medicalForm,
-      actorId,
-      userRole,
-      userPermissions
-    );
+      const res = await updateStudentMedical(
+        schoolId,
+        id,
+        medicalForm,
+        actorId,
+        userRole,
+        userPermissions
+      );
 
-    setIsSavingMedical(false);
-    if (res.error) {
-      alert(`Failed to update medical details: ${res.error}`);
-    } else if (res.medical) {
-      setMedicalData(res.medical);
-      setIsEditingMedical(false);
+      if (res.error) {
+        alert(`Failed to update medical details: ${res.error}`);
+      } else if (res.medical) {
+        setMedicalData(res.medical);
+        setIsEditingMedical(false);
+      }
+    } finally {
+      setIsSavingMedical(false);
     }
   };
 
@@ -624,10 +643,7 @@ export default function StudentProfileView() {
             )}
             <button
               type="button"
-              onClick={() => {
-                setActiveTab("personal");
-                setIsEditingPersonal(true);
-              }}
+              onClick={() => navigate(`/admin/students/${profile.id}/edit?step=1`)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               <Edit2 className="w-3.5 h-3.5" /> Edit
@@ -646,6 +662,13 @@ export default function StudentProfileView() {
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
             >
               <FileText className="w-3.5 h-3.5 text-amber-700" /> Status / TC
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPrintAdmissionOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5 text-blue-600" /> Print Admission Form
             </button>
             <button
               type="button"
@@ -697,7 +720,7 @@ export default function StudentProfileView() {
                 <UserCheck className="w-5 h-5 text-emerald-600" />
                 <h3 className="font-bold text-slate-900 text-lg">Re-admit Student</h3>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setIsReAdmitModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
@@ -725,10 +748,10 @@ export default function StudentProfileView() {
 
             <form onSubmit={handleExecuteReAdmission} className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="studentprofile-academic-year" className="block text-xs font-semibold text-slate-700 mb-1">
                   Academic Year <span className="text-red-500">*</span>
                 </label>
-                <select
+                <select id="studentprofile-academic-year" aria-label="Academic Year"
                   value={reAdmitForm.academic_year_id}
                   onChange={(e) => setReAdmitForm({ ...reAdmitForm, academic_year_id: e.target.value })}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -741,10 +764,10 @@ export default function StudentProfileView() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="studentprofile-target-class" className="block text-xs font-semibold text-slate-700 mb-1">
                     Target Class <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <select id="studentprofile-target-class" aria-label="Target Class"
                     value={reAdmitForm.class_id}
                     onChange={(e) => setReAdmitForm({ ...reAdmitForm, class_id: e.target.value })}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -767,10 +790,10 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="studentprofile-section-optional" className="block text-xs font-semibold text-slate-700 mb-1">
                     Section (Optional)
                   </label>
-                  <select
+                  <select id="studentprofile-section-optional" aria-label="Section (Optional)"
                     value={reAdmitForm.section_id}
                     onChange={(e) => setReAdmitForm({ ...reAdmitForm, section_id: e.target.value })}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -785,10 +808,10 @@ export default function StudentProfileView() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="studentprofile-re-admission-date" className="block text-xs font-semibold text-slate-700 mb-1">
                     Re-admission Date <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="studentprofile-re-admission-date" aria-label="Re-admission Date"
                     type="date"
                     value={reAdmitForm.admission_date}
                     onChange={(e) => setReAdmitForm({ ...reAdmitForm, admission_date: e.target.value })}
@@ -798,10 +821,10 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="studentprofile-roll-no-optional" className="block text-xs font-semibold text-slate-700 mb-1">
                     Roll No (Optional)
                   </label>
-                  <input
+                  <input id="studentprofile-roll-no-optional"
                     type="text"
                     value={reAdmitForm.roll_no}
                     onChange={(e) => setReAdmitForm({ ...reAdmitForm, roll_no: e.target.value })}
@@ -812,10 +835,10 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="studentprofile-reason-for-re-admission" className="block text-xs font-semibold text-slate-700 mb-1">
                   Reason for Re-admission
                 </label>
-                <textarea
+                <textarea id="studentprofile-reason-for-re-admission"
                   value={reAdmitForm.reason}
                   onChange={(e) => setReAdmitForm({ ...reAdmitForm, reason: e.target.value })}
                   placeholder="e.g. Relocated back to town; completed medical treatment"
@@ -874,7 +897,7 @@ export default function StudentProfileView() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as ProfileTab)}
+                onClick={() => handleTabChange(tab.id as ProfileTab)}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors shrink-0 cursor-pointer ${
                   isActive
                     ? "border-[#2158E0] text-[#2158E0]"
@@ -894,7 +917,19 @@ export default function StudentProfileView() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
             <div className="bg-white border border-[#E6EAF3] rounded-xl p-5 shadow-2xs">
-              <h3 className="text-sm font-bold text-slate-900 font-display mb-4">Key facts</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-900 font-display">Key facts</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/admin/students/${profile.id}/edit?step=1`)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors cursor-pointer shadow-2xs"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                </button>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
                 <div>
                   <span className="text-slate-500 block">Date of birth</span>
@@ -951,7 +986,7 @@ export default function StudentProfileView() {
               {profile.siblings.length > 0 ? (
                 <div className="space-y-2">
                   {profile.siblings.map(sib => (
-                    <div
+                    <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                       key={sib.sibling_id}
                       onClick={() => navigate(`/admin/students/${sib.sibling_id}`)}
                       className="p-2.5 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 cursor-pointer transition-colors"
@@ -988,31 +1023,40 @@ export default function StudentProfileView() {
         <div className="bg-white border border-[#E6EAF3] rounded-xl p-6 shadow-2xs space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 font-display">Personal details & identity</h3>
-            {!isEditingPersonal ? (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsEditingPersonal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-[#2158E0] hover:bg-blue-50 cursor-pointer"
+                onClick={() => navigate(`/admin/students/${profile.id}/edit?step=1`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50/50 text-xs font-semibold text-[#2158E0] hover:bg-blue-100/70 transition cursor-pointer"
               >
-                <Edit2 className="w-3.5 h-3.5" /> Edit details
+                <Edit2 className="w-3.5 h-3.5" /> Edit in Wizard
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsEditingPersonal(false)}
-                className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" /> Cancel
-              </button>
-            )}
+              {!isEditingPersonal ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPersonal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Quick Edit
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPersonal(false)}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" /> Cancel
+                </button>
+              )}
+            </div>
           </div>
 
           <form onSubmit={handleSavePersonal} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">First name</label>
+                <label htmlFor="studentprofile-first-name" className="text-xs font-semibold text-slate-700 block mb-1">First name</label>
                 {isEditingPersonal ? (
-                  <input
+                  <input id="studentprofile-first-name" aria-label="First name"
                     type="text"
                     value={personalForm.first_name}
                     onChange={e => setPersonalForm({ ...personalForm, first_name: e.target.value })}
@@ -1025,9 +1069,9 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Last name</label>
+                <label htmlFor="studentprofile-last-name" className="text-xs font-semibold text-slate-700 block mb-1">Last name</label>
                 {isEditingPersonal ? (
-                  <input
+                  <input id="studentprofile-last-name" aria-label="Last name"
                     type="text"
                     value={personalForm.last_name}
                     onChange={e => setPersonalForm({ ...personalForm, last_name: e.target.value })}
@@ -1040,9 +1084,9 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Date of birth</label>
+                <label htmlFor="studentprofile-date-of-birth" className="text-xs font-semibold text-slate-700 block mb-1">Date of birth</label>
                 {isEditingPersonal ? (
-                  <input
+                  <input id="studentprofile-date-of-birth" aria-label="Date of birth"
                     type="date"
                     value={personalForm.dob}
                     onChange={e => setPersonalForm({ ...personalForm, dob: e.target.value })}
@@ -1055,9 +1099,9 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Gender</label>
+                <label htmlFor="studentprofile-gender" className="text-xs font-semibold text-slate-700 block mb-1">Gender</label>
                 {isEditingPersonal ? (
-                  <select
+                  <select id="studentprofile-gender" aria-label="Gender"
                     value={personalForm.gender}
                     onChange={e => setPersonalForm({ ...personalForm, gender: e.target.value })}
                     className="w-full text-xs p-2 rounded-lg border border-[#E6EAF3] focus:ring-2 focus:ring-[#2158E0]"
@@ -1072,9 +1116,9 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Category</label>
+                <label htmlFor="studentprofile-category" className="text-xs font-semibold text-slate-700 block mb-1">Category</label>
                 {isEditingPersonal ? (
-                  <select
+                  <select id="studentprofile-category" aria-label="Category"
                     value={personalForm.category}
                     onChange={e => setPersonalForm({ ...personalForm, category: e.target.value })}
                     className="w-full text-xs p-2 rounded-lg border border-[#E6EAF3] focus:ring-2 focus:ring-[#2158E0]"
@@ -1091,9 +1135,9 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Blood group</label>
+                <label htmlFor="studentprofile-blood-group" className="text-xs font-semibold text-slate-700 block mb-1">Blood group</label>
                 {isEditingPersonal ? (
-                  <input
+                  <input id="studentprofile-blood-group"
                     type="text"
                     value={personalForm.blood_group}
                     onChange={e => setPersonalForm({ ...personalForm, blood_group: e.target.value })}
@@ -1119,17 +1163,26 @@ export default function StudentProfileView() {
                 <span className="text-sm font-mono font-bold text-slate-800 tracking-wider">
                   •••• •••• {profile.aadhaar_last4 || "XXXX"}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAadhaarModal(true);
-                    setAadhaarReason("");
-                    setAadhaarError(null);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer shadow-2xs"
-                >
-                  <Eye className="w-3.5 h-3.5 text-slate-500" /> Reveal plaintext
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/admin/students/${profile.id}/edit?step=5`)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-semibold text-[#2158E0] hover:bg-blue-50 cursor-pointer shadow-2xs"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" /> Edit Aadhaar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAadhaarModal(true);
+                      setAadhaarReason("");
+                      setAadhaarError(null);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer shadow-2xs"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-500" /> Reveal plaintext
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1154,6 +1207,13 @@ export default function StudentProfileView() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 font-display">Linked parents and guardians</h3>
+            <button
+              type="button"
+              onClick={() => navigate(`/admin/students/${profile.id}/edit?step=2`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-[#2158E0] hover:bg-blue-50 transition cursor-pointer"
+            >
+              <Edit2 className="w-3.5 h-3.5" /> Edit Family & Guardian
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1203,7 +1263,16 @@ export default function StudentProfileView() {
       {/* 4. ACADEMICS TAB */}
       {activeTab === "academics" && (
         <div className="bg-white border border-[#E6EAF3] rounded-xl p-6 shadow-2xs space-y-4">
-          <h3 className="text-base font-bold text-slate-900 font-display">Enrollment history</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-900 font-display">Enrollment history</h3>
+            <button
+              type="button"
+              onClick={() => navigate(`/admin/students/${profile.id}/edit?step=3`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-[#2158E0] hover:bg-blue-50 transition cursor-pointer"
+            >
+              <Edit2 className="w-3.5 h-3.5" /> Edit Academic Details
+            </button>
+          </div>
           {profile.enrollments.length > 0 ? (
             <div className="divide-y divide-slate-100">
               {profile.enrollments.map(enr => (
@@ -1232,19 +1301,28 @@ export default function StudentProfileView() {
               <h3 className="text-base font-bold text-slate-900 font-display">Document Vault</h3>
               <p className="text-xs text-slate-500">Verified documents cannot be deleted; they can only be superseded.</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setUploadModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-[#2158E0] hover:bg-[#1A46B8] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" /> Upload document
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate(`/admin/students/${profile.id}/edit?step=4`)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-blue-600" /> Manage in Wizard
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-[#2158E0] hover:bg-[#1A46B8] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" /> Upload document
+              </button>
+            </div>
           </div>
 
           {docOperationError && (
             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between">
               <span>{docOperationError}</span>
-              <button type="button" onClick={() => setDocOperationError(null)} className="cursor-pointer">
+              <button aria-label="Close" type="button" onClick={() => setDocOperationError(null)} className="cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1357,25 +1435,28 @@ export default function StudentProfileView() {
                         {isVerified && (
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={async () => {
                               const newName = prompt("Enter new document file name to supersede this record:");
                               if (newName) {
                                 const actorId = currentUserProfile?.id || "user-admin";
-                                replaceStudentDocument(
-                                  schoolId,
-                                  doc.id,
-                                  {
-                                    doc_type: doc.doc_type,
-                                    file_name: newName,
-                                    mime: newName.endsWith(".pdf") ? "application/pdf" : "image/jpeg",
-                                    status: "uploaded",
-                                  },
-                                  actorId
-                                ).then(res => {
+                                try {
+                                  const res = await replaceStudentDocument(
+                                    schoolId,
+                                    doc.id,
+                                    {
+                                      doc_type: doc.doc_type,
+                                      file_name: newName,
+                                      mime: newName.endsWith(".pdf") ? "application/pdf" : "image/jpeg",
+                                      status: "uploaded",
+                                    },
+                                    actorId
+                                  );
                                   if (res.document) {
                                     setDocsList(prev => prev.map(d => (d.id === doc.id ? res.document! : d)));
                                   }
-                                });
+                                } catch (err) {
+                                  console.error("Failed to replace document:", err);
+                                }
                               }
                             }}
                             className="text-blue-600 hover:underline flex items-center gap-1 text-[11px] cursor-pointer"
@@ -1423,13 +1504,22 @@ export default function StudentProfileView() {
             </div>
 
             {canWriteMedical && !isEditingMedical && (
-              <button
-                type="button"
-                onClick={() => setIsEditingMedical(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-[#2158E0] hover:bg-blue-50 cursor-pointer"
-              >
-                <Edit2 className="w-3.5 h-3.5" /> Edit medical details
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/admin/students/${profile.id}/edit?step=6`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50/40 text-xs font-semibold text-rose-700 hover:bg-rose-100/50 cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Edit in Wizard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingMedical(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Quick Edit
+                </button>
+              </div>
             )}
           </div>
 
@@ -1449,8 +1539,8 @@ export default function StudentProfileView() {
             <form onSubmit={handleSaveMedical} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Known Allergies</label>
-                  <input
+                  <label htmlFor="studentprofile-known-allergies" className="text-xs font-semibold text-slate-700 block mb-1">Known Allergies</label>
+                  <input id="studentprofile-known-allergies"
                     type="text"
                     value={medicalForm.allergies || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, allergies: e.target.value })}
@@ -1460,8 +1550,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Chronic Conditions</label>
-                  <input
+                  <label htmlFor="studentprofile-chronic-conditions" className="text-xs font-semibold text-slate-700 block mb-1">Chronic Conditions</label>
+                  <input id="studentprofile-chronic-conditions"
                     type="text"
                     value={medicalForm.conditions || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, conditions: e.target.value })}
@@ -1471,8 +1561,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Current Medications</label>
-                  <input
+                  <label htmlFor="studentprofile-current-medications" className="text-xs font-semibold text-slate-700 block mb-1">Current Medications</label>
+                  <input id="studentprofile-current-medications"
                     type="text"
                     value={medicalForm.medications || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, medications: e.target.value })}
@@ -1482,8 +1572,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Vision / Hearing Aids</label>
-                  <input
+                  <label htmlFor="studentprofile-vision-hearing-aids" className="text-xs font-semibold text-slate-700 block mb-1">Vision / Hearing Aids</label>
+                  <input id="studentprofile-vision-hearing-aids"
                     type="text"
                     value={medicalForm.vision_hearing_aids || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, vision_hearing_aids: e.target.value })}
@@ -1493,8 +1583,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Family Doctor Name</label>
-                  <input
+                  <label htmlFor="studentprofile-family-doctor-name" className="text-xs font-semibold text-slate-700 block mb-1">Family Doctor Name</label>
+                  <input id="studentprofile-family-doctor-name"
                     type="text"
                     value={medicalForm.doctor_name || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, doctor_name: e.target.value })}
@@ -1504,8 +1594,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Doctor Phone</label>
-                  <input
+                  <label htmlFor="studentprofile-doctor-phone" className="text-xs font-semibold text-slate-700 block mb-1">Doctor Phone</label>
+                  <input id="studentprofile-doctor-phone"
                     type="tel"
                     value={medicalForm.doctor_phone || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, doctor_phone: e.target.value })}
@@ -1515,8 +1605,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Preferred Hospital / Emergency Contact</label>
-                  <input
+                  <label htmlFor="studentprofile-preferred-hospital-emergency-c" className="text-xs font-semibold text-slate-700 block mb-1">Preferred Hospital / Emergency Contact</label>
+                  <input id="studentprofile-preferred-hospital-emergency-c"
                     type="text"
                     value={medicalForm.preferred_hospital || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, preferred_hospital: e.target.value })}
@@ -1526,8 +1616,8 @@ export default function StudentProfileView() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Emergency Care Instructions</label>
-                  <textarea
+                  <label htmlFor="studentprofile-emergency-care-instructions" className="text-xs font-semibold text-slate-700 block mb-1">Emergency Care Instructions</label>
+                  <textarea id="studentprofile-emergency-care-instructions"
                     rows={2}
                     value={medicalForm.emergency_instructions || ""}
                     onChange={e => setMedicalForm({ ...medicalForm, emergency_instructions: e.target.value })}
@@ -1631,7 +1721,20 @@ export default function StudentProfileView() {
 
       {/* 8. FEES TAB */}
       {activeTab === "fees" && profile && (
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs">
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 font-display">Student Fee Ledger & Structure</h3>
+              <p className="text-xs text-slate-500">View transactions, invoices, receipts, and fee structure assignment</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate(`/admin/students/${profile.id}/edit?step=8`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-blue-600" /> Edit Fee Assignment
+            </button>
+          </div>
           <StudentLedgerTab
             studentId={profile.id}
             studentName={`${profile.first_name} ${profile.last_name}`.trim()}
@@ -1660,7 +1763,14 @@ export default function StudentProfileView() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => navigate(`/admin/students/${profile.id}/edit?step=7`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6EAF3] text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-blue-600" /> Edit Transport
+              </button>
               {transportInfo?.assignment ? (
                 <>
                   <button
@@ -1888,7 +1998,7 @@ export default function StudentProfileView() {
                       Unpaid future dues will be cancelled. Paid future dues become credit for owner review.
                     </p>
                   </div>
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setShowStopModal(false)}
                     className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
@@ -1899,8 +2009,8 @@ export default function StudentProfileView() {
 
                 <div className="space-y-3 text-xs">
                   <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Effective Date</label>
-                    <input
+                    <label htmlFor="studentprofile-effective-date" className="font-semibold text-slate-700">Effective Date</label>
+                    <input id="studentprofile-effective-date" aria-label="Effective Date"
                       type="date"
                       value={stopEffectiveDate}
                       onChange={(e) => setStopEffectiveDate(e.target.value)}
@@ -1909,8 +2019,8 @@ export default function StudentProfileView() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Reason (Required)</label>
-                    <input
+                    <label htmlFor="studentprofile-reason-required" className="font-semibold text-slate-700">Reason (Required)</label>
+                    <input id="studentprofile-reason-required"
                       type="text"
                       placeholder="e.g. Relocated closer to school / Parent opted out"
                       value={stopReason}
@@ -1970,7 +2080,7 @@ export default function StudentProfileView() {
                       Alerts driver and attendant app so they do not wait at the stop.
                     </p>
                   </div>
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setShowAbsenceModal(false)}
                     className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
@@ -1982,8 +2092,8 @@ export default function StudentProfileView() {
                 <div className="space-y-3 text-xs">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="font-semibold text-slate-700">From Date</label>
-                      <input
+                      <label htmlFor="studentprofile-from-date" className="font-semibold text-slate-700">From Date</label>
+                      <input id="studentprofile-from-date" aria-label="From Date"
                         type="date"
                         value={absenceFrom}
                         onChange={(e) => setAbsenceFrom(e.target.value)}
@@ -1991,8 +2101,8 @@ export default function StudentProfileView() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="font-semibold text-slate-700">To Date</label>
-                      <input
+                      <label htmlFor="studentprofile-to-date" className="font-semibold text-slate-700">To Date</label>
+                      <input id="studentprofile-to-date" aria-label="To Date"
                         type="date"
                         value={absenceTo}
                         onChange={(e) => setAbsenceTo(e.target.value)}
@@ -2002,8 +2112,8 @@ export default function StudentProfileView() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Reason</label>
-                    <input
+                    <label htmlFor="studentprofile-reason" className="font-semibold text-slate-700">Reason</label>
+                    <input id="studentprofile-reason"
                       type="text"
                       placeholder="e.g. Out of station / Sick"
                       value={absenceReason}
@@ -2121,7 +2231,7 @@ export default function StudentProfileView() {
                   <span className="text-[11px] text-slate-500">DPDP Act 2023 Compliance Gate</span>
                 </div>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => {
                   setShowAadhaarModal(false);
@@ -2185,10 +2295,10 @@ export default function StudentProfileView() {
                 )}
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                  <label htmlFor="studentprofile-reason-for-revealing-aadhaar" className="text-xs font-bold text-slate-700 block mb-1">
                     Reason for Revealing Aadhaar <span className="text-rose-500">*</span>
                   </label>
-                  <textarea
+                  <textarea id="studentprofile-reason-for-revealing-aadhaar"
                     rows={2}
                     required
                     value={aadhaarReason}
@@ -2231,8 +2341,8 @@ export default function StudentProfileView() {
 
             <form onSubmit={handleRejectDoc} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Rejection Reason</label>
-                <textarea
+                <label htmlFor="studentprofile-rejection-reason" className="text-xs font-semibold text-slate-700 block mb-1">Rejection Reason</label>
+                <textarea id="studentprofile-rejection-reason"
                   rows={2}
                   required
                   value={rejectReason}
@@ -2271,8 +2381,8 @@ export default function StudentProfileView() {
 
             <form onSubmit={handleUploadDoc} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Document Type</label>
-                <select
+                <label htmlFor="studentprofile-document-type" className="text-xs font-semibold text-slate-700 block mb-1">Document Type</label>
+                <select id="studentprofile-document-type" aria-label="Document Type"
                   value={uploadDocType}
                   onChange={e => setUploadDocType(e.target.value)}
                   className="w-full text-xs p-2.5 rounded-xl border border-[#E6EAF3] focus:ring-2 focus:ring-[#2158E0]"
@@ -2290,8 +2400,8 @@ export default function StudentProfileView() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">File Name</label>
-                <input
+                <label htmlFor="studentprofile-file-name" className="text-xs font-semibold text-slate-700 block mb-1">File Name</label>
+                <input id="studentprofile-file-name"
                   type="text"
                   required
                   value={uploadFileName}
@@ -2333,7 +2443,7 @@ export default function StudentProfileView() {
                   {selectedDocPreview.doc_type.replace(/_/g, " ")} Preview
                 </h3>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setSelectedDocPreview(null)}
                 className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
@@ -2362,6 +2472,16 @@ export default function StudentProfileView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* PRINT ADMISSION FORM MODAL */}
+      {isPrintAdmissionOpen && profile && (
+        <PrintAdmissionForm
+          isOpen={isPrintAdmissionOpen}
+          onClose={() => setIsPrintAdmissionOpen(false)}
+          profile={profile}
+          school={school}
+        />
       )}
 
       {/* DELETE STUDENT MODAL */}

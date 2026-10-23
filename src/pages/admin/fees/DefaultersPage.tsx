@@ -7,7 +7,7 @@
  * - Actions: "Send reminder" (template preview, parent count), "Add follow-up" (note + promise date), "Export CSV"
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Search, Filter, Download, MessageSquare, Bell, Calendar,
@@ -34,8 +34,8 @@ export default function DefaultersPage() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
 
   // Filters
-  const [agingFilter, setAgingFilter] = useState<string>(searchParams.get("bucket") || "all");
-  const [classFilter, setClassFilter] = useState<string>(searchParams.get("class") || "all");
+  const [agingFilter, setAgingFilter] = useState<string>(() => searchParams.get("bucket") || "all");
+  const [classFilter, setClassFilter] = useState<string>(() => searchParams.get("class") || "all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modals
@@ -45,7 +45,7 @@ export default function DefaultersPage() {
   const [followupNote, setFollowupNote] = useState("");
   const [promiseDate, setPromiseDate] = useState("");
 
-  const loadReport = async () => {
+  const loadReport = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
@@ -54,11 +54,11 @@ export default function DefaultersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId]);
 
   useEffect(() => {
     loadReport();
-  }, [schoolId]);
+  }, [loadReport]);
 
   // Filtered rows
   const filteredRows = rows.filter(r => {
@@ -198,7 +198,7 @@ export default function DefaultersPage() {
       <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex flex-col sm:flex-row gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
+          <input aria-label="Search fee defaulters"
             type="text"
             placeholder="Search student, admission no, or parent..."
             value={searchQuery}
@@ -207,7 +207,7 @@ export default function DefaultersPage() {
           />
         </div>
 
-        <select
+        <select aria-label="Filter by class"
           value={classFilter}
           onChange={e => setClassFilter(e.target.value)}
           className="text-xs border border-[#E6EAF3] rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -231,7 +231,7 @@ export default function DefaultersPage() {
               <thead>
                 <tr className="border-b border-[#E6EAF3] bg-slate-50 text-slate-600 text-left">
                   <th className="py-3 px-4 w-10">
-                    <input
+                    <input aria-label="Select item"
                       type="checkbox"
                       checked={selectedStudentIds.size === filteredRows.length && filteredRows.length > 0}
                       onChange={toggleSelectAll}
@@ -253,7 +253,7 @@ export default function DefaultersPage() {
                   return (
                     <tr key={row.student_id} className={`hover:bg-slate-50/70 transition-colors ${isSelected ? "bg-blue-50/30" : ""}`}>
                       <td className="py-3 px-4">
-                        <input
+                        <input aria-label="Select item"
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleSelectRow(row.student_id)}
@@ -351,7 +351,7 @@ export default function DefaultersPage() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-900 text-base">Record Follow-up</h3>
-              <button type="button" onClick={() => setShowFollowupModal(false)} className="p-1 text-slate-400">
+              <button aria-label="Close" type="button" onClick={() => setShowFollowupModal(false)} className="p-1 text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -361,8 +361,8 @@ export default function DefaultersPage() {
                 <span className="font-bold text-sm text-slate-800">{selectedStudent.student_name} ({fmt(selectedStudent.total_balance_paise)})</span>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Note</label>
-                <textarea
+                <label htmlFor="defaulterspage-note" className="block text-xs font-semibold text-slate-700 mb-1">Note</label>
+                <textarea id="defaulterspage-note"
                   rows={3}
                   value={followupNote}
                   onChange={e => setFollowupNote(e.target.value)}
@@ -371,8 +371,8 @@ export default function DefaultersPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Promised Payment Date (Optional)</label>
-                <input
+                <label htmlFor="defaulterspage-promised-payment-date-optional" className="block text-xs font-semibold text-slate-700 mb-1">Promised Payment Date (Optional)</label>
+                <input id="defaulterspage-promised-payment-date-optional" aria-label="Promised Payment Date (Optional)"
                   type="date"
                   value={promiseDate}
                   onChange={e => setPromiseDate(e.target.value)}
@@ -409,7 +409,7 @@ export default function DefaultersPage() {
                 <Bell className="w-5 h-5 text-amber-600" />
                 <h3 className="font-bold text-slate-900 text-base">Send Fee Reminders</h3>
               </div>
-              <button type="button" onClick={() => setShowReminderModal(false)} className="p-1 text-slate-400">
+              <button aria-label="Close" type="button" onClick={() => setShowReminderModal(false)} className="p-1 text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>

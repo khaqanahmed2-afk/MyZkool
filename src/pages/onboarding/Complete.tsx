@@ -246,7 +246,7 @@ export default function Complete() {
               id="launch-admin-btn-top"
               onClick={handleLaunchDashboard}
               disabled={isLaunching}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] transition-all shrink-0 cursor-pointer shadow-md disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] transition-colors shrink-0 cursor-pointer shadow-md disabled:opacity-60"
             >
               {isLaunching ? (
                 <>
@@ -290,9 +290,9 @@ export default function Complete() {
                 title: "5. School website",
                 desc: website?.published ? "Published" : "Draft prepared",
               },
-            ].map((milestone, idx) => (
+            ].map((milestone) => (
               <div
-                key={idx}
+                key={milestone.title}
                 className="p-3 rounded-xl bg-white border border-[#E6EAF3] flex items-start gap-2.5 shadow-xs"
               >
                 <div className="w-5 h-5 rounded-full bg-emerald-50 text-[#10B981] flex items-center justify-center shrink-0 mt-0.5">
@@ -570,7 +570,7 @@ export default function Complete() {
             id="launch-admin-btn"
             onClick={handleLaunchDashboard}
             disabled={isLaunching}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3 rounded-full text-xs font-bold text-white bg-[#2158E0] hover:bg-[#1a4ec4] transition-all shadow-md hover:shadow-lg disabled:opacity-60 cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3 rounded-full text-xs font-bold text-white bg-[#2158E0] hover:bg-[#1a4ec4] transition shadow-md hover:shadow-lg disabled:opacity-60 cursor-pointer"
           >
             {isLaunching ? (
               <>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
   Search,
@@ -39,7 +39,7 @@ export function ReminderHistoryModal({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getReminderHistory(schoolId, {
@@ -50,13 +50,13 @@ export function ReminderHistoryModal({
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, initialStudentId, initialInvoiceNo]);
 
   useEffect(() => {
     if (isOpen) {
       fetchLogs();
     }
-  }, [isOpen, schoolId, initialStudentId, initialInvoiceNo]);
+  }, [isOpen, fetchLogs]);
 
   const handleRetry = async (logId: string) => {
     setActionLoadingId(logId);
@@ -131,7 +131,7 @@ export function ReminderHistoryModal({
               </p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-slate-100 transition-colors"
@@ -144,7 +144,7 @@ export function ReminderHistoryModal({
         <div className="px-6 py-3 border-b border-[#E6EAF3] bg-slate-50/60 flex items-center justify-between gap-3 shrink-0 flex-wrap">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
-            <input
+            <input aria-label="Search reminder history"
               type="text"
               placeholder="Search student, adm no., invoice..."
               value={searchQuery}
@@ -154,7 +154,7 @@ export function ReminderHistoryModal({
           </div>
 
           <div className="flex items-center gap-2">
-            <select
+            <select aria-label="Filter by status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E]"

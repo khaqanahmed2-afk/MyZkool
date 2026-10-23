@@ -46,7 +46,7 @@ interface AssignTransportDrawerProps {
   onSuccess?: () => void;
 }
 
-export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
+const AssignTransportDrawerContent: React.FC<AssignTransportDrawerProps> = ({
   isOpen,
   onClose,
   schoolId,
@@ -64,7 +64,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
   const [dropStopId, setDropStopId] = useState<string>("");
   const [serviceType, setServiceType] = useState<ServiceType>("both");
   const [effectiveFrom, setEffectiveFrom] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    () => new Date().toISOString().split("T")[0]
   );
   const [requiresHandover, setRequiresHandover] = useState<boolean>(isPrePrimary);
   const [monthlyFeePaise, setMonthlyFeePaise] = useState<number>(0);
@@ -90,10 +90,6 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
 
   // Load routes & student transport context
   useEffect(() => {
-    if (!isOpen) return;
-
-    setErrorMessage(null);
-    setAssignedResult(null);
     setLoading(true);
 
     Promise.all([
@@ -126,7 +122,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
         }
       })
       .finally(() => setLoading(false));
-  }, [isOpen, schoolId, studentId, existingAssignment, isPrePrimary]);
+  }, [schoolId, studentId, existingAssignment, isPrePrimary]);
 
   // Recalculate fee live when stop or serviceType changes
   useEffect(() => {
@@ -278,7 +274,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
               </p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
@@ -383,10 +379,10 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
 
             {/* Step 1: Route Selection */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label htmlFor="assigntransportdrawer-1-select-route" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 1. Select Route
               </label>
-              <input
+              <input id="assigntransportdrawer-1-select-route"
                 type="text"
                 placeholder="Search route by name or stop..."
                 value={searchQuery}
@@ -400,7 +396,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
                   const rLeft = Math.max(0, rCap - rUsed);
                   const isSelected = r.id === selectedRouteId;
                   return (
-                    <div
+                    <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                       key={r.id}
                       onClick={() => handleRouteSelect(r.id)}
                       className={`p-2.5 rounded-lg text-xs cursor-pointer flex items-center justify-between transition-colors ${
@@ -435,10 +431,10 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
             {/* Step 2: Stops */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <label htmlFor="assigntransportdrawer-2-pickup-stop" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   2. Pickup Stop
                 </label>
-                <select
+                <select id="assigntransportdrawer-2-pickup-stop" aria-label="2. Pickup Stop"
                   value={pickupStopId}
                   onChange={(e) => {
                     setPickupStopId(e.target.value);
@@ -455,10 +451,10 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <label htmlFor="assigntransportdrawer-drop-stop" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Drop Stop
                 </label>
-                <select
+                <select id="assigntransportdrawer-drop-stop" aria-label="Drop Stop"
                   value={dropStopId}
                   onChange={(e) => setDropStopId(e.target.value)}
                   className="w-full text-xs px-3 py-2 border border-[#E6EAF3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#2158E0] bg-white"
@@ -475,9 +471,9 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
             {/* Step 3: Service Type & Live Fee */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   3. Service Type
-                </label>
+                </span>
                 {feeStatus.loading ? (
                   <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-md animate-pulse">
                     Calculating fee...
@@ -531,10 +527,10 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
 
             {/* Step 4: Effective Date */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label htmlFor="assigntransportdrawer-4-effective-from" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 4. Effective From
               </label>
-              <input
+              <input id="assigntransportdrawer-4-effective-from" aria-label="4. Effective From"
                 type="date"
                 value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)}
@@ -567,7 +563,7 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
                 <p className="text-slate-600 text-[11px]">
                   Requires owner override. Provide a typed reason for audit logs.
                 </p>
-                <input
+                <input aria-label="Capacity override reason"
                   type="text"
                   placeholder="Reason for capacity override..."
                   value={overrideReason}
@@ -609,5 +605,10 @@ export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = ({
       </div>
     </div>
   );
+};
+
+export const AssignTransportDrawer: React.FC<AssignTransportDrawerProps> = (props) => {
+  if (!props.isOpen) return null;
+  return <AssignTransportDrawerContent key={props.studentId || "open"} {...props} />;
 };
 

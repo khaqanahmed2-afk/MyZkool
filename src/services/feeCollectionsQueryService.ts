@@ -47,7 +47,7 @@ export interface EnrichedTransaction {
   amount_paise: number;
   formatted_amount: string;
   payment_method: PaymentMode;
-  status: "received" | "pending" | "failed" | "refunded";
+  status: "received" | "successful" | "pending" | "failed" | "cancelled" | "refunded" | "reversed";
   academic_year_id?: string;
   reference_no?: string;
   collected_by_name?: string;
@@ -393,14 +393,16 @@ export async function getCollectionsViewData(
           invoiceSet.add(`INV-2026-${seqMatch.padStart(3, "0")}`);
         }
 
-        // Determine status
-        let displayStatus: "received" | "pending" | "failed" | "refunded" = "received";
+        // Determine status according to consistent payment lifecycle
+        let displayStatus: "received" | "successful" | "pending" | "failed" | "cancelled" | "refunded" | "reversed" = "successful";
         if (r.status === "cancelled") {
-          displayStatus = "refunded";
-        } else if (r.status === "bounced") {
+          displayStatus = "cancelled";
+        } else if (r.status === "bounced" || primaryPayment?.cheque_status === "bounced") {
           displayStatus = "failed";
-        } else if (primaryPayment?.cheque_status === "deposited") {
+        } else if (primaryPayment?.cheque_status === "deposited" || primaryPayment?.status === "pending") {
           displayStatus = "pending";
+        } else {
+          displayStatus = "successful";
         }
 
         const collectorName = (r.collected_by && profileMap.get(r.collected_by)) || "School Office";
@@ -452,6 +454,7 @@ export async function getCollectionsViewData(
     const studentMap = new Map<string, any>(students.map((s: any) => [s.id, s]));
     const classMap = new Map<string, any>(classes.map((c: any) => [c.id, c]));
     const sectionMap = new Map<string, any>(sections.map((sec: any) => [sec.id, sec]));
+    const enrollmentMap = new Map<string, any>(enrollments.map((e: any) => [e.student_id, e]));
     const paymentsMap = new Map<string, FeePayment[]>();
     payments.forEach((p) => {
       const list = paymentsMap.get(p.receipt_id) || [];
@@ -459,15 +462,39 @@ export async function getCollectionsViewData(
       paymentsMap.set(p.receipt_id, list);
     });
 
+    const refunds = lsGet<any>(`myzkool_fee_refunds_${schoolId}`);
+    const paidRefundReceiptIds = new Set(
+      refunds.filter((ref: any) => ref.status === "paid" && ref.receipt_id).map((ref: any) => ref.receipt_id)
+    );
+    const ledger = lsGet<any>(`myzkool_fee_ledger_${schoolId}`);
+    const reversedReceiptIds = new Set(
+      ledger.filter((l: any) => l.entry_type === "reversal" && l.receipt_id).map((l: any) => l.receipt_id)
+    );
+
     for (const r of receipts) {
       const std = studentMap.get(r.student_id);
       const studentName = std ? `${std.first_name || ""} ${std.last_name || ""}`.trim() : "Student";
-      const enr = enrollments.find((e: any) => e.student_id === r.student_id);
+      const enr = enrollmentMap.get(r.student_id);
       const cls = enr ? classMap.get(enr.class_id) : null;
       const sec = enr ? sectionMap.get(enr.section_id) : null;
       const pms = paymentsMap.get(r.id) || [];
       const primaryPayment = pms[0];
       const mode = primaryPayment?.mode || (r.source === "online" ? "online" : "cash");
+
+      let txStatus: "received" | "successful" | "pending" | "failed" | "cancelled" | "refunded" | "reversed" = "successful";
+      if (r.status === "cancelled") {
+        txStatus = "cancelled";
+      } else if (r.status === "bounced" || primaryPayment?.cheque_status === "bounced" || primaryPayment?.status === "failed") {
+        txStatus = "failed";
+      } else if (primaryPayment?.cheque_status === "deposited" || primaryPayment?.status === "pending") {
+        txStatus = "pending";
+      } else if (paidRefundReceiptIds.has(r.id)) {
+        txStatus = "refunded";
+      } else if (reversedReceiptIds.has(r.id)) {
+        txStatus = "reversed";
+      } else {
+        txStatus = "successful";
+      }
 
       allEnriched.push({
         id: r.id,
@@ -488,7 +515,8 @@ export async function getCollectionsViewData(
         amount_paise: r.total_paise,
         formatted_amount: formatPaise(r.total_paise),
         payment_method: mode as PaymentMode,
-        status: r.status === "cancelled" ? "refunded" : "received",
+        status: txStatus,
+        academic_year_id: r.academic_year_id || undefined,
         reference_no: primaryPayment?.reference_no || undefined,
         remarks: r.remarks || undefined,
       });
@@ -499,7 +527,7 @@ export async function getCollectionsViewData(
     const effectiveEnd = periodEndDate || todayIST;
 
     allEnriched.forEach((tx) => {
-      if (tx.status === "received") {
+      if (tx.status === "received" || tx.status === "successful") {
         if (tx.receipt_date === todayIST) {
           summary.todayPaise += tx.amount_paise;
           summary.todayCount += 1;
@@ -560,8 +588,16 @@ export async function getCollectionsViewData(
     const tabLower = methodTab.toLowerCase();
     if (tabLower === "failed") {
       filtered = filtered.filter((t) => t.status === "failed");
+    } else if (tabLower === "cancelled") {
+      filtered = filtered.filter((t) => t.status === "cancelled");
     } else if (tabLower === "refunded") {
       filtered = filtered.filter((t) => t.status === "refunded");
+    } else if (tabLower === "reversed") {
+      filtered = filtered.filter((t) => t.status === "reversed");
+    } else if (tabLower === "pending") {
+      filtered = filtered.filter((t) => t.status === "pending");
+    } else if (tabLower === "successful" || tabLower === "received") {
+      filtered = filtered.filter((t) => t.status === "successful" || t.status === "received");
     } else if (tabLower === "online") {
       filtered = filtered.filter((t) => ["online", "upi", "bank_transfer", "card"].includes(t.payment_method));
     } else {
@@ -571,7 +607,12 @@ export async function getCollectionsViewData(
 
   // Status dropdown filter
   if (status && status !== "all") {
-    filtered = filtered.filter((t) => t.status === status.toLowerCase());
+    const sLower = status.toLowerCase();
+    filtered = filtered.filter((t) =>
+      sLower === "successful" || sLower === "received"
+        ? (t.status === "successful" || t.status === "received")
+        : t.status === sLower
+    );
   }
 
   // Date range filter

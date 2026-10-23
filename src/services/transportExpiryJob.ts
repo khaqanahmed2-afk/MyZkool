@@ -45,9 +45,12 @@ export async function runDocumentExpiryJob(schoolId: string): Promise<{
     new Set([...(settings.expiry_alert_days || [30, 15, 7, 1]), 0])
   ).sort((a, b) => a - b);
 
-  const vehicles = await getVehicles(schoolId);
-  const vehicleDocs = await getAllVehicleDocuments(schoolId);
-  const staffList = await getTransportStaff(schoolId);
+  const [vehicles, vehicleDocs, staffList] = await Promise.all([
+    getVehicles(schoolId),
+    getAllVehicleDocuments(schoolId),
+    getTransportStaff(schoolId),
+  ]);
+  const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -70,7 +73,7 @@ export async function runDocumentExpiryJob(schoolId: string): Promise<{
     const diffMs = expDate.getTime() - today.getTime();
     const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-    const vehicle = vehicles.find((v) => v.id === doc.vehicle_id);
+    const vehicle = vehicleMap.get(doc.vehicle_id);
     const vehicleReg = vehicle?.registration_no || "Unknown Vehicle";
 
     // Find the current active threshold bucket (smallest threshold >= daysRemaining)

@@ -63,16 +63,19 @@ export default function FeeSettingsPage() {
     setError(null);
     setPinError(null);
     setSuccess(false);
-    const payload: FeeSettingsInput = { ...form };
-    if (newPin) {
-      if (newPin !== confirmPin) { setPinError("PINs don't match."); setSaving(false); return; }
-      if (!/^\d{4,8}$/.test(newPin)) { setPinError("PIN must be 4–8 digits."); setSaving(false); return; }
-      payload.new_pin = newPin;
+    try {
+      const payload: FeeSettingsInput = { ...form };
+      if (newPin) {
+        if (newPin !== confirmPin) { setPinError("PINs don't match."); return; }
+        if (!/^\d{4,8}$/.test(newPin)) { setPinError("PIN must be 4–8 digits."); return; }
+        payload.new_pin = newPin;
+      }
+      const { error: e } = await updateFeeSettings(school.id, payload);
+      if (e) setError(e);
+      else { setSuccess(true); setNewPin(""); setConfirmPin(""); await load(); setTimeout(() => setSuccess(false), 3000); }
+    } finally {
+      setSaving(false);
     }
-    const { error: e } = await updateFeeSettings(school.id, payload);
-    if (e) setError(e);
-    else { setSuccess(true); setNewPin(""); setConfirmPin(""); await load(); setTimeout(() => setSuccess(false), 3000); }
-    setSaving(false);
   }
 
   const receiptPreview = `${form.receipt_prefix || "MZ"}/2026-27/000001`;
@@ -109,27 +112,27 @@ export default function FeeSettingsPage() {
           <h2 className="text-sm font-bold text-[#141A2E] border-b border-[#E6EAF3] pb-2 mb-3">Receipt</h2>
           <div className="flex gap-4">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">Receipt Prefix</label>
-              <input className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+              <label htmlFor="feesettingspage-receipt-prefix" className="block text-xs font-medium text-[#141A2E] mb-1">Receipt Prefix</label>
+              <input id="feesettingspage-receipt-prefix" aria-label="Receipt Prefix" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                 value={form.receipt_prefix ?? ""} onChange={e => setForm(f => ({ ...f, receipt_prefix: e.target.value.toUpperCase() }))} maxLength={6} />
             </div>
             <div className="flex-1">
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">Preview</label>
+              <span className="block text-xs font-medium text-[#141A2E] mb-1">Preview</span>
               <div className="border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm text-[#5B6478] bg-gray-50 font-mono">{receiptPreview}</div>
             </div>
           </div>
           <div className="flex gap-4">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">Paper Size</label>
-              <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+              <label htmlFor="feesettingspage-paper-size" className="block text-xs font-medium text-[#141A2E] mb-1">Paper Size</label>
+              <select id="feesettingspage-paper-size" aria-label="Paper Size" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                 value={form.receipt_paper ?? "a5"} onChange={e => setForm(f => ({ ...f, receipt_paper: e.target.value as any }))}>
                 <option value="a5">A5 (148×210mm)</option>
                 <option value="thermal80">Thermal 80mm</option>
               </select>
             </div>
             <div className="flex-1">
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">Language</label>
-              <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+              <label htmlFor="feesettingspage-language" className="block text-xs font-medium text-[#141A2E] mb-1">Language</label>
+              <select id="feesettingspage-language" aria-label="Language" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                 value={form.receipt_language ?? "en"} onChange={e => setForm(f => ({ ...f, receipt_language: e.target.value as any }))}>
                 <option value="en">English</option>
                 <option value="hi">Hindi</option>
@@ -152,12 +155,12 @@ export default function FeeSettingsPage() {
           </label>
           {form.allow_partial && (
             <div>
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">Minimum partial payment (₹, 0 = no minimum)</label>
-              <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+              <label htmlFor="feesettingspage-minimum-partial-payment-0-no-m" className="block text-xs font-medium text-[#141A2E] mb-1">Minimum partial payment (₹, 0 = no minimum)</label>
+              <input id="feesettingspage-minimum-partial-payment-0-no-m" aria-label="Minimum partial payment (₹, 0 = no minimum)" type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                 value={Number.isNaN(form.min_partial_paise) ? "" : ((form.min_partial_paise ?? 0) / 100)}
                 onChange={e => {
-                  const val = parseFloat(e.target.value);
-                  setForm(f => ({ ...f, min_partial_paise: isNaN(val) ? 0 : val * 100 }));
+                  const val = e.currentTarget.valueAsNumber;
+                  setForm(f => ({ ...f, min_partial_paise: Number.isFinite(val) ? val * 100 : 0 }));
                 }} />
             </div>
           )}
@@ -170,8 +173,8 @@ export default function FeeSettingsPage() {
             <span className="text-sm text-[#141A2E]">Round concessions and late fees to nearest rupee</span>
           </label>
           <div>
-            <label className="block text-xs font-medium text-[#141A2E] mb-1">Allocation mode</label>
-            <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+            <label htmlFor="feesettingspage-allocation-mode" className="block text-xs font-medium text-[#141A2E] mb-1">Allocation mode</label>
+            <select id="feesettingspage-allocation-mode" aria-label="Allocation mode" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
               value={form.allocation_mode ?? "auto_oldest_first"} onChange={e => setForm(f => ({ ...f, allocation_mode: e.target.value as any }))}>
               <option value="auto_oldest_first">Auto — oldest dues first (recommended)</option>
               <option value="manual">Manual — counter selects dues explicitly</option>
@@ -183,22 +186,22 @@ export default function FeeSettingsPage() {
         <section className="bg-white border border-[#E6EAF3] rounded-xl p-5 space-y-4">
           <h2 className="text-sm font-bold text-[#141A2E] border-b border-[#E6EAF3] pb-2 mb-3">Thresholds</h2>
           <div>
-            <label className="block text-xs font-medium text-[#141A2E] mb-1">Discount approval threshold (%)</label>
-            <input type="number" min={0} max={100} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+            <label htmlFor="feesettingspage-discount-approval-threshold" className="block text-xs font-medium text-[#141A2E] mb-1">Discount approval threshold (%)</label>
+            <input id="feesettingspage-discount-approval-threshold" aria-label="Discount approval threshold (%)" type="number" min={0} max={100} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
               value={Number.isNaN(form.discount_approval_threshold_percent) ? "" : (form.discount_approval_threshold_percent ?? 10)}
               onChange={e => {
-                const val = parseFloat(e.target.value);
-                setForm(f => ({ ...f, discount_approval_threshold_percent: isNaN(val) ? 0 : val }));
+                const val = e.currentTarget.valueAsNumber;
+                setForm(f => ({ ...f, discount_approval_threshold_percent: Number.isFinite(val) ? val : 0 }));
               }} />
             <p className="text-xs text-[#5B6478] mt-1">Concessions above this % need owner approval</p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#141A2E] mb-1">Backdate limit (days, 0 = owner approval per case)</label>
-            <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+            <label htmlFor="feesettingspage-backdate-limit-days-0-owner-ap" className="block text-xs font-medium text-[#141A2E] mb-1">Backdate limit (days, 0 = owner approval per case)</label>
+            <input id="feesettingspage-backdate-limit-days-0-owner-ap" aria-label="Input value" type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
               value={Number.isNaN(form.backdate_days_limit) ? "" : (form.backdate_days_limit ?? 0)}
               onChange={e => {
-                const val = parseInt(e.target.value, 10);
-                setForm(f => ({ ...f, backdate_days_limit: isNaN(val) ? 0 : val }));
+                const val = e.currentTarget.valueAsNumber;
+                setForm(f => ({ ...f, backdate_days_limit: Number.isFinite(val) ? Math.trunc(val) : 0 }));
               }} />
           </div>
         </section>
@@ -221,8 +224,8 @@ export default function FeeSettingsPage() {
             </div>
           </label>
           <div>
-            <label className="block text-xs font-medium text-[#141A2E] mb-1">Cheque receipt timing</label>
-            <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+            <label htmlFor="feesettingspage-cheque-receipt-timing" className="block text-xs font-medium text-[#141A2E] mb-1">Cheque receipt timing</label>
+            <select id="feesettingspage-cheque-receipt-timing" aria-label="Cheque receipt timing" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
               value={form.cheque_receipt_timing ?? "on_receipt"} onChange={e => setForm(f => ({ ...f, cheque_receipt_timing: e.target.value as any }))}>
               <option value="on_receipt">On receipt (before clearance)</option>
               <option value="on_clearance">On clearance</option>
@@ -240,17 +243,17 @@ export default function FeeSettingsPage() {
           {pinError && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm">{pinError}</div>}
           <div className="flex gap-3">
             <div className="flex-1 relative">
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">{settings?.owner_pin_hash ? "New PIN" : "Set PIN"}</label>
-              <input type={showPin ? "text" : "password"} inputMode="numeric" maxLength={8}
+              <label htmlFor="feesettingspage-settings-owner-pin-hash-new-pi" className="block text-xs font-medium text-[#141A2E] mb-1">{settings?.owner_pin_hash ? "New PIN" : "Set PIN"}</label>
+              <input id="feesettingspage-settings-owner-pin-hash-new-pi" type={showPin ? "text" : "password"} inputMode="numeric" maxLength={8}
                 className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none pr-10"
                 value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, ""))} placeholder="4–8 digits" />
-              <button type="button" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-7 text-gray-400">
+              <button aria-label="View" type="button" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-7 text-gray-400">
                 {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <div className="flex-1">
-              <label className="block text-xs font-medium text-[#141A2E] mb-1">Confirm PIN</label>
-              <input type={showPin ? "text" : "password"} inputMode="numeric" maxLength={8}
+              <label htmlFor="feesettingspage-confirm-pin" className="block text-xs font-medium text-[#141A2E] mb-1">Confirm PIN</label>
+              <input id="feesettingspage-confirm-pin" type={showPin ? "text" : "password"} inputMode="numeric" maxLength={8}
                 className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                 value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ""))} placeholder="Repeat PIN" />
             </div>

@@ -139,8 +139,10 @@ export async function getVehicles(schoolId: string): Promise<EnrichedVehicle[]> 
     );
   }
 
-  const routes = await getRoutes(schoolId);
-  const allDocs = await getAllVehicleDocuments(schoolId);
+  const [routes, allDocs] = await Promise.all([
+    getRoutes(schoolId),
+    getAllVehicleDocuments(schoolId),
+  ]);
   const todayStr = new Date().toISOString().split("T")[0];
 
   return vehicles.map((v) => {
@@ -166,8 +168,8 @@ export async function getVehicles(schoolId: string): Promise<EnrichedVehicle[]> 
     }
 
     const mandatoryTypes: VehicleDocType[] = ["rc", "insurance", "fitness", "puc"];
-    const existingTypes = vDocs.map((d) => d.doc_type);
-    const missing = mandatoryTypes.filter((mt) => !existingTypes.includes(mt));
+    const existingTypes = new Set(vDocs.map((d) => d.doc_type));
+    const missing = mandatoryTypes.filter((mt) => !existingTypes.has(mt));
 
     let chip: DocumentStatusChip = {
       status: "valid",
@@ -937,9 +939,10 @@ export async function unassignRouteResourcesFromOtherRoutes(
 
   const otherRoutes = dbRoutes.filter((r) => r.id !== excludeRouteId);
   const affectedRouteCodes: string[] = [];
+  const affectedRouteCodeSet = new Set<string>();
   const lsRoutes = lsGet<TransportRoute>(`myzkool_transport_routes_${schoolId}`);
 
-  for (const r of otherRoutes) {
+  for await (const r of otherRoutes) {
     let needsUpdate = false;
     const patch: Partial<TransportRoute> = {};
 
@@ -957,7 +960,8 @@ export async function unassignRouteResourcesFromOtherRoutes(
     }
 
     if (needsUpdate) {
-      if (!affectedRouteCodes.includes(r.code)) {
+      if (!affectedRouteCodeSet.has(r.code)) {
+        affectedRouteCodeSet.add(r.code);
         affectedRouteCodes.push(r.code);
       }
 
@@ -1493,9 +1497,11 @@ export async function deleteFeeZone(
 // ─── 8. Transport Dashboard Aggregation ─────────────────────────────────────
 
 export async function getTransportDashboardData(schoolId: string): Promise<TransportDashboardData> {
-  const vehicles = await getVehicles(schoolId);
-  const routes = await getRoutes(schoolId);
-  const staff = await getTransportStaff(schoolId);
+  const [vehicles, routes, staff] = await Promise.all([
+    getVehicles(schoolId),
+    getRoutes(schoolId),
+    getTransportStaff(schoolId),
+  ]);
 
   let expiredDocsCount = 0;
   let expiringDocsCount = 0;

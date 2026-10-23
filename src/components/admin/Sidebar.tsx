@@ -158,6 +158,7 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/40 z-40 md:hidden transition-opacity"
+          aria-hidden="true"
           onClick={onClose}
         />
       )}
@@ -175,6 +176,7 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
           </Link>
           <button
             onClick={onClose}
+            aria-label="Close sidebar"
             className="p-1.5 md:hidden text-[#5B6478] hover:bg-gray-100 rounded-md"
           >
             <X className="w-5 h-5" />

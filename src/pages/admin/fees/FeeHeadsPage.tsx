@@ -380,15 +380,15 @@ export default function FeeHeadsPage() {
                 {/* Search */}
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
+                  <input aria-label="Search fee heads"
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search fee heads..."
-                    className="pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#2563EB] focus:bg-white w-40 sm:w-48 transition-all"
+                    className="pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#2563EB] focus:bg-white w-40 sm:w-48 transition-colors"
                   />
                   {searchQuery && (
-                    <button
+                    <button aria-label="Close"
                       onClick={() => setSearchQuery("")}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
@@ -398,7 +398,7 @@ export default function FeeHeadsPage() {
                 </div>
 
                 {/* Status Filter */}
-                <select
+                <select aria-label="Status Filter"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
                   className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#2563EB] cursor-pointer"
@@ -409,7 +409,7 @@ export default function FeeHeadsPage() {
                 </select>
 
                 {/* Type Filter */}
-                <select
+                <select aria-label="Type Filter"
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value as any)}
                   className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#2563EB] cursor-pointer"
@@ -689,7 +689,7 @@ export default function FeeHeadsPage() {
       {drawer.open && (
         <div className="fixed inset-0 z-50 flex justify-end">
           {/* Backdrop */}
-          <div
+          <div aria-hidden="true"
             className="fixed inset-0 bg-black/40 backdrop-blur-2xs transition-opacity animate-in fade-in"
             onClick={() => !saving && setDrawer({ open: false, mode: "add" })}
           />
@@ -708,7 +708,7 @@ export default function FeeHeadsPage() {
                     : `Modify '${drawer.head?.name}' configuration`}
                 </p>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setDrawer({ open: false, mode: "add" })}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
@@ -728,10 +728,10 @@ export default function FeeHeadsPage() {
 
               {/* Name */}
               <div>
-                <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+                <label htmlFor="feeheadspage-fee-head-name" className="block text-xs font-semibold text-[#0F172A] mb-1">
                   Fee Head Name <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="feeheadspage-fee-head-name"
                   type="text"
                   required
                   value={form.name}
@@ -751,7 +751,7 @@ export default function FeeHeadsPage() {
               {/* Code */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-[#0F172A]">
+                  <label htmlFor="feeheadspage-fee-code" className="text-xs font-semibold text-[#0F172A]">
                     Fee Code <span className="text-red-500">*</span>
                   </label>
                   {drawer.mode === "add" && (
@@ -764,7 +764,7 @@ export default function FeeHeadsPage() {
                     </button>
                   )}
                 </div>
-                <input
+                <input id="feeheadspage-fee-code"
                   type="text"
                   required
                   disabled={drawer.mode === "edit"}
@@ -788,10 +788,10 @@ export default function FeeHeadsPage() {
 
               {/* Type */}
               <div>
-                <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+                <label htmlFor="feeheadspage-fee-type" className="block text-xs font-semibold text-[#0F172A] mb-1">
                   Fee Type
                 </label>
-                <select
+                <select id="feeheadspage-fee-type" aria-label="Fee Type"
                   value={form.kind}
                   onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as FeeHeadKind }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:border-[#2563EB] outline-none transition cursor-pointer"
@@ -887,7 +887,7 @@ export default function FeeHeadsPage() {
                   Select standard fee categories commonly used by Indian schools
                 </p>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setSuggestOpen(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded-md"

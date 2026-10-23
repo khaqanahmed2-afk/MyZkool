@@ -10,7 +10,7 @@
  *  G. Receipt slide-over drawer
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   CreditCard,
@@ -41,6 +41,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { getReceipts, getReceiptById } from "../../../services/collectionService";
 import { getFeeHeads, getFeeTerms, getFeeStructures } from "../../../services/feeSetupService";
 import { getCurrentAcademicYear } from "../../../services/academicService";
+import { computeAuthoritativeFinancialSummary, getTodayIST } from "../../../services/feeCalculationService";
 import { generateReceiptHTML } from "../../../lib/receiptTemplate";
 import { supabase, isSupabaseConfigured } from "../../../lib/supabase";
 import type { FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
@@ -350,7 +351,7 @@ export default function FeeDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [yearId, setYearId] = useState("");
   const [yearLabel, setYearLabel] = useState("Current Year");
-  const [todayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [todayDate] = useState(() => getTodayIST());
 
   // Metrics
   const [collectedYearPaise, setCollectedYearPaise] = useState(0);
@@ -383,9 +384,9 @@ export default function FeeDashboard() {
   // Drawer
   const [selectedTx, setSelectedTx] = useState<RecentTransaction | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
-  const [drawerReceipt, setDrawerReceipt] = useState<FeeReceipt | null>(null);
+  const drawerReceiptRef = useRef<FeeReceipt | null>(null);
   const [drawerItems, setDrawerItems] = useState<FeeReceiptItem[]>([]);
-  const [drawerPayments, setDrawerPayments] = useState<FeePayment[]>([]);
+  const drawerPaymentsRef = useRef<FeePayment[]>([]);
 
   // Resolve academic year
   useEffect(() => {
@@ -403,7 +404,8 @@ export default function FeeDashboard() {
       } catch { /* ignore */ }
       try {
         const { academicYear } = await getCurrentAcademicYear(schoolId);
-        if (academicYear?.id && mounted) {
+        if (!mounted) return;
+        if (academicYear?.id) {
           setYearId(academicYear.id);
           const y = academicYear as any;
           if (y.label || y.name) setYearLabel(y.label || y.name);
@@ -488,9 +490,10 @@ export default function FeeDashboard() {
         const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
         const lc = JSON.parse(localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]");
         const lp = JSON.parse(localStorage.getItem(`myzkool_fee_payments_${schoolId}`) || "[]");
+        const lcMap = new Map<string, any>((lc as any[]).map((c: any) => [c.id, c]));
         for (const s of ls) {
           if (!sMap[s.id]) {
-            const cls = lc.find((c: any) => c.id === s.class_id);
+            const cls = lcMap.get(s.class_id);
             sMap[s.id] = { name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || "Student", admission_no: s.admission_no || "—", class_name: cls?.name || "Class" };
           }
         }
@@ -508,102 +511,86 @@ export default function FeeDashboard() {
         };
       }));
 
-      // 4. Dues
-      let totalOut = 0, totalOvd = 0, duesCount = 0;
-      const topDues: TopPendingDue[] = [];
+
+      // 4. Authoritative Financial Aggregation (Dues, Credits & Student Counts)
+      let allDues: any[] = [];
+      let creditsData: any[] = [];
+      let studentsData: any[] = [];
 
       if (isSupabaseConfigured) {
         try {
-          let q = supabase
-            .from("student_dues")
-            .select(`id, student_id, balance_paise, due_date, status,
-              students(id, first_name, last_name, admission_no, class_id, classes(name))`)
-            .eq("school_id", schoolId)
-            .in("status", ["pending", "partial"])
-            .gt("balance_paise", 0)
-            .order("balance_paise", { ascending: false });
-          if (yearId) q = q.eq("academic_year_id", yearId);
-          const { data: dd } = await q;
-          if (dd) {
-            duesCount = dd.length;
-            const seen = new Set<string>();
-            for (const d of dd as any[]) {
-              const bal = Number(d.balance_paise) || 0;
-              totalOut += bal;
-              if (d.due_date && d.due_date < todayDate) totalOvd += bal;
-              if (d.due_date && monthMap[d.due_date.slice(0, 7)]) {
-                monthMap[d.due_date.slice(0, 7)].pendingPaise += bal;
-              }
-              if (topDues.length < 6 && !seen.has(d.student_id)) {
-                seen.add(d.student_id);
-                topDues.push({
-                  studentId: d.student_id,
-                  studentName: `${d.students?.first_name || ""} ${d.students?.last_name || ""}`.trim() || "Student",
-                  admissionNo: d.students?.admission_no || "—",
-                  className: d.students?.classes?.name || "Class",
-                  balancePaise: bal,
-                  daysPastDue: d.due_date ? calcDaysOverdue(d.due_date, todayDate) : 0,
-                });
-              }
-            }
-          }
-        } catch (e) { console.warn("Dues query:", e); }
-      }
-      if (duesCount === 0) {
-        try {
-          const ld = JSON.parse(localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]");
-          const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
-          const lc = JSON.parse(localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]");
-          const pnd = ld
-            .filter((d: any) => ["pending", "partial"].includes(d.status) && (Number(d.balance_paise) || 0) > 0 && (!yearId || d.academic_year_id === yearId))
-            .sort((a: any, b: any) => (Number(b.balance_paise) || 0) - (Number(a.balance_paise) || 0));
-          const seen = new Set<string>();
-          for (const d of pnd) {
-            const bal = Number(d.balance_paise) || 0;
-            totalOut += bal;
-            if (d.due_date && d.due_date < todayDate) totalOvd += bal;
-            if (d.due_date && monthMap[d.due_date.slice(0, 7)]) {
-              monthMap[d.due_date.slice(0, 7)].pendingPaise += bal;
-            }
-            if (topDues.length < 6 && !seen.has(d.student_id)) {
-              seen.add(d.student_id);
-              const st = ls.find((s: any) => s.id === d.student_id);
-              const cls = lc.find((c: any) => c.id === st?.class_id);
-              topDues.push({
-                studentId: d.student_id,
-                studentName: `${st?.first_name || ""} ${st?.last_name || ""}`.trim() || "Student",
-                admissionNo: st?.admission_no || "—",
-                className: cls?.name || "Class",
-                balancePaise: bal,
-                daysPastDue: d.due_date ? calcDaysOverdue(d.due_date, todayDate) : 0,
-              });
-            }
-          }
-        } catch { /* ignore */ }
+          const [dRes, cRes, sRes] = await Promise.all([
+            supabase.from("student_dues").select("*").eq("school_id", schoolId),
+            supabase.from("fee_credits").select("student_id, remaining_paise").eq("school_id", schoolId),
+            supabase.from("students").select("id, first_name, last_name, admission_no, class_id, classes(name)").eq("school_id", schoolId).is("deleted_at", null),
+          ]);
+          allDues = dRes.data || [];
+          creditsData = cRes.data || [];
+          studentsData = sRes.data || [];
+        } catch (e) {
+          console.warn("DB queries in FeeDashboard:", e);
+        }
       }
 
-      setOutstandingPaise(totalOut);
-      setOverduePaise(totalOvd);
-      setTopPendingDues(topDues);
+      if (allDues.length === 0) {
+        allDues = JSON.parse(localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]");
+        creditsData = JSON.parse(localStorage.getItem(`myzkool_fee_credits_${schoolId}`) || "[]");
+        studentsData = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
+      }
+
+      // Ensure sMap has student details for all loaded students
+      for (const s of studentsData) {
+        if (!sMap[s.id]) {
+          sMap[s.id] = {
+            name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || s.name || "Student",
+            admission_no: s.admission_no || "—",
+            class_name: s.classes?.name || s.class_name || "Class",
+          };
+        }
+      }
+
+      const authSummary = computeAuthoritativeFinancialSummary({
+        dues: allDues,
+        credits: creditsData,
+        receipts: allReceipts,
+        students: studentsData,
+        academicYearId: yearId || undefined,
+        asOfDateStr: todayDate,
+      });
+
+      setCollectedYearPaise(authSummary.total_collected_paise);
+      setOutstandingPaise(authSummary.net_outstanding_paise);
+      setOverduePaise(authSummary.net_overdue_paise);
+      setTotalStudents(authSummary.total_students_count);
+
+      // Populate monthly chart pending dues
+      for (const d of allDues) {
+        if (d.status !== "cancelled" && d.status !== "waived" && (!yearId || d.academic_year_id === yearId)) {
+          if (d.due_date && monthMap[d.due_date.slice(0, 7)]) {
+            monthMap[d.due_date.slice(0, 7)].pendingPaise += (d.balance_paise || 0);
+          }
+        }
+      }
       setMonthlyData(Object.entries(monthMap).map(([month, v]) => ({ month, ...v })));
 
-      // 5. Student count
-      let sc = 0;
-      if (isSupabaseConfigured) {
-        try {
-          const { count } = await supabase
-            .from("students").select("id", { count: "exact", head: true })
-            .eq("school_id", schoolId).in("status", ["active", "enrolled"]);
-          sc = count || 0;
-        } catch { /* ignore */ }
-      }
-      if (sc === 0) {
-        try {
-          const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
-          sc = ls.filter((s: any) => !["inactive", "left"].includes(s.status)).length;
-        } catch { /* ignore */ }
-      }
-      setTotalStudents(sc);
+      // Top Pending Dues (Derived directly from Authoritative Student Breakdown)
+      const topPendingStudents = Array.from(authSummary.studentsMap.values())
+        .filter((s) => s.net_pending_paise > 0)
+        .sort((a, b) => b.net_pending_paise - a.net_pending_paise)
+        .slice(0, 6);
+
+      const topDues: TopPendingDue[] = topPendingStudents.map((sBreakdown) => {
+        const sInfo = sMap[sBreakdown.student_id] || { name: "Student", admission_no: "—", class_name: "Class" };
+        return {
+          studentId: sBreakdown.student_id,
+          studentName: sInfo.name,
+          admissionNo: sInfo.admission_no,
+          className: sInfo.class_name,
+          balancePaise: sBreakdown.net_pending_paise,
+          daysPastDue: sBreakdown.earliest_overdue_date ? calcDaysOverdue(sBreakdown.earliest_overdue_date, todayDate) : 0,
+        };
+      });
+      setTopPendingDues(topDues);
 
       // 6. Setup steps
       const [hr, tr, sr] = await Promise.all([
@@ -615,7 +602,7 @@ export default function FeeDashboard() {
         { ...prev[0], isComplete: (hr.heads || []).length > 0 },
         { ...prev[1], isComplete: (tr.terms || []).length > 0 },
         { ...prev[2], isComplete: (sr.structures || []).length > 0 },
-        { ...prev[3], isComplete: duesCount > 0 },
+        { ...prev[3], isComplete: authSummary.total_dues_count > 0 },
         { ...prev[4], isComplete: allReceipts.length > 0 },
       ]);
     } catch (err: any) {
@@ -650,22 +637,22 @@ export default function FeeDashboard() {
     setDrawerLoading(true);
     try {
       const res = await getReceiptById(schoolId, tx.id);
-      if (res.receipt) setDrawerReceipt(res.receipt);
+      if (res.receipt) drawerReceiptRef.current = res.receipt;
       if (res.items) setDrawerItems(res.items);
-      if (res.payments) setDrawerPayments(res.payments);
+      if (res.payments) drawerPaymentsRef.current = res.payments;
     } catch (e) { console.warn("Drawer load:", e); }
     finally { setDrawerLoading(false); }
   };
   const handleCloseDrawer = () => {
-    setSelectedTx(null); setDrawerReceipt(null); setDrawerItems([]); setDrawerPayments([]);
+    setSelectedTx(null); drawerReceiptRef.current = null; setDrawerItems([]); drawerPaymentsRef.current = [];
   };
   const handlePrintReceipt = (paper: "a5" | "thermal80" = "a5") => {
-    if (!drawerReceipt || !selectedTx) return;
+    if (!drawerReceiptRef.current || !selectedTx) return;
     try {
       const html = generateReceiptHTML(
-        drawerReceipt, drawerItems, drawerPayments,
+        drawerReceiptRef.current, drawerItems, drawerPaymentsRef.current,
         { student_name: selectedTx.student_name, admission_no: selectedTx.admission_no },
-        { name: "MyZkool School" }, paper, (drawerReceipt.print_count ?? 0) > 0
+        { name: "MyZkool School" }, paper, (drawerReceiptRef.current.print_count ?? 0) > 0
       );
       const w = window.open("", "_blank");
       if (!w) return;
@@ -719,7 +706,7 @@ export default function FeeDashboard() {
             </button>
             {moreMenuOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
+                <div aria-hidden="true" className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
                 <div className="absolute right-0 top-full mt-1.5 w-52 bg-white border border-[#E6EAF3] rounded-xl shadow-lg z-20 p-1.5">
                   {[
                     { label: "Assign Dues", href: "/admin/fees/dues", icon: FileCheck2 },
@@ -905,7 +892,7 @@ export default function FeeDashboard() {
           const Icon = a.icon;
           return (
             <Link key={a.href} to={a.href}
-              className={`bg-white rounded-2xl border ${a.border} p-4 flex items-center gap-3 group hover:shadow-md transition-all`}>
+              className={`bg-white rounded-2xl border ${a.border} p-4 flex items-center gap-3 group hover:shadow-md transition`}>
               <div className={`w-10 h-10 rounded-xl ${a.bg} flex items-center justify-center shrink-0`}>
                 <Icon className={`w-5 h-5 ${a.ic}`} />
               </div>
@@ -956,6 +943,13 @@ export default function FeeDashboard() {
                 <tbody className="divide-y divide-slate-50">
                   {recentTransactions.map((tx) => (
                     <tr key={tx.id} onClick={() => handleOpenTransaction(tx)}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleOpenTransaction(tx);
+                        }
+                      }}
                       className="hover:bg-slate-50/80 cursor-pointer transition-colors">
                       <td className="py-2.5 px-2 text-slate-500 whitespace-nowrap">{formatDateShort(tx.receipt_date)}</td>
                       <td className="py-2.5 px-2">
@@ -1007,9 +1001,16 @@ export default function FeeDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {topPendingDues.map((due, idx) => (
-                    <tr key={`${due.studentId}-${idx}`}
+                  {topPendingDues.map((due) => (
+                    <tr key={due.studentId}
                       onClick={() => navigate(`/admin/fees/students/${due.studentId}`)}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate(`/admin/fees/students/${due.studentId}`);
+                        }
+                      }}
                       className="hover:bg-slate-50/80 cursor-pointer transition-colors">
                       <td className="py-2.5 px-2">
                         <div className="flex items-center gap-1.5">
@@ -1039,14 +1040,14 @@ export default function FeeDashboard() {
       {/* G. Receipt Detail Drawer */}
       {selectedTx && (
         <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={handleCloseDrawer} />
+          <div aria-hidden="true" className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={handleCloseDrawer} />
           <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col z-10 border-l border-slate-200">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Transaction Details</span>
                 <h3 className="text-base font-bold text-slate-900 font-mono">{selectedTx.receipt_no}</h3>
               </div>
-              <button type="button" onClick={handleCloseDrawer}
+              <button aria-label="Close" type="button" onClick={handleCloseDrawer}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -1098,8 +1099,8 @@ export default function FeeDashboard() {
                     <div className="space-y-2">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fee Breakdown</h4>
                       <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden text-xs">
-                        {drawerItems.map((item, idx) => (
-                          <div key={idx} className="p-2.5 flex justify-between items-center">
+                        {drawerItems.map((item) => (
+                          <div key={item.id || item.fee_head_id || `${item.fee_head_name}-${item.amount_paise}`} className="p-2.5 flex justify-between items-center">
                             <div>
                               <span className="font-semibold text-slate-800 block">{item.fee_head_name || "Tuition Fee"}</span>
                               {item.remarks && <span className="text-[10px] text-slate-400">{item.remarks}</span>}

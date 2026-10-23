@@ -69,13 +69,16 @@ export default function LateFeeRulesPage() {
 
   async function handleSave() {
     if (!form.name.trim() || form.value <= 0) { setFormError("Name and a positive value are required."); return; }
+    if (!activeSchoolId) { setFormError("School ID missing."); return; }
     setSaving(true);
-    if (!activeSchoolId) { setFormError("School ID missing."); setSaving(false); return; }
-    const { error: e } = await createLateFeeRule(activeSchoolId, form);
-    if (e) { setFormError(e); setSaving(false); return; }
-    await load();
-    setSaving(false);
-    setDrawer({ open: false });
+    try {
+      const { error: e } = await createLateFeeRule(activeSchoolId, form);
+      if (e) { setFormError(e); return; }
+      await load();
+      setDrawer({ open: false });
+    } finally {
+      setSaving(false);
+    }
   }
 
   const preview = previewRule(form);
@@ -127,7 +130,7 @@ export default function LateFeeRulesPage() {
                     <span className={`inline-block w-2 h-2 rounded-full ${rule.is_active ? "bg-green-500" : "bg-gray-300"}`} />
                   </td>
                   <td className="px-5 py-3">
-                    <button className="p-1.5 text-[#5B6478] hover:text-[#2158E0] rounded">
+                    <button aria-label="Edit" className="p-1.5 text-[#5B6478] hover:text-[#2158E0] rounded">
                       <Edit2 className="w-4 h-4" />
                     </button>
                   </td>
@@ -141,7 +144,7 @@ export default function LateFeeRulesPage() {
       {/* Drawer */}
       {drawer.open && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/40" onClick={() => setDrawer({ open: false })} />
+          <div aria-hidden="true" className="flex-1 bg-black/40" onClick={() => setDrawer({ open: false })} />
           <div className="w-96 bg-white h-full shadow-xl flex flex-col">
             <div className="px-6 py-4 border-b border-[#E6EAF3]">
               <h2 className="text-base font-bold text-[#141A2E]">Add Late Fee Rule</h2>
@@ -149,43 +152,43 @@ export default function LateFeeRulesPage() {
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               {formError && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm flex gap-2"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{formError}</div>}
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Name *</label>
-                <input className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="latefeerulespage-name" className="block text-xs font-medium text-[#141A2E] mb-1">Name *</label>
+                <input id="latefeerulespage-name" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Standard Late Fee" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Method</label>
-                <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="latefeerulespage-method" className="block text-xs font-medium text-[#141A2E] mb-1">Method</label>
+                <select id="latefeerulespage-method" aria-label="Method" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={form.method} onChange={e => setForm(f => ({ ...f, method: e.target.value as LateFeeMethod }))}>
                   {Object.entries(METHOD_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </div>
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-[#141A2E] mb-1">
+                  <label htmlFor="latefeerulespage-form-method-percent-once-perce" className="block text-xs font-medium text-[#141A2E] mb-1">
                     {form.method === "percent_once" ? "Percent (%)" : "Amount (₹)"} *
                   </label>
-                  <input type="number" min={0} step={form.method === "percent_once" ? 0.1 : 1}
+                  <input id="latefeerulespage-form-method-percent-once-perce" aria-label="Input value" type="number" min={0} step={form.method === "percent_once" ? 0.1 : 1}
                     className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                     value={Number.isNaN(form.value) ? "" : (form.value ?? "")}
                     onChange={e => {
-                      const val = parseFloat(e.target.value);
-                      setForm(f => ({ ...f, value: isNaN(val) ? 0 : val }));
+                      const val = e.currentTarget.valueAsNumber;
+                      setForm(f => ({ ...f, value: Number.isFinite(val) ? val : 0 }));
                     }} />
                 </div>
                 <div className="w-28">
-                  <label className="block text-xs font-medium text-[#141A2E] mb-1">Grace Days</label>
-                  <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                  <label htmlFor="latefeerulespage-grace-days" className="block text-xs font-medium text-[#141A2E] mb-1">Grace Days</label>
+                  <input id="latefeerulespage-grace-days" aria-label="Grace Days" type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                     value={Number.isNaN(form.grace_days) ? 0 : (form.grace_days ?? 0)}
                     onChange={e => {
-                      const val = parseInt(e.target.value, 10);
-                      setForm(f => ({ ...f, grace_days: isNaN(val) ? 0 : val }));
+                      const val = e.currentTarget.valueAsNumber;
+                      setForm(f => ({ ...f, grace_days: Number.isFinite(val) ? Math.trunc(val) : 0 }));
                     }} />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Maximum cap (₹, optional)</label>
-                <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="latefeerulespage-maximum-cap-optional" className="block text-xs font-medium text-[#141A2E] mb-1">Maximum cap (₹, optional)</label>
+                <input id="latefeerulespage-maximum-cap-optional" type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={form.max_cap_paise && !Number.isNaN(form.max_cap_paise) ? form.max_cap_paise / 100 : ""}
                   onChange={e => setForm(f => ({ ...f, max_cap_paise: e.target.value ? parseFloat(e.target.value) * 100 : undefined }))}
                   placeholder="No cap" />

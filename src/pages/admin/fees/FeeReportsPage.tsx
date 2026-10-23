@@ -16,7 +16,7 @@
  * - Comprehensive multi-section CSV/Excel export & printable PDF generation
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -91,11 +91,11 @@ export default function FeeReportsPage() {
   // Loading & Error States
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<string | null>(null);
   const [data, setData] = useState<FeeReportsDashboardData | null>(null);
 
   // Filters State
-  const [academicYearId, setAcademicYearId] = useState<string>("year-2025-2026");
+  const [academicYearId, setAcademicYearId] = useState<string>("");
   const [dateRangePreset, setDateRangePreset] = useState<string>("apr_mar");
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
   const [selectedSectionId, setSelectedSectionId] = useState<string>("all");
@@ -159,7 +159,7 @@ export default function FeeReportsPage() {
     } else {
       setLoading(true);
     }
-    setError(null);
+    errorRef.current = null;
 
     try {
       const filters: FeeReportFilters = {
@@ -178,12 +178,16 @@ export default function FeeReportsPage() {
 
       const result = await getFeeReportsDashboardData(schoolId, filters, trendGranularity);
       setData(result);
+      if (!academicYearId && result.availableAcademicYears && result.availableAcademicYears.length > 0) {
+        const cur = result.availableAcademicYears.find((y) => y.is_current) || result.availableAcademicYears[0];
+        if (cur?.id) setAcademicYearId(cur.id);
+      }
       if (isRefresh) {
         showToast("Fee reports successfully recalculated and refreshed.");
       }
     } catch (err: any) {
       console.error("Error loading fee reports:", err);
-      setError(err?.message || "Failed to load fee reports data.");
+      errorRef.current = err?.message || "Failed to load fee reports data.";
     } finally {
       setLoading(false);
       setGenerating(false);
@@ -390,10 +394,10 @@ export default function FeeReportsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
           {/* Academic Year */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label htmlFor="feereportspage-academic-year" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Academic Year
             </label>
-            <select
+            <select id="feereportspage-academic-year" aria-label="Academic Year"
               value={academicYearId}
               onChange={(e) => setAcademicYearId(e.target.value)}
               className="w-full text-xs font-medium text-[#141A2E] bg-white border border-[#E6EAF3] rounded-xl px-3 py-2 focus:outline-none focus:border-[#15803D] transition-colors"
@@ -405,12 +409,12 @@ export default function FeeReportsPage() {
 
           {/* Date Range */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label htmlFor="feereportspage-date-range" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Date Range
             </label>
             <div className="relative">
               <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <select
+              <select id="feereportspage-date-range" aria-label="Date Range"
                 value={dateRangePreset}
                 onChange={(e) => setDateRangePreset(e.target.value)}
                 className="w-full text-xs font-medium text-[#141A2E] bg-white border border-[#E6EAF3] rounded-xl pl-8 pr-3 py-2 focus:outline-none focus:border-[#15803D] transition-colors"
@@ -427,10 +431,10 @@ export default function FeeReportsPage() {
 
           {/* Class */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label htmlFor="feereportspage-class" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Class
             </label>
-            <select
+            <select id="feereportspage-class" aria-label="Class"
               value={selectedClassId}
               onChange={(e) => setSelectedClassId(e.target.value)}
               className="w-full text-xs font-medium text-[#141A2E] bg-white border border-[#E6EAF3] rounded-xl px-3 py-2 focus:outline-none focus:border-[#15803D] transition-colors"
@@ -450,10 +454,10 @@ export default function FeeReportsPage() {
 
           {/* Section */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label htmlFor="feereportspage-section" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Section
             </label>
-            <select
+            <select id="feereportspage-section" aria-label="Section"
               value={selectedSectionId}
               onChange={(e) => setSelectedSectionId(e.target.value)}
               className="w-full text-xs font-medium text-[#141A2E] bg-white border border-[#E6EAF3] rounded-xl px-3 py-2 focus:outline-none focus:border-[#15803D] transition-colors"
@@ -467,10 +471,10 @@ export default function FeeReportsPage() {
 
           {/* Fee Category */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label htmlFor="feereportspage-fee-category" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Fee Category
             </label>
-            <select
+            <select id="feereportspage-fee-category" aria-label="Fee Category"
               value={selectedCategoryId}
               onChange={(e) => setSelectedCategoryId(e.target.value)}
               className="w-full text-xs font-medium text-[#141A2E] bg-white border border-[#E6EAF3] rounded-xl px-3 py-2 focus:outline-none focus:border-[#15803D] transition-colors"
@@ -489,7 +493,7 @@ export default function FeeReportsPage() {
             <button
               type="button"
               onClick={() => setShowMoreFilters(true)}
-              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
                 activeAdvancedFilterCount > 0
                   ? "border-[#15803D] bg-emerald-50 text-[#15803D]"
                   : "border-[#E6EAF3] bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300"
@@ -553,12 +557,12 @@ export default function FeeReportsPage() {
             <div>
               <p className="text-xs font-semibold text-slate-500">Total Billed</p>
               <p className="text-xl sm:text-2xl font-bold text-[#141A2E] tracking-tight tabular-nums mt-0.5">
-                {data ? fmtRupees(data.summary.total_billed_paise) : "₹42,50,000"}
+                {data ? fmtRupees(data.summary.total_billed_paise) : "₹0"}
               </p>
             </div>
           </div>
           <p className="text-[11px] text-slate-400 mb-2.5">
-            {data ? `${data.summary.invoices_generated_count} invoices generated` : "248 invoices generated"}
+            {data ? `${data.summary.invoices_generated_count} invoices generated` : "0 invoices generated"}
           </p>
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50/80 px-2.5 py-1 rounded-lg w-fit border border-emerald-100/60">
             <TrendingUp className="w-3.5 h-3.5" />
@@ -576,12 +580,12 @@ export default function FeeReportsPage() {
             <div>
               <p className="text-xs font-semibold text-slate-500">Total Collected</p>
               <p className="text-xl sm:text-2xl font-bold text-[#141A2E] tracking-tight tabular-nums mt-0.5">
-                {data ? fmtRupees(data.summary.total_collected_paise) : "₹31,80,000"}
+                {data ? fmtRupees(data.summary.total_collected_paise) : "₹0"}
               </p>
             </div>
           </div>
           <p className="text-[11px] text-slate-400 mb-2.5">
-            {data ? `${data.summary.payments_received_count} payments received` : "186 payments received"}
+            {data ? `${data.summary.payments_received_count} payments received` : "0 payments received"}
           </p>
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50/80 px-2.5 py-1 rounded-lg w-fit border border-emerald-100/60">
             <TrendingUp className="w-3.5 h-3.5" />
@@ -599,12 +603,12 @@ export default function FeeReportsPage() {
             <div>
               <p className="text-xs font-semibold text-slate-500">Outstanding Dues</p>
               <p className="text-xl sm:text-2xl font-bold text-[#141A2E] tracking-tight tabular-nums mt-0.5">
-                {data ? fmtRupees(data.summary.outstanding_dues_paise) : "₹10,70,000"}
+                {data ? fmtRupees(data.summary.outstanding_dues_paise) : "₹0"}
               </p>
             </div>
           </div>
           <p className="text-[11px] text-slate-400 mb-2.5">
-            {data ? `${data.summary.invoices_pending_count} invoices pending` : "62 invoices pending"}
+            {data ? `${data.summary.invoices_pending_count} invoices pending` : "0 invoices pending"}
           </p>
           <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-700 bg-rose-50/80 px-2.5 py-1 rounded-lg w-fit border border-rose-100/60">
             <TrendingDown className="w-3.5 h-3.5" />
@@ -622,12 +626,12 @@ export default function FeeReportsPage() {
             <div>
               <p className="text-xs font-semibold text-slate-500">Total Discounts</p>
               <p className="text-xl sm:text-2xl font-bold text-[#141A2E] tracking-tight tabular-nums mt-0.5">
-                {data ? fmtRupees(data.summary.total_discounts_paise) : "₹2,15,000"}
+                {data ? fmtRupees(data.summary.total_discounts_paise) : "₹0"}
               </p>
             </div>
           </div>
           <p className="text-[11px] text-slate-400 mb-2.5">
-            {data ? `${data.summary.concessions_applied_count} concessions applied` : "124 concessions applied"}
+            {data ? `${data.summary.concessions_applied_count} concessions applied` : "0 concessions applied"}
           </p>
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50/80 px-2.5 py-1 rounded-lg w-fit border border-emerald-100/60">
             <TrendingUp className="w-3.5 h-3.5" />
@@ -645,7 +649,7 @@ export default function FeeReportsPage() {
             <div>
               <p className="text-xs font-semibold text-slate-500">Collection Rate</p>
               <p className="text-xl sm:text-2xl font-bold text-[#141A2E] tracking-tight tabular-nums mt-0.5">
-                {data ? `${data.summary.collection_rate_pct}%` : "74.8%"}
+                {data ? `${data.summary.collection_rate_pct}%` : "0.0%"}
               </p>
             </div>
           </div>
@@ -686,7 +690,7 @@ export default function FeeReportsPage() {
               </div>
 
               {/* View toggle */}
-              <select
+              <select aria-label="View toggle"
                 value={trendGranularity}
                 onChange={(e) => setTrendGranularity(e.target.value as any)}
                 className="text-xs font-semibold border border-[#E6EAF3] rounded-xl px-2.5 py-1 text-slate-700 bg-white focus:outline-none cursor-pointer"
@@ -712,29 +716,38 @@ export default function FeeReportsPage() {
                   className="w-full h-auto overflow-visible select-none"
                   style={{ maxHeight: "230px" }}
                 >
-                  {/* Grid Lines and Y-Axis Ticks */}
-                  {[
-                    { val: "₹10L", pct: "100%", y: 20 },
-                    { val: "₹7.5L", pct: "75%", y: 65 },
-                    { val: "₹5L", pct: "50%", y: 110 },
-                    { val: "₹2.5L", pct: "25%", y: 155 },
-                    { val: "₹0", pct: "0%", y: 200 },
-                  ].map((tick, i) => (
-                    <g key={i}>
-                      <text x="36" y={tick.y + 4} textAnchor="end" fontSize="9" fill="#94A3B8" fontWeight="500">
-                        {tick.val}
-                      </text>
-                      <line x1="42" y1={tick.y} x2="640" y2={tick.y} stroke="#F1F5F9" strokeWidth="1" />
-                      <text x="646" y={tick.y + 4} textAnchor="start" fontSize="9" fill="#94A3B8" fontWeight="500">
-                        {tick.pct}
-                      </text>
-                    </g>
-                  ))}
+                  {/* Dynamic Grid Lines and Y-Axis Ticks */}
+                  {(() => {
+                    const rawMax = Math.max(...data.trends.map(t => Math.max(t.billed_paise, t.collected_paise, t.outstanding_paise)), 100000);
+                    const magnitude = Math.pow(10, Math.floor(Math.log10(rawMax / 100))) || 1000;
+                    const yMax = Math.max(1000, Math.ceil((rawMax / 100) / magnitude) * magnitude);
+                    const ticks = [
+                      { val: fmtLakhs(yMax), pct: "100%", y: 20 },
+                      { val: fmtLakhs(yMax * 0.75), pct: "75%", y: 65 },
+                      { val: fmtLakhs(yMax * 0.5), pct: "50%", y: 110 },
+                      { val: fmtLakhs(yMax * 0.25), pct: "25%", y: 155 },
+                      { val: "₹0", pct: "0%", y: 200 },
+                    ];
+                    return ticks.map((tick, i) => (
+                      <g key={i}>
+                        <text x="36" y={tick.y + 4} textAnchor="end" fontSize="9" fill="#94A3B8" fontWeight="500">
+                          {tick.val}
+                        </text>
+                        <line x1="42" y1={tick.y} x2="640" y2={tick.y} stroke="#F1F5F9" strokeWidth="1" />
+                        <text x="646" y={tick.y + 4} textAnchor="start" fontSize="9" fill="#94A3B8" fontWeight="500">
+                          {tick.pct}
+                        </text>
+                      </g>
+                    ));
+                  })()}
 
                   {/* Bars & Coordinates */}
                   {(() => {
                     const chartBaseY = 200;
-                    const maxAmount = 50000000; // 50 Lakhs scale
+                    const rawMax = Math.max(...data.trends.map(t => Math.max(t.billed_paise, t.collected_paise, t.outstanding_paise)), 100000);
+                    const magnitude = Math.pow(10, Math.floor(Math.log10(rawMax / 100))) || 1000;
+                    const yMax = Math.max(1000, Math.ceil((rawMax / 100) / magnitude) * magnitude);
+                    const maxAmount = yMax * 100;
                     const usableHeight = 180;
                     const startX = 52;
                     const groupWidth = 46;
@@ -932,7 +945,7 @@ export default function FeeReportsPage() {
                         strokeWidth="18"
                         strokeDasharray={`${strokeLen} ${C}`}
                         strokeDashoffset={offset}
-                        className="transition-all duration-300 hover:opacity-85"
+                        className="transition-colors duration-300 hover:opacity-85"
                       />
                     );
                   });
@@ -1329,7 +1342,7 @@ export default function FeeReportsPage() {
                 <SlidersHorizontal className="w-4 h-4 text-[#15803D]" />
                 <h3 className="font-bold text-sm text-[#141A2E]">Advanced Report Filters</h3>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setShowMoreFilters(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
@@ -1341,8 +1354,8 @@ export default function FeeReportsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               {/* Payment Method */}
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Payment Method</label>
-                <select
+                <label htmlFor="feereportspage-payment-method" className="block font-semibold text-slate-600 mb-1">Payment Method</label>
+                <select id="feereportspage-payment-method" aria-label="Payment Method"
                   value={paymentMethodFilter}
                   onChange={(e) => setPaymentMethodFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-[#15803D]"
@@ -1358,8 +1371,8 @@ export default function FeeReportsPage() {
 
               {/* Invoice Status */}
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Invoice Status</label>
-                <select
+                <label htmlFor="feereportspage-invoice-status" className="block font-semibold text-slate-600 mb-1">Invoice Status</label>
+                <select id="feereportspage-invoice-status" aria-label="Invoice Status"
                   value={invoiceStatusFilter}
                   onChange={(e) => setInvoiceStatusFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-[#15803D]"
@@ -1374,8 +1387,8 @@ export default function FeeReportsPage() {
 
               {/* Concession Type */}
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Concession Type</label>
-                <select
+                <label htmlFor="feereportspage-concession-type" className="block font-semibold text-slate-600 mb-1">Concession Type</label>
+                <select id="feereportspage-concession-type" aria-label="Concession Type"
                   value={concessionTypeFilter}
                   onChange={(e) => setConcessionTypeFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-[#15803D]"
@@ -1390,8 +1403,8 @@ export default function FeeReportsPage() {
 
               {/* Aging Bucket */}
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Overdue Aging</label>
-                <select
+                <label htmlFor="feereportspage-overdue-aging" className="block font-semibold text-slate-600 mb-1">Overdue Aging</label>
+                <select id="feereportspage-overdue-aging" aria-label="Overdue Aging"
                   value={agingFilter}
                   onChange={(e) => setAgingFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-[#15803D]"
@@ -1407,8 +1420,8 @@ export default function FeeReportsPage() {
 
               {/* Custom Date Range */}
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Start Date</label>
-                <input
+                <label htmlFor="feereportspage-start-date" className="block font-semibold text-slate-600 mb-1">Start Date</label>
+                <input id="feereportspage-start-date" aria-label="Start Date"
                   type="date"
                   value={customStartDate}
                   onChange={(e) => setCustomStartDate(e.target.value)}
@@ -1417,8 +1430,8 @@ export default function FeeReportsPage() {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">End Date</label>
-                <input
+                <label htmlFor="feereportspage-end-date" className="block font-semibold text-slate-600 mb-1">End Date</label>
+                <input id="feereportspage-end-date" aria-label="End Date"
                   type="date"
                   value={customEndDate}
                   onChange={(e) => setCustomEndDate(e.target.value)}
@@ -1469,7 +1482,7 @@ export default function FeeReportsPage() {
                 <h3 className="font-bold text-sm text-[#141A2E]">All Classes Collection Summary</h3>
                 <p className="text-[11px] text-slate-500">Comprehensive overview of all classes and sections</p>
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setShowAllClassesModal(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"

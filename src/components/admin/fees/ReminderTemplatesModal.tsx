@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   X,
   Plus,
@@ -48,29 +48,29 @@ export function ReminderTemplatesModal({
   const [formPurpose, setFormPurpose] = useState<ReminderTemplate["purpose"]>("general");
   const [formChannel, setFormChannel] = useState<ReminderTemplate["channel"]>("whatsapp");
   const [formBody, setFormBody] = useState<string>("");
-  const [formIsActive, setFormIsActive] = useState<boolean>(true);
+  const formIsActiveRef = useRef<boolean>(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Automated Rules state
   const [rules, setRules] = useState<FeeReminderRule[]>([]);
-  const [rulesLoading, setRulesLoading] = useState<boolean>(false);
+  const rulesLoadingRef = useRef<boolean>(false);
+
+  const loadRules = useCallback(async () => {
+    rulesLoadingRef.current = true;
+    try {
+      const data = await getReminderRules(schoolId);
+      setRules(data);
+    } finally {
+      rulesLoadingRef.current = false;
+    }
+  }, [schoolId]);
 
   useEffect(() => {
     if (isOpen) {
       loadRules();
     }
-  }, [isOpen, schoolId]);
-
-  const loadRules = async () => {
-    setRulesLoading(true);
-    try {
-      const data = await getReminderRules(schoolId);
-      setRules(data);
-    } finally {
-      setRulesLoading(false);
-    }
-  };
+  }, [isOpen, loadRules]);
 
   const handleStartCreate = () => {
     setSelectedTemplate(null);
@@ -80,7 +80,7 @@ export function ReminderTemplatesModal({
     setFormBody(
       "Dear Parent,\nThis is a reminder that fee amount of ₹{amount} for {student_name} (Class {class_section}) is pending against Invoice {invoice_no}.\nPlease pay before {due_date}.\n- {school_name}"
     );
-    setFormIsActive(true);
+    formIsActiveRef.current = true;
     setFormError(null);
     setIsEditing(true);
   };
@@ -91,7 +91,7 @@ export function ReminderTemplatesModal({
     setFormPurpose(tpl.purpose);
     setFormChannel(tpl.channel);
     setFormBody(tpl.body);
-    setFormIsActive(tpl.isActive);
+    formIsActiveRef.current = tpl.isActive;
     setFormError(null);
     setIsEditing(true);
   };
@@ -115,7 +115,7 @@ export function ReminderTemplatesModal({
         purpose: formPurpose,
         channel: formChannel,
         body: formBody.trim(),
-        isActive: formIsActive,
+        isActive: formIsActiveRef.current,
       });
 
       setIsEditing(false);
@@ -170,7 +170,7 @@ export function ReminderTemplatesModal({
               <p className="text-[11px] text-[#5B6478]">Manage parent notification templates and dispatch rules</p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-slate-100 transition-colors"
@@ -292,10 +292,10 @@ export function ReminderTemplatesModal({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">
+                      <label htmlFor="remindertemplatesmodal-template-name" className="block text-[11px] font-semibold text-[#5B6478] mb-1">
                         Template Name <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <input id="remindertemplatesmodal-template-name"
                         type="text"
                         value={formName}
                         onChange={(e) => setFormName(e.target.value)}
@@ -305,8 +305,8 @@ export function ReminderTemplatesModal({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Purpose Category</label>
-                      <select
+                      <label htmlFor="remindertemplatesmodal-purpose-category" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Purpose Category</label>
+                      <select id="remindertemplatesmodal-purpose-category" aria-label="Purpose Category"
                         value={formPurpose}
                         onChange={(e) => setFormPurpose(e.target.value as any)}
                         className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -321,8 +321,8 @@ export function ReminderTemplatesModal({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Communication Channel</label>
-                    <select
+                    <label htmlFor="remindertemplatesmodal-communication-channel" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Communication Channel</label>
+                    <select id="remindertemplatesmodal-communication-channel" aria-label="Communication Channel"
                       value={formChannel}
                       onChange={(e) => setFormChannel(e.target.value as any)}
                       className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -335,7 +335,7 @@ export function ReminderTemplatesModal({
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-semibold text-[#5B6478]">
+                      <label htmlFor="remindertemplatesmodal-message-body" className="text-[11px] font-semibold text-[#5B6478]">
                         Message Body <span className="text-red-500">*</span>
                       </label>
                       <span className="text-[10px] text-gray-400">Click variable tag to insert</span>
@@ -356,7 +356,7 @@ export function ReminderTemplatesModal({
                       ))}
                     </div>
 
-                    <textarea
+                    <textarea id="remindertemplatesmodal-message-body" aria-label="Notes"
                       rows={6}
                       value={formBody}
                       onChange={(e) => setFormBody(e.target.value)}
@@ -366,7 +366,7 @@ export function ReminderTemplatesModal({
 
                   {/* Live Render Preview */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Live Preview with Sample Data</label>
+                    <span className="block text-[11px] font-semibold text-[#5B6478] mb-1">Live Preview with Sample Data</span>
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#141A2E] leading-relaxed whitespace-pre-wrap">
                       {samplePreview}
                     </div>
@@ -435,7 +435,7 @@ export function ReminderTemplatesModal({
                     </div>
 
                     <label className="relative inline-flex items-center cursor-pointer">
-                      <input
+                      <input aria-label="Select item"
                         type="checkbox"
                         checked={rule.is_active}
                         onChange={() => {
@@ -448,7 +448,7 @@ export function ReminderTemplatesModal({
                         }}
                         className="sr-only peer"
                       />
-                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0B7B49]"></div>
+                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-[#0B7B49]"></div>
                     </label>
                   </div>
                 ))}

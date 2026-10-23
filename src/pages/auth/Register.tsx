@@ -3,6 +3,7 @@ import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { AuthLayout } from "../../components/auth/AuthLayout";
 import { GoogleAuthButton } from "../../components/auth/GoogleAuthButton";
+import { AuthSubmitButton } from "../../components/auth/AuthSubmitButton";
 import { LegalModal, LegalDocType } from "../../components/ui/LegalModal";
 import {
   User,
@@ -15,8 +16,15 @@ import {
   ArrowRight,
   Check,
 } from "lucide-react";
+import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 export default function Register() {
+  usePageMetadata({
+    title: "Register Your School — Free Setup",
+    description: "Create your school website and setup your management ERP in minutes. Built for Indian K-12 schools.",
+    canonical: "https://myzkool.in/register",
+  });
+
   const navigate = useNavigate();
   const { signUp, isAuthenticated, profile, loading } = useAuth();
 
@@ -192,7 +200,7 @@ export default function Register() {
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. Dr. Rajesh Sharma"
                 disabled={isSubmitting}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
               />
             </div>
           </div>
@@ -218,7 +226,7 @@ export default function Register() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@yourschool.edu.in"
                 disabled={isSubmitting}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
               />
             </div>
           </div>
@@ -244,7 +252,7 @@ export default function Register() {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="e.g. 98765 43210"
                 disabled={isSubmitting}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
               />
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
@@ -275,7 +283,7 @@ export default function Register() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min 8 characters"
                   disabled={isSubmitting}
-                  className="w-full pl-9 pr-9 py-2.5 sm:py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+                  className="w-full pl-9 pr-9 py-2.5 sm:py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
                 />
                 <button
                   type="button"
@@ -309,7 +317,7 @@ export default function Register() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter password"
                   disabled={isSubmitting}
-                  className="w-full pl-9 pr-9 py-2.5 sm:py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+                  className="w-full pl-9 pr-9 py-2.5 sm:py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
                 />
                 <button
                   type="button"
@@ -336,7 +344,7 @@ export default function Register() {
                 {[1, 2, 3, 4].map((step) => (
                   <div
                     key={step}
-                    className={`h-full flex-1 rounded-full transition-all duration-200 ${
+                    className={`h-full flex-1 rounded-full transition-colors duration-200 ${
                       passwordStrength >= step
                         ? getStrengthLabel(passwordStrength).color
                         : "bg-slate-200"
@@ -368,17 +376,21 @@ export default function Register() {
 
           {/* Terms & Privacy Agreement */}
           <div className="pt-1">
-            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <div className="flex items-start gap-2.5 select-none">
               <input
+                id="agreeTerms"
                 type="checkbox"
                 required
                 checked={agreeTerms}
                 onChange={(e) => setAgreeTerms(e.target.checked)}
                 disabled={isSubmitting}
+                aria-label="I agree to the Terms of Service and Privacy Policy"
                 className="w-4 h-4 mt-0.5 rounded border-slate-300 text-[#1E5AF6] focus:ring-[#1E5AF6] cursor-pointer"
               />
               <span className="text-xs text-slate-600 leading-relaxed">
-                I agree to the{" "}
+                <label htmlFor="agreeTerms" className="cursor-pointer">
+                  I agree to the
+                </label>{" "}
                 <button
                   type="button"
                   onClick={() => openLegalModal("terms")}
@@ -396,27 +408,15 @@ export default function Register() {
                 </button>
                 .
               </span>
-            </label>
+            </div>
           </div>
 
           {/* Prominent Create Account Button */}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#1E5AF6] to-[#0D44D9] hover:from-[#184FD8] hover:to-[#0A3AB8] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-blue-500/25 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {isSubmitting ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Creating school account...</span>
-              </>
-            ) : (
-              <>
-                <span>Create School Account</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
+          <AuthSubmitButton
+            isSubmitting={isSubmitting}
+            loadingText="Creating school account..."
+            defaultText="Create School Account"
+          />
 
           {/* Divider */}
           <div className="relative my-4 flex items-center justify-center">

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams, Navigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { AuthLayout } from "../../components/auth/AuthLayout";
 import { GoogleAuthButton } from "../../components/auth/GoogleAuthButton";
+import { AuthSubmitButton } from "../../components/auth/AuthSubmitButton";
 import {
   Mail,
   Lock,
@@ -13,10 +14,17 @@ import {
   ArrowRight,
   CheckCircle2,
 } from "lucide-react";
+import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 const REMEMBER_ME_STORAGE_KEY = "myzkool_remembered_login_email";
 
 export default function Login() {
+  usePageMetadata({
+    title: "Sign In to School Portal",
+    description: "Secure administrative sign-in for school principals, accountants, teachers, and staff members.",
+    noindex: true,
+  });
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTarget = searchParams.get("redirect") || "/admin";
@@ -180,7 +188,7 @@ export default function Login() {
                   setResetSentEmail(null);
                   setViewMode("login");
                 }}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#1E5AF6] to-[#0D44D9] hover:from-[#184FD8] hover:to-[#0A3AB8] text-white text-sm font-semibold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#1E5AF6] to-[#0D44D9] hover:from-[#184FD8] hover:to-[#0A3AB8] text-white text-sm font-semibold transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
               >
                 Return to Sign In
               </button>
@@ -217,7 +225,7 @@ export default function Login() {
                   onChange={(e) => setEmailOrUsername(e.target.value)}
                   placeholder="admin@yourschool.edu.in"
                   disabled={isSubmitting}
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
@@ -225,7 +233,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#1E5AF6] to-[#0D44D9] hover:from-[#184FD8] hover:to-[#0A3AB8] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-blue-500/20 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#1E5AF6] to-[#0D44D9] hover:from-[#184FD8] hover:to-[#0A3AB8] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-blue-500/20 transition duration-150 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
             >
               {isSubmitting ? (
                 <>
@@ -301,7 +309,7 @@ export default function Login() {
               onChange={(e) => setEmailOrUsername(e.target.value)}
               placeholder="admin@yourschool.edu.in or username"
               disabled={isSubmitting}
-              className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+              className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
             />
           </div>
         </div>
@@ -339,7 +347,7 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
               disabled={isSubmitting}
-              className="w-full pl-10 pr-11 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-all duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
+              className="w-full pl-10 pr-11 py-3 bg-white border border-slate-200/90 rounded-xl text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#1E5AF6] focus:ring-4 focus:ring-[#1E5AF6]/10 outline-hidden transition-colors duration-150 disabled:bg-slate-50 disabled:cursor-not-allowed shadow-2xs"
             />
             <button
               type="button"
@@ -370,23 +378,11 @@ export default function Login() {
         </div>
 
         {/* Full-Width Blue Gradient Sign In Button with Right-Arrow */}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#1E5AF6] to-[#0D44D9] hover:from-[#184FD8] hover:to-[#0A3AB8] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-blue-500/25 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-        >
-          {isSubmitting ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <span>Signing in to workspace...</span>
-            </>
-          ) : (
-            <>
-              <span>Sign In</span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
+        <AuthSubmitButton
+          isSubmitting={isSubmitting}
+          loadingText="Signing in to workspace..."
+          defaultText="Sign In"
+        />
 
         {/* Divider with "OR CONTINUE WITH" */}
         <div className="relative my-4 flex items-center justify-center">

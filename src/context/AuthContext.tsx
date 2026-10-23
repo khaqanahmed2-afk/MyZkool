@@ -121,9 +121,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
                 .maybeSingle();
               if (createdSchool?.id) {
                 resolvedSchoolId = createdSchool.id;
+                const profileUpdatePayload = { school_id: resolvedSchoolId };
                 await supabase
                   .from("profiles")
-                  .update({ school_id: resolvedSchoolId })
+                  .update(profileUpdatePayload)
                   .eq("auth_id", authUser.id);
               } else if (authUser.user_metadata?.school_id) {
                 resolvedSchoolId = authUser.user_metadata.school_id;
@@ -177,25 +178,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // Ensure a corresponding row exists in profiles table for RLS checks
       if (isSupabaseConfigured && authUser.id && authUser.email) {
         try {
+          const profileUpsertPayload = {
+            auth_id: authUser.id,
+            email: authUser.email,
+            full_name:
+              authUser.user_metadata?.full_name ||
+              authUser.email.split("@")[0] ||
+              "School Administrator",
+            role: assignedRole,
+            school_id: fallbackSchoolId,
+            onboarding_completed: Boolean(
+              authUser.user_metadata?.onboarding_completed,
+            ),
+            current_onboarding_step:
+              authUser.user_metadata?.current_onboarding_step ||
+              "/onboarding/school",
+          };
           const { data: createdProfile } = await supabase
             .from("profiles")
             .upsert(
-              {
-                auth_id: authUser.id,
-                email: authUser.email,
-                full_name:
-                  authUser.user_metadata?.full_name ||
-                  authUser.email.split("@")[0] ||
-                  "School Administrator",
-                role: assignedRole,
-                school_id: fallbackSchoolId,
-                onboarding_completed: Boolean(
-                  authUser.user_metadata?.onboarding_completed,
-                ),
-                current_onboarding_step:
-                  authUser.user_metadata?.current_onboarding_step ||
-                  "/onboarding/school",
-              },
+              profileUpsertPayload,
               { onConflict: "auth_id" },
             )
             .select()
@@ -683,9 +685,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (isSupabaseConfigured && user) {
           try {
+            const profileSchoolPayload = { school_id: newSchoolId };
             await supabase
               .from("profiles")
-              .update({ school_id: newSchoolId })
+              .update(profileSchoolPayload)
               .eq("auth_id", user.id);
           } catch (dbErr) {
             console.warn("Could not update profile school_id:", dbErr);

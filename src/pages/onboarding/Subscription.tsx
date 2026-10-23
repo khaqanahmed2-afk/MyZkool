@@ -471,15 +471,30 @@ export default function Subscription() {
             role="alert"
             className="flex items-start gap-3 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm"
           >
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-600" />
             <div className="flex-1">
-              <p className="font-semibold">Unable to proceed</p>
-              <p className="text-xs sm:text-sm mt-0.5 text-red-600">{errorMessage}</p>
+              <p className="font-semibold text-red-800">Unable to proceed</p>
+              <p className="text-xs sm:text-sm mt-0.5 text-red-700">{errorMessage}</p>
+              {paymentMode === "pay_now" && (
+                <div className="mt-2.5 pt-2 border-t border-red-200/60 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMode("free_trial");
+                      setErrorMessage(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-red-300 hover:bg-red-50 text-red-800 rounded-md text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Switch to 14-Day Free Trial (₹0 Today)</span>
+                  </button>
+                </div>
+              )}
             </div>
             <button
               type="button"
               onClick={() => setErrorMessage(null)}
-              className="text-red-400 hover:text-red-600 p-1"
+              className="text-red-400 hover:text-red-600 p-1 cursor-pointer"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
@@ -526,7 +541,7 @@ export default function Subscription() {
               aria-checked={billingCycle === "monthly"}
               id="billing-monthly-btn"
               onClick={() => handleSelectBillingCycle("monthly")}
-              className={`flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all ${
+              className={`flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                 billingCycle === "monthly"
                   ? "bg-white text-[#141A2E] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -541,7 +556,7 @@ export default function Subscription() {
               aria-checked={billingCycle === "six_months"}
               id="billing-six-months-btn"
               onClick={() => handleSelectBillingCycle("six_months")}
-              className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-1.5 ${
                 billingCycle === "six_months"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -559,7 +574,7 @@ export default function Subscription() {
               aria-checked={billingCycle === "yearly"}
               id="billing-yearly-btn"
               onClick={() => handleSelectBillingCycle("yearly")}
-              className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-1.5 ${
                 billingCycle === "yearly"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -597,7 +612,7 @@ export default function Subscription() {
                     handleSelectPlan(plan.slug);
                   }
                 }}
-                className={`relative rounded-xl border p-4 sm:p-5 flex flex-col justify-between cursor-pointer transition-all outline-none ${
+                className={`relative rounded-xl border p-4 sm:p-5 flex flex-col justify-between cursor-pointer transition-colors outline-none ${
                   isSelected
                     ? "border-[#2158E0] bg-blue-50/20 shadow-sm ring-1 ring-[#2158E0]"
                     : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
@@ -624,7 +639,7 @@ export default function Subscription() {
                     </div>
 
                     <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition-all ${
+                      className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition-colors ${
                         isSelected
                           ? "bg-[#2158E0] border-[#2158E0] text-white"
                           : "border-[#CBD5E1] bg-white"
@@ -672,8 +687,8 @@ export default function Subscription() {
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] block">
                       Capabilities Included:
                     </span>
-                    {plan.features.slice(0, 5).map((feat, idx) => (
-                      <div key={idx} className="flex items-start gap-2">
+                    {plan.features.slice(0, 5).map((feat) => (
+                      <div key={feat} className="flex items-start gap-2">
                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
                         <span className="leading-tight text-xs text-[#334155]">{feat}</span>
                       </div>
@@ -686,22 +701,18 @@ export default function Subscription() {
                   </div>
                 </div>
 
-                {/* Card Select Button */}
+                {/* Card Select Indicator */}
                 <div className="mt-4 pt-3 border-t border-[#F1F4F9]">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectPlan(plan.slug);
-                    }}
-                    className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  <div
+                    aria-hidden="true"
+                    className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition-colors ${
                       isSelected
                         ? "bg-[#2158E0] text-white shadow-xs"
                         : "bg-[#F1F4F9] text-[#141A2E] hover:bg-[#E2E8F0]"
                     }`}
                   >
                     {isSelected ? "Selected Plan" : "Select Plan"}
-                  </button>
+                  </div>
                 </div>
               </div>
             );
@@ -746,14 +757,14 @@ export default function Subscription() {
             {/* Payment Choice Selector (Pay Now vs Free Trial) */}
             {!pricingCalculation.isCustomQuote && (
               <div className="pt-1 space-y-2.5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#5B6478]">
+                <span className="block text-xs font-bold uppercase tracking-wider text-[#5B6478]">
                   Select Payment Option
-                </label>
+                </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Option 1: Pay Now via Razorpay */}
-                  <div
+                  <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                     onClick={() => setPaymentMode("pay_now")}
-                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-colors flex flex-col justify-between ${
                       paymentMode === "pay_now"
                         ? "border-[#2158E0] bg-blue-50/50 shadow-xs"
                         : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
@@ -789,9 +800,9 @@ export default function Subscription() {
                   </div>
 
                   {/* Option 2: 14-Day Free Trial (Pay Later) */}
-                  <div
+                  <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                     onClick={() => setPaymentMode("free_trial")}
-                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-colors flex flex-col justify-between ${
                       paymentMode === "free_trial"
                         ? "border-[#2158E0] bg-blue-50/50 shadow-xs"
                         : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
@@ -926,7 +937,7 @@ export default function Subscription() {
               type="submit"
               id="pay-and-continue-btn"
               disabled={isPayingRazorpay || isSubmitting || !!verifiedPaymentInfo}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-colors shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
             >
               {isPayingRazorpay ? (
                 <>
@@ -951,7 +962,7 @@ export default function Subscription() {
               type="submit"
               id="continue-to-website-btn"
               disabled={isSubmitting}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-colors shadow-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2 cursor-pointer"
             >
               {isSubmitting ? (
                 <>

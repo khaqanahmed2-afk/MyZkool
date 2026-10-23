@@ -159,9 +159,15 @@ transportRouter.get("/vehicles/:id/documents", async (req: Request, res: Respons
 transportRouter.post("/vehicles/:id/documents", requireTransportPermission('transport.manage'), async (req: Request, res: Response) => {
   try {
     const schoolId = getSchoolId(req);
+    const { doc_type, doc_number, issued_on, expires_on, file_path, is_mandatory } = req.body;
     const result = await addVehicleDocument(schoolId, {
-      ...req.body,
       vehicle_id: req.params.id,
+      doc_type,
+      doc_number,
+      issued_on,
+      expires_on,
+      file_path,
+      is_mandatory: Boolean(is_mandatory),
     });
     if (!result.success) {
       res.status(400).json({ error: result.error });

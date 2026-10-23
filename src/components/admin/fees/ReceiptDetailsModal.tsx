@@ -1,19 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   Printer,
   Download,
   AlertTriangle,
-  CheckCircle2,
-  Share2,
-  Calendar,
-  Clock,
-  User,
-  CreditCard,
-  Ban,
-  FileText,
   RotateCcw,
-  Loader2,
 } from "lucide-react";
 import { formatPaise } from "../../../lib/amountInWords";
 import { generateReceiptHTML } from "../../../lib/receiptTemplate";
@@ -22,153 +13,366 @@ import { useAuth } from "../../../context/AuthContext";
 import type { EnrichedTransaction } from "../../../services/feeCollectionsQueryService";
 import type { FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
 
-interface ReceiptDetailsModalProps {
-  transaction: EnrichedTransaction | null;
-  onClose: () => void;
-  onCancelled?: () => void;
-  initialCancelOpen?: boolean;
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. RECEIPT STATUS BADGE
+// ─────────────────────────────────────────────────────────────────────────────
+interface ReceiptStatusBadgeProps {
+  status: string;
+  realReceiptStatus?: string;
 }
 
-export function ReceiptDetailsModal({
-  transaction,
+const ReceiptStatusBadge: React.FC<ReceiptStatusBadgeProps> = ({
+  status,
+  realReceiptStatus,
+}) => {
+  const isCancelled = status === "cancelled" || realReceiptStatus === "cancelled";
+  const isFailed = status === "failed" || realReceiptStatus === "bounced";
+  const isRefunded = status === "refunded";
+  const isReversed = status === "reversed";
+  const isPending = status === "pending";
+
+  let colorClasses = "bg-[#E8F7EE] text-[#0B7B49] border border-emerald-200";
+  let label = "Successful";
+
+  if (isCancelled) {
+    colorClasses = "bg-gray-100 text-gray-700 border border-gray-300";
+    label = "Cancelled";
+  } else if (isFailed) {
+    colorClasses = "bg-rose-50 text-rose-700 border border-rose-200";
+    label = "Failed";
+  } else if (isRefunded) {
+    colorClasses = "bg-blue-50 text-blue-700 border border-blue-200";
+    label = "Refunded";
+  } else if (isReversed) {
+    colorClasses = "bg-orange-50 text-orange-700 border border-orange-200";
+    label = "Reversed";
+  } else if (isPending) {
+    colorClasses = "bg-amber-50 text-amber-700 border border-amber-200";
+    label = "Pending";
+  }
+
+  return (
+    <span
+      className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${colorClasses}`}
+    >
+      {label}
+    </span>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. CANCEL CONFIRMATION BOX
+// ─────────────────────────────────────────────────────────────────────────────
+interface ReceiptCancelConfirmBoxProps {
+  cancelReason: string;
+  setCancelReason: (r: string) => void;
+  cancelError: string | null;
+  isCancelling: boolean;
+  onBack: () => void;
+  onConfirm: () => void;
+}
+
+const ReceiptCancelConfirmBox: React.FC<ReceiptCancelConfirmBoxProps> = ({
+  cancelReason,
+  setCancelReason,
+  cancelError,
+  isCancelling,
+  onBack,
+  onConfirm,
+}) => {
+  return (
+    <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+        <div>
+          <h4 className="text-xs font-bold text-red-800">Cancel / Reverse Receipt</h4>
+          <p className="text-[11px] text-red-600 mt-0.5">
+            Cancelling this receipt will reverse all dues allocations and ledger entries. This action cannot be undone.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="receiptdetailsmodal-reason-for-cancellation-min-10"
+          className="text-[11px] font-semibold text-gray-700 block mb-1"
+        >
+          Reason for Cancellation (min. 10 chars)
+        </label>
+        <textarea
+          id="receiptdetailsmodal-reason-for-cancellation-min-10"
+          rows={2}
+          value={cancelReason}
+          onChange={(e) => setCancelReason(e.target.value)}
+          placeholder="Explain why this receipt is being cancelled..."
+          className="w-full p-2 bg-white border border-red-300 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-red-500 resize-none"
+        />
+      </div>
+
+      {cancelError && <p className="text-xs text-red-700">{cancelError}</p>}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex-1 py-1.5 bg-white border border-gray-200 text-xs font-semibold rounded-lg text-gray-700 hover:bg-gray-50"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          disabled={isCancelling}
+          onClick={onConfirm}
+          className="flex-1 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 disabled:opacity-50"
+        >
+          {isCancelling ? "Cancelling..." : "Confirm Cancellation"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. DETAILS METRICS GRID
+// ─────────────────────────────────────────────────────────────────────────────
+const ReceiptDetailsGrid: React.FC<{ transaction: EnrichedTransaction }> = ({ transaction }) => {
+  return (
+    <div className="grid grid-cols-2 gap-4 text-xs">
+      <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
+        <span className="text-gray-400 block mb-1">Amount Received</span>
+        <span className="text-base font-extrabold text-[#0B7B49]">
+          {transaction.formatted_amount}
+        </span>
+      </div>
+
+      <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
+        <span className="text-gray-400 block mb-1">Payment Method</span>
+        <span className="text-sm font-bold uppercase text-gray-800">
+          {transaction.payment_method}
+        </span>
+      </div>
+
+      <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
+        <span className="text-gray-400 block mb-1">Linked Invoices</span>
+        <span className="text-xs font-bold text-gray-800">
+          {transaction.invoice_numbers.join(", ") || "—"}
+        </span>
+      </div>
+
+      <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
+        <span className="text-gray-400 block mb-1">Reference No / UTR</span>
+        <span className="text-xs font-medium text-gray-700 truncate block">
+          {transaction.reference_no || "N/A"}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. LINE ITEMS & REMARKS BREAKDOWN
+// ─────────────────────────────────────────────────────────────────────────────
+const ReceiptLineItemsBreakdown: React.FC<{
+  realItems: FeeReceiptItem[];
+  remarks?: string | null;
+}> = ({ realItems, remarks }) => {
+  return (
+    <>
+      {realItems.length > 0 && (
+        <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3.5 space-y-2">
+          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
+            Line Items Breakdown
+          </span>
+          <div className="space-y-1.5 divide-y divide-gray-100">
+            {realItems.map((item) => (
+              <div
+                key={item.id || `${item.fee_head_id}-${item.amount_paise}`}
+                className="flex items-center justify-between pt-1.5 text-xs"
+              >
+                <span className="font-medium text-gray-700">{item.fee_head_id}</span>
+                <span className="font-bold text-gray-900">{formatPaise(item.amount_paise)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {remarks && (
+        <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs">
+          <span className="text-gray-500 font-semibold block mb-0.5">Notes:</span>
+          <p className="text-gray-700">{remarks}</p>
+        </div>
+      )}
+    </>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. FOOTER ACTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+interface ReceiptModalFooterProps {
+  canCancel: boolean;
+  onOpenCancel: () => void;
+  onPrint: () => void;
+  onDownload: () => void;
+  onClose: () => void;
+}
+
+const ReceiptModalFooter: React.FC<ReceiptModalFooterProps> = ({
+  canCancel,
+  onOpenCancel,
+  onPrint,
+  onDownload,
   onClose,
-  onCancelled,
-  initialCancelOpen = false,
-}: ReceiptDetailsModalProps) {
-  const { schoolId, user, school } = useAuth();
-  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(initialCancelOpen);
-  const [cancelReason, setCancelReason] = useState("");
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+}) => {
+  return (
+    <div className="px-6 py-4 border-t border-[#E6EAF3] bg-white flex items-center justify-between">
+      {canCancel ? (
+        <button
+          type="button"
+          onClick={onOpenCancel}
+          className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Cancel Receipt</span>
+        </button>
+      ) : (
+        <div />
+      )}
 
-  // Real database items and payments
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [realReceipt, setRealReceipt] = useState<FeeReceipt | null>(null);
-  const [realItems, setRealItems] = useState<FeeReceiptItem[]>([]);
-  const [realPayments, setRealPayments] = useState<FeePayment[]>([]);
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onPrint}
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs"
+        >
+          <Printer className="w-3.5 h-3.5 text-gray-500" />
+          <span>Print</span>
+        </button>
 
-  useEffect(() => {
-    setIsCancelConfirmOpen(initialCancelOpen);
-    setCancelReason("");
-    setCancelError(null);
-  }, [initialCancelOpen, transaction?.id]);
+        <button
+          type="button"
+          onClick={onDownload}
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs"
+        >
+          <Download className="w-3.5 h-3.5 text-gray-500" />
+          <span>Download</span>
+        </button>
 
-  useEffect(() => {
-    if (!schoolId || !transaction?.receipt_id) return;
-    let isMounted = true;
-    setIsLoadingDetails(true);
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2 bg-[#0B7B49] text-white rounded-xl text-xs font-bold hover:bg-[#09663c]"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
 
-    getReceiptById(schoolId, transaction.receipt_id)
-      .then((res) => {
-        if (!isMounted) return;
-        if (res.receipt) setRealReceipt(res.receipt);
-        if (res.items) setRealItems(res.items);
-        if (res.payments) setRealPayments(res.payments);
-      })
-      .catch((err) => {
-        console.warn("Failed to load real receipt items:", err);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingDetails(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [schoolId, transaction?.receipt_id]);
-
-  if (!transaction) return null;
-
-  const isCancelled = transaction.status === "refunded" || realReceipt?.status === "cancelled";
-
-  const handlePrint = () => {
-    const receiptToUse: FeeReceipt = realReceipt || {
-      id: transaction.receipt_id,
-      school_id: schoolId || "",
-      receipt_no: transaction.receipt_no,
-      student_id: transaction.student_id,
-      academic_year_id: transaction.academic_year_id || "2026-2027",
-      receipt_date: transaction.receipt_date,
-      total_paise: transaction.amount_paise,
-      status: isCancelled ? "cancelled" : "active",
-      source: transaction.payment_method === "online" ? "online" : "counter",
-      payment_group_id: null,
-      collected_by: transaction.collected_by_name || null,
-      remarks: transaction.remarks || null,
-      idempotency_key: null,
-      print_count: 1,
-      whatsapp_sent_at: null,
-      cancelled_by: null,
-      cancelled_at: null,
-      cancel_reason: null,
-      created_at: transaction.created_at,
-      updated_at: transaction.created_at,
-    };
-
-    const itemsToUse: FeeReceiptItem[] =
-      realItems.length > 0
-        ? realItems
-        : transaction.invoice_numbers.map((inv, idx) => ({
-            id: `it-${idx}`,
-            receipt_id: transaction.receipt_id,
-            due_id: `due-${idx}`,
-            fee_head_id: "Tuition / Term Fee",
-            amount_paise: Math.round(transaction.amount_paise / (transaction.invoice_numbers.length || 1)),
-            concession_paise: 0,
-          }));
-
-    const paymentsToUse: FeePayment[] =
-      realPayments.length > 0
-        ? realPayments
-        : [
-            {
-              id: `pay-${transaction.id}`,
-              school_id: schoolId || "",
-              receipt_id: transaction.receipt_id,
-              mode: transaction.payment_method,
-              amount_paise: transaction.amount_paise,
-              reference_no: transaction.reference_no || null,
-              bank_name: null,
-              instrument_no: null,
-              instrument_date: null,
-              cheque_status: null,
-              gateway_order_id: null,
-              gateway_payment_id: null,
-              created_at: transaction.created_at,
-            },
-          ];
-
-    const html = generateReceiptHTML(
-      receiptToUse,
-      itemsToUse,
-      paymentsToUse,
-      {
-        student_name: transaction.student_name,
-        admission_no: transaction.admission_no,
-        class_name: transaction.class_name,
-      },
-      {
-        name: school?.name || "Peace Convent School",
-        address: school?.address || "Main Campus, Education City",
-        phone: school?.contact_phone || "+91 98765 43210",
-      },
-      "a5"
-    );
-
-    const printWin = window.open("", "_blank");
-    if (printWin) {
-      printWin.document.write(html);
-      printWin.document.close();
-      printWin.focus();
-      setTimeout(() => printWin.print(), 350);
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. HELPER PRINTER & DOWNLOAD UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+function executeReceiptPrint(
+  transaction: EnrichedTransaction,
+  realReceipt: FeeReceipt | null,
+  realItems: FeeReceiptItem[],
+  realPayments: FeePayment[],
+  schoolId: string | null | undefined,
+  school: { name?: string; address?: string; contact_phone?: string } | null,
+  isCancelled: boolean
+) {
+  const receiptToUse: FeeReceipt = realReceipt || {
+    id: transaction.receipt_id,
+    school_id: schoolId || "",
+    receipt_no: transaction.receipt_no,
+    student_id: transaction.student_id,
+    academic_year_id: transaction.academic_year_id || "2026-2027",
+    receipt_date: transaction.receipt_date,
+    total_paise: transaction.amount_paise,
+    status: isCancelled ? "cancelled" : "active",
+    source: transaction.payment_method === "online" ? "online" : "counter",
+    payment_group_id: null,
+    collected_by: transaction.collected_by_name || null,
+    remarks: transaction.remarks || null,
+    idempotency_key: null,
+    print_count: 1,
+    whatsapp_sent_at: null,
+    cancelled_by: null,
+    cancelled_at: null,
+    cancel_reason: null,
+    created_at: transaction.created_at,
+    updated_at: transaction.created_at,
   };
 
-  const handleDownload = () => {
-    const content = `========================================
+  const itemsToUse: FeeReceiptItem[] =
+    realItems.length > 0
+      ? realItems
+      : transaction.invoice_numbers.map((_, idx) => ({
+          id: `it-${idx}`,
+          receipt_id: transaction.receipt_id,
+          due_id: `due-${idx}`,
+          fee_head_id: "Tuition / Term Fee",
+          amount_paise: Math.round(transaction.amount_paise / (transaction.invoice_numbers.length || 1)),
+          concession_paise: 0,
+        }));
+
+  const paymentsToUse: FeePayment[] =
+    realPayments.length > 0
+      ? realPayments
+      : [
+          {
+            id: `pay-${transaction.id}`,
+            school_id: schoolId || "",
+            receipt_id: transaction.receipt_id,
+            mode: transaction.payment_method,
+            amount_paise: transaction.amount_paise,
+            reference_no: transaction.reference_no || null,
+            bank_name: null,
+            instrument_no: null,
+            instrument_date: null,
+            cheque_status: null,
+            gateway_order_id: null,
+            gateway_payment_id: null,
+            created_at: transaction.created_at,
+          },
+        ];
+
+  const html = generateReceiptHTML(
+    receiptToUse,
+    itemsToUse,
+    paymentsToUse,
+    {
+      student_name: transaction.student_name,
+      admission_no: transaction.admission_no,
+      class_name: transaction.class_name,
+    },
+    {
+      name: school?.name || "Peace Convent School",
+      address: school?.address || "Main Campus, Education City",
+      phone: school?.contact_phone || "+91 98765 43210",
+    },
+    "a5"
+  );
+
+  const printWin = window.open("", "_blank");
+  if (printWin) {
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => printWin.print(), 350);
+  }
+}
+
+function executeReceiptDownload(
+  transaction: EnrichedTransaction,
+  schoolName?: string
+) {
+  const content = `========================================
 FEE RECEIPT: ${transaction.receipt_no}
 ========================================
-School: ${school?.name || "Sunrise International School"}
+School: ${schoolName || "Sunrise International School"}
 Date: ${transaction.formatted_date_time}
 Status: ${transaction.status.toUpperCase()}
 
@@ -183,13 +387,89 @@ Reference No: ${transaction.reference_no || "N/A"}
 Total Amount Paid: ${transaction.formatted_amount}
 ========================================`;
 
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Receipt_${transaction.receipt_no}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Receipt_${transaction.receipt_no}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. MAIN MODAL CONTENT
+// ─────────────────────────────────────────────────────────────────────────────
+interface ReceiptDetailsModalProps {
+  transaction: EnrichedTransaction | null;
+  onClose: () => void;
+  onCancelled?: () => void;
+  initialCancelOpen?: boolean;
+}
+
+const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
+  transaction,
+  onClose,
+  onCancelled,
+  initialCancelOpen = false,
+}) => {
+  const { schoolId, user, school } = useAuth();
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(initialCancelOpen);
+  const [cancelReason, setCancelReason] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Real database items and payments
+  const isLoadingDetailsRef = useRef(false);
+  const [realReceipt, setRealReceipt] = useState<FeeReceipt | null>(null);
+  const [realItems, setRealItems] = useState<FeeReceiptItem[]>([]);
+  const realPaymentsRef = useRef<FeePayment[]>([]);
+
+  useEffect(() => {
+    if (!schoolId || !transaction?.receipt_id) return;
+    let isMounted = true;
+    isLoadingDetailsRef.current = true;
+
+    getReceiptById(schoolId, transaction.receipt_id)
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.receipt) setRealReceipt(res.receipt);
+        if (res.items) setRealItems(res.items);
+        if (res.payments) realPaymentsRef.current = res.payments;
+      })
+      .catch((err) => {
+        console.warn("Failed to load real receipt items:", err);
+      })
+      .finally(() => {
+        if (isMounted) isLoadingDetailsRef.current = false;
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [schoolId, transaction?.receipt_id]);
+
+  if (!transaction) return null;
+
+  const isCancelled = transaction.status === "cancelled" || realReceipt?.status === "cancelled";
+  const isFailed = transaction.status === "failed" || realReceipt?.status === "bounced";
+  const isRefunded = transaction.status === "refunded";
+  const isReversed = transaction.status === "reversed";
+  const canCancel = !isCancelled && !isFailed && !isRefunded && !isReversed && !isCancelConfirmOpen;
+
+  const handlePrint = () => {
+    executeReceiptPrint(
+      transaction,
+      realReceipt,
+      realItems,
+      realPaymentsRef.current,
+      schoolId,
+      school,
+      isCancelled
+    );
+  };
+
+  const handleDownload = () => {
+    executeReceiptDownload(transaction, school?.name);
   };
 
   const handleCancelReceipt = async () => {
@@ -226,20 +506,16 @@ Total Amount Paid: ${transaction.formatted_amount}
           <div>
             <div className="flex items-center gap-2.5">
               <h3 className="text-lg font-bold text-[#141A2E]">{transaction.receipt_no}</h3>
-              <span
-                className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                  isCancelled
-                    ? "bg-red-50 text-red-700 border border-red-200"
-                    : "bg-[#E8F7EE] text-[#0B7B49] border border-emerald-200"
-                }`}
-              >
-                {isCancelled ? "Cancelled" : "Received"}
-              </span>
+              <ReceiptStatusBadge
+                status={transaction.status}
+                realReceiptStatus={realReceipt?.status}
+              />
             </div>
             <p className="text-xs text-[#5B6478] mt-0.5">{transaction.formatted_date_time}</p>
           </div>
 
           <button
+            aria-label="Close"
             onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
           >
@@ -263,150 +539,44 @@ Total Amount Paid: ${transaction.formatted_amount}
           </div>
 
           {/* Details Grid */}
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
-              <span className="text-gray-400 block mb-1">Amount Received</span>
-              <span className="text-base font-extrabold text-[#0B7B49]">
-                {transaction.formatted_amount}
-              </span>
-            </div>
-
-            <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
-              <span className="text-gray-400 block mb-1">Payment Method</span>
-              <span className="text-sm font-bold uppercase text-gray-800">
-                {transaction.payment_method}
-              </span>
-            </div>
-
-            <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
-              <span className="text-gray-400 block mb-1">Linked Invoices</span>
-              <span className="text-xs font-bold text-gray-800">
-                {transaction.invoice_numbers.join(", ") || "—"}
-              </span>
-            </div>
-
-            <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
-              <span className="text-gray-400 block mb-1">Reference No / UTR</span>
-              <span className="text-xs font-medium text-gray-700 truncate block">
-                {transaction.reference_no || "N/A"}
-              </span>
-            </div>
-          </div>
+          <ReceiptDetailsGrid transaction={transaction} />
 
           {/* Fee Items Breakdown */}
-          {realItems.length > 0 && (
-            <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3.5 space-y-2">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
-                Line Items Breakdown
-              </span>
-              <div className="space-y-1.5 divide-y divide-gray-100">
-                {realItems.map((item, idx) => (
-                  <div key={item.id || idx} className="flex items-center justify-between pt-1.5 text-xs">
-                    <span className="font-medium text-gray-700">{item.fee_head_id}</span>
-                    <span className="font-bold text-gray-900">{formatPaise(item.amount_paise)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {transaction.remarks && (
-            <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs">
-              <span className="text-gray-500 font-semibold block mb-0.5">Notes:</span>
-              <p className="text-gray-700">{transaction.remarks}</p>
-            </div>
-          )}
+          <ReceiptLineItemsBreakdown realItems={realItems} remarks={transaction.remarks} />
 
           {/* Cancel Warning if user wants to cancel */}
           {isCancelConfirmOpen && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-red-800">Cancel / Reverse Receipt</h4>
-                  <p className="text-[11px] text-red-600 mt-0.5">
-                    Cancelling this receipt will reverse all dues allocations and ledger entries. This action cannot be undone.
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                  Reason for Cancellation (min. 10 chars)
-                </label>
-                <textarea
-                  rows={2}
-                  value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
-                  placeholder="Explain why this receipt is being cancelled..."
-                  className="w-full p-2 bg-white border border-red-300 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-red-500 resize-none"
-                />
-              </div>
-
-              {cancelError && <p className="text-xs text-red-700">{cancelError}</p>}
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCancelConfirmOpen(false)}
-                  className="flex-1 py-1.5 bg-white border border-gray-200 text-xs font-semibold rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  disabled={isCancelling}
-                  onClick={handleCancelReceipt}
-                  className="flex-1 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 disabled:opacity-50"
-                >
-                  {isCancelling ? "Cancelling..." : "Confirm Cancellation"}
-                </button>
-              </div>
-            </div>
+            <ReceiptCancelConfirmBox
+              cancelReason={cancelReason}
+              setCancelReason={setCancelReason}
+              cancelError={cancelError}
+              isCancelling={isCancelling}
+              onBack={() => setIsCancelConfirmOpen(false)}
+              onConfirm={handleCancelReceipt}
+            />
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-[#E6EAF3] bg-white flex items-center justify-between">
-          {!isCancelled && !isCancelConfirmOpen ? (
-            <button
-              type="button"
-              onClick={() => setIsCancelConfirmOpen(true)}
-              className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Cancel Receipt</span>
-            </button>
-          ) : (
-            <div />
-          )}
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs"
-            >
-              <Printer className="w-3.5 h-3.5 text-gray-500" />
-              <span>Print</span>
-            </button>
-
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs"
-            >
-              <Download className="w-3.5 h-3.5 text-gray-500" />
-              <span>Download</span>
-            </button>
-
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-[#0B7B49] text-white rounded-xl text-xs font-bold hover:bg-[#09663c]"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <ReceiptModalFooter
+          canCancel={canCancel}
+          onOpenCancel={() => setIsCancelConfirmOpen(true)}
+          onPrint={handlePrint}
+          onDownload={handleDownload}
+          onClose={onClose}
+        />
       </div>
     </div>
+  );
+};
+
+export function ReceiptDetailsModal(props: ReceiptDetailsModalProps) {
+  if (!props.transaction) return null;
+  return (
+    <ReceiptDetailsModalContent
+      key={`${props.transaction.id}-${props.initialCancelOpen}`}
+      {...props}
+      transaction={props.transaction}
+    />
   );
 }

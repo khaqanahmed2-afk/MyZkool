@@ -72,11 +72,12 @@ export function ConcessionFilterPanel({
       <div className="relative">
         <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
+          aria-label="Search Concessions"
           type="text"
           value={filters.search || ""}
           onChange={handleSearchChange}
           placeholder="Search by student name, admission no., concession type or reason..."
-          className="w-full pl-10 pr-4 py-2 bg-white border border-[#E6EAF3] rounded-lg text-sm placeholder:text-slate-400 focus:outline-none focus:border-[#00875A] focus:ring-1 focus:ring-[#00875A] transition-all text-slate-800"
+          className="w-full pl-10 pr-4 py-2 bg-white border border-[#E6EAF3] rounded-lg text-sm placeholder:text-slate-400 focus:outline-none focus:border-[#00875A] focus:ring-1 focus:ring-[#00875A] transition-colors text-slate-800"
         />
       </div>
 
@@ -85,11 +86,11 @@ export function ConcessionFilterPanel({
         <div className="flex flex-wrap items-center gap-3">
           {/* Academic Year */}
           <div className="relative min-w-[140px]">
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+            <label htmlFor="concessionfilterpanel-academic-year" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
               Academic Year
             </label>
             <div className="relative">
-              <select
+              <select id="concessionfilterpanel-academic-year" aria-label="Academic Year"
                 value={filters.academicYearId || "all"}
                 onChange={handleYearChange}
                 className="w-full appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -107,11 +108,11 @@ export function ConcessionFilterPanel({
 
           {/* Class */}
           <div className="relative min-w-[130px]">
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+            <label htmlFor="concessionfilterpanel-class" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
               Class
             </label>
             <div className="relative">
-              <select
+              <select id="concessionfilterpanel-class" aria-label="Class"
                 value={filters.classId || "all"}
                 onChange={handleClassChange}
                 className="w-full appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -129,11 +130,11 @@ export function ConcessionFilterPanel({
 
           {/* Concession Type */}
           <div className="relative min-w-[140px]">
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+            <label htmlFor="concessionfilterpanel-concession-type" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
               Concession Type
             </label>
             <div className="relative">
-              <select
+              <select id="concessionfilterpanel-concession-type" aria-label="Concession Type"
                 value={filters.concessionType || "all"}
                 onChange={handleTypeChange}
                 className="w-full appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -152,11 +153,11 @@ export function ConcessionFilterPanel({
 
           {/* Status */}
           <div className="relative min-w-[130px]">
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+            <label htmlFor="concessionfilterpanel-status" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
               Status
             </label>
             <div className="relative">
-              <select
+              <select id="concessionfilterpanel-status" aria-label="Status"
                 value={filters.status || "all"}
                 onChange={handleStatusChange}
                 className="w-full appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -195,7 +196,7 @@ export function ConcessionFilterPanel({
               key={chip.id}
               type="button"
               onClick={() => handleChipClick(chip.id)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
                 isSelected
                   ? "bg-[#03543F] text-white shadow-sm font-semibold"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"

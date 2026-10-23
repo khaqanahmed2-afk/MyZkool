@@ -12,6 +12,7 @@ import { FAQ } from "../components/sections/FAQ";
 import { FinalCTA } from "../components/sections/FinalCTA";
 import { Footer } from "../components/layout/Footer";
 import { useLandingModals } from "../hooks/useLandingModals";
+import { usePageMetadata } from "../hooks/usePageMetadata";
 
 // ── Lazy-load heavy modals and AI widget (not needed for first paint) ──────────
 const DemoModal = lazy(() =>
@@ -41,6 +42,13 @@ export default function LandingPage() {
     handleOpenLogin,
     handleCloseLogin,
   } = useLandingModals();
+
+  usePageMetadata({
+    title: "MyZkool — School Website Builder & Management ERP with WhatsApp",
+    description:
+      "One unified platform for school websites, fee collections, attendance, report cards, and automated WhatsApp parent notifications. Zero IT team required.",
+    canonical: "https://myzkool.in/",
+  });
 
   // Delay mounting the AI advisor until browser is idle / after initial paint
   const [showAdvisor, setShowAdvisor] = useState(false);

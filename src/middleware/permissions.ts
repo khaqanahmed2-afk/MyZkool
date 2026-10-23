@@ -83,8 +83,8 @@ export function requireAnyPermission(permissions: string[]) {
         return next();
       }
 
-      const effective = getRequestPermissions(req);
-      const hasAny = permissions.some((p) => effective.includes(p));
+      const effective = new Set(getRequestPermissions(req));
+      const hasAny = permissions.some((p) => effective.has(p));
 
       if (!hasAny) {
         return res.status(403).json({
@@ -116,8 +116,8 @@ export function requireAllPermissions(permissions: string[]) {
         return next();
       }
 
-      const effective = getRequestPermissions(req);
-      const hasAll = permissions.every((p) => effective.includes(p));
+      const effective = new Set(getRequestPermissions(req));
+      const hasAll = permissions.every((p) => effective.has(p));
 
       if (!hasAll) {
         return res.status(403).json({

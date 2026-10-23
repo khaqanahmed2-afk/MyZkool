@@ -8,12 +8,12 @@ export const TrustStrip: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Qualitative Claims Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {TRUST_CLAIMS.map((claim, idx) => {
+          {TRUST_CLAIMS.map((claim) => {
             const Icon = claim.icon;
             return (
               <div
-                key={idx}
-                className="flex items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#E6EAF3] hover:border-[#2158E0]/30 hover:bg-[#F1F6FF] transition-all group"
+                key={claim.title}
+                className="flex items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#E6EAF3] hover:border-[#2158E0]/30 hover:bg-[#F1F6FF] transition group"
               >
                 <div className="w-10 h-10 rounded-xl bg-white border border-[#E6EAF3] flex items-center justify-center text-[#2158E0] shadow-xs group-hover:scale-105 transition-transform shrink-0">
                   <Icon className="w-5 h-5" />

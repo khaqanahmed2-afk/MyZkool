@@ -3,8 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { AuthLayout } from "../../components/auth/AuthLayout";
 import { Lock, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
+import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 export default function ResetPassword() {
+  usePageMetadata({
+    title: "Reset Account Password",
+    description: "Secure password reset for MyZkool school administrators and staff.",
+    noindex: true,
+  });
+
   const navigate = useNavigate();
   const { updatePassword, refreshSession } = useAuth();
 
@@ -77,7 +84,7 @@ export default function ResetPassword() {
           <button
             type="button"
             onClick={() => navigate("/login")}
-            className="w-full py-3.5 px-6 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-[#2158E0]/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3.5 px-6 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-[#2158E0]/20 transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>Sign In to School Portal</span>
             <ArrowRight className="w-4 h-4" />
@@ -136,7 +143,7 @@ export default function ResetPassword() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Minimum 8 characters"
               disabled={isSubmitting}
-              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-[#FBFDFF] border border-[#D5DDEB] rounded-xl text-sm text-[#141A2E] placeholder-[#9BA5B7] focus:bg-white focus:border-[#2158E0] focus:ring-4 focus:ring-[#2158E0]/10 outline-hidden transition-all"
+              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-[#FBFDFF] border border-[#D5DDEB] rounded-xl text-sm text-[#141A2E] placeholder-[#9BA5B7] focus:bg-white focus:border-[#2158E0] focus:ring-4 focus:ring-[#2158E0]/10 outline-hidden transition-colors"
             />
             <button
               type="button"
@@ -169,7 +176,7 @@ export default function ResetPassword() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Re-enter your new password"
               disabled={isSubmitting}
-              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-[#FBFDFF] border border-[#D5DDEB] rounded-xl text-sm text-[#141A2E] placeholder-[#9BA5B7] focus:bg-white focus:border-[#2158E0] focus:ring-4 focus:ring-[#2158E0]/10 outline-hidden transition-all"
+              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-[#FBFDFF] border border-[#D5DDEB] rounded-xl text-sm text-[#141A2E] placeholder-[#9BA5B7] focus:bg-white focus:border-[#2158E0] focus:ring-4 focus:ring-[#2158E0]/10 outline-hidden transition-colors"
             />
             <button
               type="button"
@@ -186,7 +193,7 @@ export default function ResetPassword() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-3.5 px-6 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-[#2158E0]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+          className="w-full py-3.5 px-6 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-[#2158E0]/20 transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
         >
           {isSubmitting ? (
             <>

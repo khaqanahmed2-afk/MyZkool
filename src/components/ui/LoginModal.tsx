@@ -23,12 +23,21 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onOpenD
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={(el) => {
+        if (el && !el.open) {
+          el.showModal();
+          el.onclick = (e) => {
+            if (e.target === el) onClose();
+          };
+        }
+      }}
+      className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-black/60 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
       aria-labelledby="login-modal-title"
-      onClick={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
     >
       <div
         className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-[#E6EAF3] overflow-hidden relative"
@@ -70,7 +79,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onOpenD
             <Link
               to="/login"
               onClick={onClose}
-              className="w-full mt-1 py-3 px-5 rounded-full bg-[#2158E0] hover:bg-[#1a4ec4] text-white font-bold text-sm shadow-md shadow-[#2158E0]/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
+              className="w-full mt-1 py-3 px-5 rounded-full bg-[#2158E0] hover:bg-[#1a4ec4] text-white font-bold text-sm shadow-md shadow-[#2158E0]/20 flex items-center justify-center gap-2 cursor-pointer transition-colors"
               id="login-modal-go-to-login"
             >
               <span>Go to Login Page</span>
@@ -117,7 +126,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onOpenD
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };
 

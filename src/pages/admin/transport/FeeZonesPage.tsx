@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Bus,
@@ -92,16 +92,25 @@ export function FeeZonesPage() {
   const [legacyZones, setLegacyZones] = useState<TransportFeeZone[]>([]);
   const [showLegacyZones, setShowLegacyZones] = useState(false);
 
+  const selectedRouteIdRef = useRef(selectedRouteId);
   useEffect(() => {
-    if (!schoolId) return;
-    checkSchoolFeature(schoolId, "transport").then((enabled) => {
-      setHasFeature(enabled);
-      if (enabled) loadInitialData();
-      else setLoading(false);
-    });
-  }, [schoolId]);
+    selectedRouteIdRef.current = selectedRouteId;
+  });
 
-  async function loadInitialData() {
+  const initStopFeeForm = useCallback((stops: RouteStop[]) => {
+    const state: Record<string, StopFeeFormState> = {};
+    stops.forEach((st) => {
+      state[st.id] = {
+        bothWays: st.monthly_fee_paise ? Math.round(st.monthly_fee_paise / 100) : 0,
+        pickupOnly: st.pickup_only_monthly_paise ? Math.round(st.pickup_only_monthly_paise / 100) : 0,
+        dropOnly: st.drop_only_monthly_paise ? Math.round(st.drop_only_monthly_paise / 100) : 0,
+      };
+    });
+    setStopFeeState(state);
+    setInitialStopFeeState(structuredClone(state));
+  }, []);
+
+  const loadInitialData = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     setStatusMessage(null);
@@ -116,8 +125,8 @@ export function FeeZonesPage() {
       setLegacyZones(zData);
 
       // Default select the first route or keep current
-      const activeRouteId = selectedRouteId && rData.some((r) => r.id === selectedRouteId)
-        ? selectedRouteId
+      const activeRouteId = selectedRouteIdRef.current && rData.some((r) => r.id === selectedRouteIdRef.current)
+        ? selectedRouteIdRef.current
         : rData[0]?.id || "";
 
       setSelectedRouteId(activeRouteId);
@@ -130,20 +139,16 @@ export function FeeZonesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [schoolId, initStopFeeForm]);
 
-  function initStopFeeForm(stops: RouteStop[]) {
-    const state: Record<string, StopFeeFormState> = {};
-    stops.forEach((st) => {
-      state[st.id] = {
-        bothWays: st.monthly_fee_paise ? Math.round(st.monthly_fee_paise / 100) : 0,
-        pickupOnly: st.pickup_only_monthly_paise ? Math.round(st.pickup_only_monthly_paise / 100) : 0,
-        dropOnly: st.drop_only_monthly_paise ? Math.round(st.drop_only_monthly_paise / 100) : 0,
-      };
+  useEffect(() => {
+    if (!schoolId) return;
+    checkSchoolFeature(schoolId, "transport").then((enabled) => {
+      setHasFeature(enabled);
+      if (enabled) loadInitialData();
+      else setLoading(false);
     });
-    setStopFeeState(state);
-    setInitialStopFeeState(JSON.parse(JSON.stringify(state)));
-  }
+  }, [schoolId, loadInitialData]);
 
   function handleRouteChange(newRouteId: string) {
     if (newRouteId === selectedRouteId) return;
@@ -244,7 +249,7 @@ export function FeeZonesPage() {
 
   function handleResetForm() {
     setStatusMessage(null);
-    setStopFeeState(JSON.parse(JSON.stringify(initialStopFeeState)));
+    setStopFeeState(structuredClone(initialStopFeeState));
   }
 
   async function handleSaveStopFees() {
@@ -350,7 +355,7 @@ export function FeeZonesPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-colors"
             title="Return to Transport Dashboard"
           >
             <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
@@ -392,7 +397,7 @@ export function FeeZonesPage() {
             type="button"
             onClick={handleSaveStopFees}
             disabled={isSaving || routeStops.length === 0}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 disabled:opacity-50 text-white font-bold text-xs shadow-sm transition-all"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 disabled:opacity-50 text-white font-bold text-xs shadow-sm transition-colors"
           >
             <Save className="w-4 h-4" />
             {isSaving ? "Saving..." : isDirty ? "Save Changes" : "Save Stop Fees"}
@@ -403,7 +408,7 @@ export function FeeZonesPage() {
       {/* Status Notifications */}
       {statusMessage && (
         <div
-          className={`p-4 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 border transition-all ${
+          className={`p-4 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 border transition-colors ${
             statusMessage.type === "success"
               ? "bg-emerald-50 border-emerald-200 text-emerald-800"
               : "bg-red-50 border-red-200 text-red-800"
@@ -417,7 +422,7 @@ export function FeeZonesPage() {
             )}
             <span>{statusMessage.text}</span>
           </div>
-          <button
+          <button aria-label="Dismiss message"
             type="button"
             onClick={() => setStatusMessage(null)}
             className="text-gray-400 hover:text-gray-600 text-sm font-bold"
@@ -456,7 +461,7 @@ export function FeeZonesPage() {
                 key={m.num}
                 type="button"
                 onClick={() => handleToggleBillingMonth(m.num)}
-                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-colors border ${
                   isChecked
                     ? "bg-[#2158E0] text-white border-[#2158E0] shadow-xs"
                     : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100"
@@ -474,12 +479,12 @@ export function FeeZonesPage() {
         {/* Route Selector Sub-header */}
         <div className="p-5 border-b border-[#E6EAF3] bg-[#F8FAFC]/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex-1 max-w-md">
-            <label className="block text-[11px] font-bold text-[#141A2E] uppercase tracking-wider mb-1.5 flex items-center gap-2">
+            <label htmlFor="feezonespage-select-transport-route" className="block text-[11px] font-bold text-[#141A2E] uppercase tracking-wider mb-1.5 flex items-center gap-2">
               <Bus className="w-3.5 h-3.5 text-[#2158E0]" />
               Select Transport Route
             </label>
             {routes.length > 0 ? (
-              <select
+              <select id="feezonespage-select-transport-route" aria-label="Select Transport Route"
                 value={selectedRouteId}
                 onChange={(e) => handleRouteChange(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-[#CBD5E1] bg-white font-bold text-xs text-[#141A2E] shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -644,7 +649,7 @@ export function FeeZonesPage() {
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#5B6478]">
                             <IndianRupee className="w-3.5 h-3.5" />
                           </div>
-                          <input
+                          <input aria-label="Both ways stop fee"
                             type="text"
                             inputMode="numeric"
                             value={state.bothWays}
@@ -664,7 +669,7 @@ export function FeeZonesPage() {
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#5B6478]">
                             <IndianRupee className="w-3.5 h-3.5" />
                           </div>
-                          <input
+                          <input aria-label="Pickup only stop fee"
                             type="text"
                             inputMode="numeric"
                             value={state.pickupOnly}
@@ -684,7 +689,7 @@ export function FeeZonesPage() {
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#5B6478]">
                             <IndianRupee className="w-3.5 h-3.5" />
                           </div>
-                          <input
+                          <input aria-label="Drop only stop fee"
                             type="text"
                             inputMode="numeric"
                             value={state.dropOnly}

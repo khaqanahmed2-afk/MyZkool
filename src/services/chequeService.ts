@@ -117,9 +117,10 @@ export async function bounceCheque(
   const items = lsGet<FeeReceiptItem>(`myzkool_fee_receipt_items_${schoolId}`)
     .filter(i => i.receipt_id === receipt.id);
   const dues = lsGet<StudentDue>(`myzkool_student_dues_${schoolId}`);
+  const duesMap = new Map<string, StudentDue>(dues.map(d => [d.id, d]));
 
   for (const item of items) {
-    const due = dues.find(d => d.id === item.due_id);
+    const due = duesMap.get(item.due_id);
     if (due) {
       due.paid_paise = Math.max(0, due.paid_paise - item.amount_paise);
       due.balance_paise = due.net_paise - due.paid_paise;

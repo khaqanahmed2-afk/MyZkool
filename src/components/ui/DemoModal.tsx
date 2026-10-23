@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { X, CheckCircle2, MessageSquare, ArrowRight, School, Phone, User, MapPin, Mail, AlertCircle } from "lucide-react";
 
 export interface DemoModalProps {
@@ -21,6 +21,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
   // Status: idle | submitting | success | error
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const isSubmittingRef = useRef(false);
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -36,8 +37,24 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!schoolName.trim() || !phone.trim()) {
-      setErrorMessage("Please fill in your School Name and WhatsApp contact number.");
+    if (isSubmittingRef.current || status === "submitting") return;
+
+    const trimmedSchool = schoolName.trim();
+    if (!trimmedSchool || trimmedSchool.length < 3) {
+      setErrorMessage("Please enter a valid School Name (at least 3 characters).");
+      return;
+    }
+    const cleanPhone = phone.replace(/\D/g, "");
+    const normalizedPhone =
+      cleanPhone.length === 12 && cleanPhone.startsWith("91")
+        ? cleanPhone.slice(2)
+        : cleanPhone;
+    if (normalizedPhone.length < 10) {
+      setErrorMessage("Please enter a valid 10-digit WhatsApp or mobile number.");
+      return;
+    }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setErrorMessage("Please enter a valid email address, or leave it blank.");
       return;
     }
     if (!consentGiven) {
@@ -45,6 +62,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
       return;
     }
     setErrorMessage("");
+    isSubmittingRef.current = true;
     setStatus("submitting");
 
     const formData = new FormData(e.currentTarget);
@@ -61,6 +79,9 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
         headers: { Accept: "application/json" },
         body: formData,
       });
+      if (!response.ok) {
+        throw new Error(`Submission failed with status ${response.status}`);
+      }
       const data = await response.json();
       if (data.success) {
         setStatus("success");
@@ -71,10 +92,13 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
     } catch {
       setStatus("error");
       setErrorMessage("Network error connecting to submission server.");
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
   const resetAndClose = () => {
+    isSubmittingRef.current = false;
     setStatus("idle");
     setSchoolName("");
     setCity("");
@@ -86,12 +110,21 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={(el) => {
+        if (el && !el.open) {
+          el.showModal();
+          el.onclick = (e) => {
+            if (e.target === el) resetAndClose();
+          };
+        }
+      }}
+      className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-black/60 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
       aria-labelledby="demo-modal-title"
-      onClick={resetAndClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        resetAndClose();
+      }}
     >
       <div 
         className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-[#E6EAF3] overflow-hidden relative max-h-[90vh] flex flex-col"
@@ -148,6 +181,14 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                   <MessageSquare className="w-4 h-4" />
                   <span>Message Us Directly on WhatsApp (+91 95559 54854)</span>
                 </a>
+                <a
+                  href="tel:+919555954854"
+                  className="w-full px-6 py-2.5 rounded-full border border-[#E6EAF3] hover:bg-[#F8FAFC] text-[#141A2E] text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  aria-label="Call +91 95559 54854"
+                >
+                  <Phone className="w-3.5 h-3.5 text-[#5B6478]" />
+                  <span>Call Us Directly (+91 95559 54854)</span>
+                </a>
                 <div className="text-[11px] text-[#5B6478]">
                   Or email our founder team directly at{" "}
                   <a href="mailto:khaqanbuilds@gmail.com" className="text-[#2158E0] font-semibold underline">
@@ -174,11 +215,15 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                     <span>Submission Error</span>
                   </div>
                   <p>
-                    {errorMessage || "Something went wrong sending your request."} Please WhatsApp us directly at{" "}
+                    {errorMessage || "Something went wrong sending your request."} Please WhatsApp us at{" "}
                     <a href="https://wa.me/919555954854?text=Hi%2C%20I%20tried%20requesting%20a%20demo%20on%20the%20website" target="_blank" rel="noreferrer" className="underline font-bold text-emerald-800">
+                      WhatsApp
+                    </a>
+                    , call{" "}
+                    <a href="tel:+919555954854" className="underline font-bold text-slate-800">
                       +91 95559 54854
-                    </a>{" "}
-                    or email{" "}
+                    </a>
+                    , or email{" "}
                     <a href="mailto:khaqanbuilds@gmail.com" className="underline font-bold text-blue-800">
                       khaqanbuilds@gmail.com
                     </a>.
@@ -187,12 +232,12 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
               )}
 
               <div>
-                <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                <label htmlFor="demomodal-school-name" className="block text-xs font-bold text-[#141A2E] mb-1">
                   School Name *
                 </label>
                 <div className="relative">
                   <School className="w-4 h-4 absolute left-3.5 top-3.5 text-[#5B6478]" />
-                  <input
+                  <input id="demomodal-school-name"
                     type="text"
                     name="school_name"
                     required
@@ -206,12 +251,12 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                  <label htmlFor="demomodal-city-town" className="block text-xs font-bold text-[#141A2E] mb-1">
                     City / Town
                   </label>
                   <div className="relative">
                     <MapPin className="w-4 h-4 absolute left-3.5 top-3.5 text-[#5B6478]" />
-                    <input
+                    <input id="demomodal-city-town"
                       type="text"
                       name="city"
                       value={city}
@@ -223,10 +268,10 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                  <label htmlFor="demomodal-affiliated-board" className="block text-xs font-bold text-[#141A2E] mb-1">
                     Affiliated Board
                   </label>
-                  <select
+                  <select id="demomodal-affiliated-board" aria-label="Affiliated Board"
                     name="board"
                     value={board}
                     onChange={(e) => setBoard(e.target.value)}
@@ -242,10 +287,10 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                  <label htmlFor="demomodal-student-strength" className="block text-xs font-bold text-[#141A2E] mb-1">
                     Student Strength
                   </label>
-                  <select
+                  <select id="demomodal-student-strength" aria-label="Student Strength"
                     name="student_count"
                     value={studentCount}
                     onChange={(e) => setStudentCount(e.target.value)}
@@ -259,12 +304,12 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                  <label htmlFor="demomodal-your-name-role" className="block text-xs font-bold text-[#141A2E] mb-1">
                     Your Name / Role
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 absolute left-3.5 top-3.5 text-[#5B6478]" />
-                    <input
+                    <input id="demomodal-your-name-role"
                       type="text"
                       name="contact_name"
                       value={contactName}
@@ -278,12 +323,12 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                  <label htmlFor="demomodal-whatsapp-number" className="block text-xs font-bold text-[#141A2E] mb-1">
                     WhatsApp Number *
                   </label>
                   <div className="relative">
                     <Phone className="w-4 h-4 absolute left-3.5 top-3.5 text-[#5B6478]" />
-                    <input
+                    <input id="demomodal-whatsapp-number"
                       type="tel"
                       name="phone"
                       required
@@ -296,12 +341,12 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#141A2E] mb-1">
+                  <label htmlFor="demomodal-school-email-optional" className="block text-xs font-bold text-[#141A2E] mb-1">
                     School Email (Optional)
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 absolute left-3.5 top-3.5 text-[#5B6478]" />
-                    <input
+                    <input id="demomodal-school-email-optional"
                       type="email"
                       name="email"
                       value={email}
@@ -349,7 +394,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
               <button
                 type="submit"
                 disabled={status === "submitting" || !consentGiven}
-                className="w-full mt-4 py-3.5 px-6 rounded-full bg-[#2158E0] hover:bg-[#1a4ec4] text-white font-bold text-sm shadow-md shadow-[#2158E0]/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full mt-4 py-3.5 px-6 rounded-full bg-[#2158E0] hover:bg-[#1a4ec4] text-white font-bold text-sm shadow-md shadow-[#2158E0]/20 flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {status === "submitting" ? (
                   <span>Sending your demo request...</span>
@@ -364,7 +409,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, defaultPl
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };
 

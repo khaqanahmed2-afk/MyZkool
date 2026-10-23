@@ -17,6 +17,7 @@ import { formatPaise, formatPaiseCompact } from "../lib/amountInWords";
 import type { OutstandingReportRow, DayBookReportRow } from "../types/feeOperations";
 import type { FeeReceipt, FeePayment, PaymentMode } from "../types/collection";
 import type { StudentDue, FeeTerm, FeeHead } from "../types/fees";
+import { computeAuthoritativeFinancialSummary, getTodayIST } from "./feeCalculationService";
 
 function lsGet<T>(key: string): T[] {
   if (typeof localStorage === "undefined") return [];
@@ -31,10 +32,6 @@ function lsSet<T>(key: string, data: T[]): void {
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(key, JSON.stringify(data));
   }
-}
-
-function getTodayIST(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
 // ─── Filter Interfaces ────────────────────────────────────────────────────────
@@ -58,6 +55,7 @@ export interface FeeReportFilters {
 
 export interface FinancialSummaryCards {
   total_billed_paise: number;
+  total_net_billed_paise: number;
   invoices_generated_count: number;
   billed_trend_pct: number;
 
@@ -222,6 +220,7 @@ export async function getFeeReportsDashboardData(
   let feeHeads: FeeHead[] = [];
   let concessions: any[] = [];
   let refunds: any[] = [];
+  let feeCredits: any[] = [];
 
   if (isSupabaseConfigured) {
     try {
@@ -236,6 +235,7 @@ export async function getFeeReportsDashboardData(
         headsRes,
         concessionsRes,
         refundsRes,
+        creditsRes,
       ] = await Promise.all([
         supabase.from("student_dues").select("*").eq("school_id", schoolId),
         supabase.from("fee_receipts").select("*").eq("school_id", schoolId),
@@ -243,10 +243,11 @@ export async function getFeeReportsDashboardData(
         supabase.from("students").select("*").eq("school_id", schoolId).is("deleted_at", null),
         supabase.from("classes").select("id, name").eq("school_id", schoolId),
         supabase.from("sections").select("id, name, class_id").eq("school_id", schoolId),
-        supabase.from("academic_years").select("id, name, is_current").eq("school_id", schoolId),
+        supabase.from("academic_years").select("id, label, is_current").eq("school_id", schoolId),
         supabase.from("fee_heads").select("id, name, code").eq("school_id", schoolId),
         supabase.from("student_concessions").select("*").eq("school_id", schoolId),
         supabase.from("fee_refunds").select("*").eq("school_id", schoolId),
+        supabase.from("fee_credits").select("*").eq("school_id", schoolId),
       ]);
 
       dues = (duesRes.data || []) as StudentDue[];
@@ -255,10 +256,16 @@ export async function getFeeReportsDashboardData(
       students = studentsRes.data || [];
       classes = classesRes.data || [];
       sections = sectionsRes.data || [];
-      academicYears = yearsRes.data || [];
+      academicYears = (yearsRes.data || []).map((y: any) => ({
+        id: y.id,
+        name: y.label || y.name || "Academic Year",
+        label: y.label || y.name || "Academic Year",
+        is_current: Boolean(y.is_current),
+      }));
       feeHeads = (headsRes.data || []) as FeeHead[];
       concessions = concessionsRes.data || [];
       refunds = refundsRes.data || [];
+      feeCredits = creditsRes.data || [];
     } catch (err) {
       console.warn("Supabase query fallback to localStorage for fee reports:", err);
     }
@@ -272,10 +279,27 @@ export async function getFeeReportsDashboardData(
     students = lsGet<any>(`myzkool_students_${schoolId}`).filter((s: any) => !s.deleted_at);
     classes = lsGet<any>(`myzkool_classes_${schoolId}`);
     sections = lsGet<any>(`myzkool_sections_${schoolId}`);
-    academicYears = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+    const cachedYears = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+    academicYears = cachedYears.map((y: any) => ({
+      id: y.id,
+      name: y.label || y.name || "Academic Year",
+      label: y.label || y.name || "Academic Year",
+      is_current: Boolean(y.is_current),
+    }));
     feeHeads = lsGet<FeeHead>(`myzkool_fee_heads_${schoolId}`);
     concessions = lsGet<any>(`myzkool_student_concessions_${schoolId}`);
     refunds = lsGet<any>(`myzkool_fee_refunds_${schoolId}`);
+    feeCredits = lsGet<any>(`myzkool_fee_credits_${schoolId}`);
+  }
+
+  const studentCreditsMap = new Map<string, number>();
+  let totalAdvanceCreditsPaise = 0;
+  for (const c of feeCredits) {
+    const rem = Number(c.remaining_paise) || 0;
+    if (rem > 0) {
+      totalAdvanceCreditsPaise += rem;
+      studentCreditsMap.set(c.student_id, (studentCreditsMap.get(c.student_id) || 0) + rem);
+    }
   }
 
   // Build lookup maps
@@ -296,7 +320,7 @@ export async function getFeeReportsDashboardData(
     return true;
   });
 
-  const activeReceipts = receipts.filter(r => r.status !== "cancelled");
+  const activeReceipts = receipts.filter(r => r.status === "active");
   const filteredReceipts = activeReceipts.filter(r => {
     if (targetYearId && r.academic_year_id && r.academic_year_id !== targetYearId) return false;
     const std = studentMap.get(r.student_id);
@@ -317,57 +341,91 @@ export async function getFeeReportsDashboardData(
   // Collection Rate: 74.8% of total billed amount (↑ 4.2%)
   
   // Real database dynamic increments:
-  // 3. Financial Metrics Baseline & Aggregation strictly from authentic records
-  // Exclude cancelled obligations so cancelled dues do not inflate billed or balance metrics
-  const activeDues = filteredDues.filter(d => d.status !== "cancelled");
-  const dynamicBilledPaise = activeDues.reduce((sum, d) => sum + (d.gross_paise || 0), 0);
-  const dynamicNetPaise = activeDues.reduce((sum, d) => sum + (d.net_paise ?? (d.gross_paise - (d.concession_paise || 0))), 0);
-  const dynamicPaidPaise = filteredPayments.reduce((sum, p) => sum + (p.amount_paise || 0), 0);
-  const dynamicBalancePaise = activeDues.reduce((sum, d) => sum + (d.balance_paise || 0), 0);
-  const dynamicDiscountsPaise = concessions
-    .filter((c: any) => c.status === "active" || c.status === "approved")
-    .reduce((sum: number, c: any) => sum + (c.applied_discount_paise || c.amount_paise || 0), 0);
-
-  const invoicesCount = activeDues.length;
-  const paymentsCount = filteredPayments.length;
-  const pendingCount = activeDues.filter(d => (d.balance_paise || 0) > 0).length;
-  const concessionsCount = concessions.length;
-
-  const collectionRatePct = dynamicNetPaise > 0
-    ? Number(((dynamicPaidPaise / dynamicNetPaise) * 100).toFixed(1))
-    : (dynamicBilledPaise > 0 ? Number(((dynamicPaidPaise / dynamicBilledPaise) * 100).toFixed(1)) : 0);
+  // 3. Authoritative Financial Metrics Baseline & Aggregation
+  const activeDues = filteredDues.filter(d => d.status !== "cancelled" && d.status !== "waived");
+  const authSummary = computeAuthoritativeFinancialSummary({
+    dues: filteredDues,
+    credits: feeCredits,
+    receipts: filteredReceipts,
+    students,
+    academicYearId: targetYearId,
+    asOfDateStr: todayStr,
+  });
 
   const summary: FinancialSummaryCards = {
-    total_billed_paise: dynamicBilledPaise,
-    invoices_generated_count: invoicesCount,
+    total_billed_paise: authSummary.total_gross_billed_paise,
+    total_net_billed_paise: authSummary.total_net_billed_paise,
+    invoices_generated_count: authSummary.total_dues_count,
     billed_trend_pct: 0,
 
-    total_collected_paise: dynamicPaidPaise,
-    payments_received_count: paymentsCount,
+    total_collected_paise: authSummary.total_collected_paise,
+    payments_received_count: filteredReceipts.length,
     collected_trend_pct: 0,
 
-    outstanding_dues_paise: dynamicBalancePaise,
-    invoices_pending_count: pendingCount,
+    outstanding_dues_paise: authSummary.net_outstanding_paise,
+    invoices_pending_count: authSummary.pending_dues_count,
     outstanding_trend_pct: 0,
 
-    total_discounts_paise: dynamicDiscountsPaise,
-    concessions_applied_count: concessionsCount,
+    total_discounts_paise: authSummary.total_concessions_paise,
+    concessions_applied_count: concessions.length > 0 ? concessions.length : activeDues.filter(d => (d.concession_paise || 0) > 0).length,
     discounts_trend_pct: 0,
 
-    collection_rate_pct: collectionRatePct,
+    collection_rate_pct: authSummary.collection_rate_pct,
     collection_rate_trend_pct: 0,
   };
 
-  // 4. Collection Trends
-  const monthLabels = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
-  const trends: CollectionTrendPoint[] = monthLabels.map(lbl => ({
-    label: lbl,
-    key: lbl.toLowerCase(),
-    billed_paise: 0,
-    collected_paise: 0,
-    outstanding_paise: 0,
-    collection_rate_pct: 0,
-  }));
+  // 4. Collection Trends (Monthly aggregation for standard academic year Apr - Mar)
+  const monthConfigs = [
+    { label: "Apr", monthNum: 4 },
+    { label: "May", monthNum: 5 },
+    { label: "Jun", monthNum: 6 },
+    { label: "Jul", monthNum: 7 },
+    { label: "Aug", monthNum: 8 },
+    { label: "Sep", monthNum: 9 },
+    { label: "Oct", monthNum: 10 },
+    { label: "Nov", monthNum: 11 },
+    { label: "Dec", monthNum: 12 },
+    { label: "Jan", monthNum: 1 },
+    { label: "Feb", monthNum: 2 },
+    { label: "Mar", monthNum: 3 },
+  ];
+
+  const trends: CollectionTrendPoint[] = monthConfigs.map(({ label, monthNum }) => {
+    const padM = String(monthNum).padStart(2, "0");
+    let billedPaise = 0;
+    let collectedPaise = 0;
+    let pendingPaise = 0;
+
+    for (const d of activeDues) {
+      if (d.due_date) {
+        const parts = d.due_date.split("-");
+        if (parts[1] === padM) {
+          billedPaise += d.gross_paise || (d.net_paise + (d.concession_paise || 0)) || 0;
+          pendingPaise += d.balance_paise || 0;
+        }
+      }
+    }
+
+    for (const r of filteredReceipts) {
+      if (r.receipt_date) {
+        const parts = r.receipt_date.split("-");
+        if (parts[1] === padM) {
+          collectedPaise += Number(r.total_paise) || 0;
+        }
+      }
+    }
+
+    const rate = billedPaise > 0 ? Number(((collectedPaise / billedPaise) * 100).toFixed(1)) : 0;
+
+    return {
+      label,
+      key: label.toLowerCase(),
+      billed_paise: billedPaise,
+      collected_paise: collectedPaise,
+      outstanding_paise: pendingPaise,
+      collection_rate_pct: Math.min(100, Math.max(0, rate)),
+    };
+  });
 
   // 5. Fee Collection by Payment Method
   const methodTotals: Record<string, { amount: number; count: number }> = {
@@ -385,6 +443,7 @@ export async function getFeeReportsDashboardData(
     methodTotals[m].count += 1;
   }
 
+  const dynamicPaidPaise = authSummary.total_collected_paise;
   const paymentMethods: PaymentMethodBreakdown[] = [
     { method: "upi", label: "UPI", amount_paise: methodTotals.upi.amount, count: methodTotals.upi.count, percentage: dynamicPaidPaise > 0 ? Number(((methodTotals.upi.amount / dynamicPaidPaise) * 100).toFixed(1)) : 0, color: "#10B981" },
     { method: "cash", label: "Cash", amount_paise: methodTotals.cash.amount, count: methodTotals.cash.count, percentage: dynamicPaidPaise > 0 ? Number(((methodTotals.cash.amount / dynamicPaidPaise) * 100).toFixed(1)) : 0, color: "#06B6D4" },
@@ -394,7 +453,7 @@ export async function getFeeReportsDashboardData(
   ];
   const totalCollectedForMethodsPaise = dynamicPaidPaise;
 
-  // 6. Class-wise Collection Summary from real dues
+  // 6. Class-wise Collection Summary from real active dues
   const classSummaryMap = new Map<string, ClassCollectionSummary>();
   for (const c of classes) {
     classSummaryMap.set(c.id, {
@@ -415,8 +474,7 @@ export async function getFeeReportsDashboardData(
     }
   }
 
-  const duesByStudentInClass = new Set<string>();
-  for (const d of filteredDues) {
+  for (const d of activeDues) {
     const std = studentMap.get(d.student_id);
     if (!std || !std.class_id) continue;
     let entry = classSummaryMap.get(std.class_id);
@@ -433,12 +491,20 @@ export async function getFeeReportsDashboardData(
       };
       classSummaryMap.set(std.class_id, entry);
     }
-    entry.total_billed_paise += d.gross_paise || 0;
+    entry.total_billed_paise += d.gross_paise || (d.net_paise + (d.concession_paise || 0)) || 0;
     entry.collected_paise += d.paid_paise || 0;
-    entry.outstanding_paise += d.balance_paise || 0;
-    if ((d.balance_paise || 0) > 0 && !duesByStudentInClass.has(`${std.class_id}_${d.student_id}`)) {
-      duesByStudentInClass.add(`${std.class_id}_${d.student_id}`);
-      entry.students_with_dues_count++;
+  }
+
+  // Calculate net outstanding per class from authoritative student breakdown
+  for (const [studentId, studentBreakdown] of authSummary.studentsMap.entries()) {
+    const std = studentMap.get(studentId);
+    if (!std || !std.class_id) continue;
+    const entry = classSummaryMap.get(std.class_id);
+    if (entry) {
+      entry.outstanding_paise += studentBreakdown.net_pending_paise;
+      if (studentBreakdown.net_pending_paise > 0) {
+        entry.students_with_dues_count++;
+      }
     }
   }
 
@@ -460,7 +526,7 @@ export async function getFeeReportsDashboardData(
     "90_plus": { amount: 0, count: 0 },
   };
 
-  for (const d of filteredDues) {
+  for (const d of activeDues) {
     if ((d.balance_paise || 0) <= 0) continue;
     const dueDate = new Date(d.due_date);
     const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -491,43 +557,29 @@ export async function getFeeReportsDashboardData(
     { bucket: "90_plus", label: "90+ Days", amount_paise: agingBuckets["90_plus"].amount, invoice_count: agingBuckets["90_plus"].count, color: "#991B1B" },
   ];
 
-  // 8. Top Students with Outstanding Dues
-  const studentDuesAgg = new Map<string, { billed: number; paid: number; balance: number; dueDate: string; isOverdue: boolean }>();
-  for (const d of filteredDues) {
-    if ((d.balance_paise || 0) <= 0) continue;
-    let sAgg = studentDuesAgg.get(d.student_id);
-    const isOvd = d.due_date < todayStr;
-    if (!sAgg) {
-      sAgg = { billed: 0, paid: 0, balance: 0, dueDate: d.due_date, isOverdue: isOvd };
-      studentDuesAgg.set(d.student_id, sAgg);
-    }
-    sAgg.billed += d.gross_paise || 0;
-    sAgg.paid += d.paid_paise || 0;
-    sAgg.balance += d.balance_paise || 0;
-    if (isOvd) sAgg.isOverdue = true;
-  }
-
-  const sortedStudentIds = Array.from(studentDuesAgg.entries())
-    .sort((a, b) => b[1].balance - a[1].balance)
+  // 8. Top Students with Outstanding Dues (Directly from Authoritative Student Breakdown)
+  const topStudentsList = Array.from(authSummary.studentsMap.values())
+    .filter((s) => s.net_pending_paise > 0)
+    .sort((a, b) => b.net_pending_paise - a.net_pending_paise)
     .slice(0, 10);
 
-  const topOutstandingStudents: TopOutstandingStudent[] = sortedStudentIds.map(([sId, agg]) => {
-    const s = studentMap.get(sId);
+  const topOutstandingStudents: TopOutstandingStudent[] = topStudentsList.map((sBreakdown) => {
+    const s = studentMap.get(sBreakdown.student_id);
     const fullName = s ? `${s.first_name || ""} ${s.last_name || ""}`.trim() || "Student" : "Student";
     const initials = fullName.split(" ").filter(Boolean).map(p => p[0]).slice(0, 2).join("").toUpperCase() || "ST";
     const cName = s && s.class_id ? classMap.get(s.class_id)?.name || "Class" : "Class";
 
     return {
-      student_id: sId,
+      student_id: sBreakdown.student_id,
       student_name: fullName,
       admission_no: s?.admission_no || "—",
       initials,
       class_name: cName,
-      total_billed_paise: agg.billed,
-      paid_amount_paise: agg.paid,
-      balance_due_paise: agg.balance,
-      due_date: formatDisplayDate(agg.dueDate),
-      status: agg.isOverdue ? "Overdue" : "Due Soon",
+      total_billed_paise: sBreakdown.gross_billed_paise,
+      paid_amount_paise: sBreakdown.paid_paise,
+      balance_due_paise: sBreakdown.net_pending_paise,
+      due_date: formatDisplayDate(sBreakdown.earliest_due_date || ""),
+      status: sBreakdown.net_overdue_paise > 0 ? "Overdue" : "Due Soon",
     };
   });
 
@@ -874,6 +926,12 @@ export async function getOutstandingReport(
   const parents = lsGet<any>(`myzkool_parents_${schoolId}`);
   const followups = lsGet<any>(`myzkool_fee_followups_${schoolId}`);
 
+  const studentMap = new Map<string, any>(students.map((st: any) => [st.id, st]));
+  const classMap = new Map<string, any>(classes.map((cl: any) => [cl.id, cl]));
+  const sectionMap = new Map<string, any>(sections.map((sc: any) => [sc.id, sc]));
+  const studentParentMap = new Map<string, any>(studentParents.map((p: any) => [p.student_id, p]));
+  const parentMap = new Map<string, any>(parents.map((pr: any) => [pr.id, pr]));
+
   const studentDuesMap = new Map<string, StudentDue[]>();
   for (const d of dues) {
     if (filters.academic_year_id && d.academic_year_id !== filters.academic_year_id) continue;
@@ -886,17 +944,17 @@ export async function getOutstandingReport(
   const rows: OutstandingReportRow[] = [];
 
   for (const [studentId, sDues] of studentDuesMap.entries()) {
-    const s = students.find((st: any) => st.id === studentId);
+    const s = studentMap.get(studentId);
     if (!s || s.deleted_at) continue;
 
     if (filters.class_id && s.class_id !== filters.class_id) continue;
     if (filters.section_id && s.section_id !== filters.section_id) continue;
 
-    const c = classes.find((cl: any) => cl.id === s.class_id);
-    const sec = sections.find((sc: any) => sc.id === s.section_id);
+    const c = classMap.get(s.class_id);
+    const sec = sectionMap.get(s.section_id);
 
-    const sp = studentParents.find((p: any) => p.student_id === studentId);
-    const parent = sp ? parents.find((pr: any) => pr.id === sp.parent_id) : null;
+    const sp = studentParentMap.get(studentId);
+    const parent = sp ? parentMap.get(sp.parent_id) : null;
 
     const totalGross = sDues.reduce((sum, d) => sum + (d.gross_paise || 0), 0);
     const totalConcession = sDues.reduce((sum, d) => sum + (d.concession_paise || 0), 0);
@@ -949,11 +1007,12 @@ export async function getDayBookReport(
 
   const payments = lsGet<FeePayment>(`myzkool_fee_payments_${schoolId}`);
   const students = lsGet<any>(`myzkool_students_${schoolId}`);
+  const studentMap = new Map<string, any>(students.map((st: any) => [st.id, st]));
 
   const rows: DayBookReportRow[] = [];
 
   for (const r of receipts) {
-    const s = students.find((st: any) => st.id === r.student_id);
+    const s = studentMap.get(r.student_id);
     const rPayments = payments.filter(p => p.receipt_id === r.id);
 
     for (const p of rPayments) {
@@ -976,7 +1035,7 @@ export async function getDayBookReport(
     .filter((rf: any) => rf.paid_at?.startsWith(businessDate) && rf.status === "paid");
 
   for (const rf of refunds) {
-    const s = students.find((st: any) => st.id === rf.student_id);
+    const s = studentMap.get(rf.student_id);
     rows.push({
       entry_id: rf.id,
       business_date: businessDate,

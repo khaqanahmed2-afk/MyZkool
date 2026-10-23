@@ -33,8 +33,8 @@ export const FAQ: React.FC = () => {
             const isOpen = openIndex === idx;
             return (
               <div
-                key={idx}
-                className="bg-white rounded-2xl border border-[#E6EAF3] overflow-hidden shadow-xs transition-all"
+                key={faq.question}
+                className="bg-white rounded-2xl border border-[#E6EAF3] overflow-hidden shadow-xs transition-colors"
               >
                 <button
                   onClick={() => toggle(idx)}

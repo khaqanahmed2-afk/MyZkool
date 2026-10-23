@@ -1,16 +1,11 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
-  FileText,
   Search,
   Plus,
   Download,
   Eye,
-  Printer,
   Send,
   CreditCard,
-  Ban,
-  Calendar,
   AlertCircle,
   CheckCircle2,
   Clock,
@@ -26,31 +21,16 @@ import {
   IndianRupee,
   Receipt,
   Wallet,
-  AlertTriangle,
   Filter,
-  CheckSquare,
-  Bus,
-  Phone,
   MessageSquare,
-  Share2,
 } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
-import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
-import { formatPaise } from "../../../lib/amountInWords";
-import { generateInvoiceHTML } from "../../../lib/invoiceTemplate";
-import {
-  getSchoolInvoices,
-  cancelInvoice,
-  sendInvoiceToParent,
-} from "../../../services/invoiceService";
 import { getClassesWithSections } from "../../../services/classSectionService";
 import { getFeeTerms } from "../../../services/feeSetupService";
 import {
   getStudentFeeSummaries,
   exportStudentFeeCSV,
   getWhatsAppFeeMessage,
-  generateStudentLedgerHTML,
-  getStudentLedgerDetails,
 } from "../../../services/studentFeeLedgerService";
 import { loadDuesAndRemindersData, DEFAULT_REMINDER_TEMPLATES } from "../../../services/duesRemindersService";
 import type {
@@ -59,19 +39,11 @@ import type {
   StudentFeeFilterOptions,
   StudentFeeStatus,
 } from "../../../types/studentFeeLedger";
-import type {
-  StudentInvoice,
-  InvoiceSummaryMetrics,
-  InvoiceFilters,
-  FeeTerm,
-} from "../../../types/fees";
+import type { FeeTerm } from "../../../types/fees";
 
 // Modals and Drawers
-import { CreateInvoiceDrawer } from "../../../components/admin/fees/CreateInvoiceDrawer";
 import { BulkGenerateModal } from "../../../components/admin/fees/BulkGenerateModal";
 import { ImportInvoicesModal } from "../../../components/admin/fees/ImportInvoicesModal";
-import { InvoiceDetailsModal } from "../../../components/admin/fees/InvoiceDetailsModal";
-import { CancelInvoiceModal } from "../../../components/admin/fees/CancelInvoiceModal";
 import { CollectFeeDrawer } from "../../../components/admin/fees/CollectFeeDrawer";
 import { SendRemindersDrawer } from "../../../components/admin/fees/SendRemindersDrawer";
 import { StudentFeeLedgerDrawer } from "../../../components/admin/fees/StudentFeeLedgerDrawer";
@@ -131,18 +103,13 @@ function getAvatarColor(name: string): string {
 
 export default function InvoicesPage() {
   const { school, profile } = useAuth() as any;
-  const navigate = useNavigate();
   const schoolId = school?.id || "";
   const schoolName = school?.name || "School";
-
-  // Tab: 'student-wise' vs 'invoice-wise' (Student-wise is active default)
-  const [activeTab, setActiveTab] = useState<"student-wise" | "invoice-wise">("student-wise");
-
   // ───────────────────────────────────────────────────────────────────────────
   // STUDENT-WISE STATE
   // ───────────────────────────────────────────────────────────────────────────
   const [students, setStudents] = useState<StudentFeeSummary[]>([]);
-  const [allFilteredStudents, setAllFilteredStudents] = useState<StudentFeeSummary[]>([]);
+  const allFilteredStudentsRef = useRef<StudentFeeSummary[]>([]);
   const [studentMetrics, setStudentMetrics] = useState<StudentFeeSummaryMetrics>({
     total_students_with_records: 0,
     total_fees_paise: 0,
@@ -169,7 +136,7 @@ export default function InvoicesPage() {
   const [studentSectionId, setStudentSectionId] = useState<string>("all");
   const [studentFeeStatus, setStudentFeeStatus] = useState<string>("all");
   const [studentTransport, setStudentTransport] = useState<"all" | "transport_only" | "non_transport">("all");
-  const [quickPill, setQuickPill] = useState<"all" | "with_dues" | "overdue" | "fully_paid" | "partially_paid" | "upcoming">("all");
+  const [quickPill, setQuickPill] = useState<"all" | "structure_assigned" | "with_invoices" | "with_dues" | "overdue" | "fully_paid" | "partially_paid" | "upcoming" | "transport_only">("with_invoices");
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   const [dueDateFrom, setDueDateFrom] = useState<string>("");
   const [dueDateTo, setDueDateTo] = useState<string>("");
@@ -194,38 +161,9 @@ export default function InvoicesPage() {
   const [isSendRemindersOpen, setIsSendRemindersOpen] = useState(false);
   const [reminderRows, setReminderRows] = useState<any[]>([]);
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // INVOICE-WISE STATE (Existing preserved)
-  // ───────────────────────────────────────────────────────────────────────────
-  const [invoices, setInvoices] = useState<StudentInvoice[]>([]);
-  const [invoiceMetrics, setInvoiceMetrics] = useState<InvoiceSummaryMetrics>({
-    totalInvoicedPaise: 0,
-    totalPaidPaise: 0,
-    outstandingPaise: 0,
-    overdueCount: 0,
-    overduePaise: 0,
-    invoiceCount: 0,
-    paidCount: 0,
-    pendingCount: 0,
-  });
-  const [invoiceLoading, setInvoiceLoading] = useState<boolean>(false);
-  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
-  const [invoiceSearch, setInvoiceSearch] = useState<string>("");
-  const [invoiceClassId, setInvoiceClassId] = useState<string>("all");
-  const [invoiceSectionId, setInvoiceSectionId] = useState<string>("all");
-  const [invoiceStatus, setInvoiceStatus] = useState<string>("all");
-  const [invoiceTermId, setInvoiceTermId] = useState<string>("all");
-  const [invoicePage, setInvoicePage] = useState<number>(1);
-  const [invoicePageSize, setInvoicePageSize] = useState<number>(8);
-  const [invoiceTotalCount, setInvoiceTotalCount] = useState<number>(0);
-  const [invoiceTotalPages, setInvoiceTotalPages] = useState<number>(1);
-
-  // Modals for Invoices
-  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  // Modals
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [selectedInvoiceForDetail, setSelectedInvoiceForDetail] = useState<StudentInvoice | null>(null);
-  const [invoiceToCancel, setInvoiceToCancel] = useState<StudentInvoice | null>(null);
 
   // Common Metadata
   const [academicYears, setAcademicYears] = useState<any[]>([]);
@@ -236,7 +174,6 @@ export default function InvoicesPage() {
 
   // Global Alerts
   const [alertSuccess, setAlertSuccess] = useState<string | null>(null);
-  const [alertError, setAlertError] = useState<string | null>(null);
 
   // Close menus on outside click
   useEffect(() => {
@@ -274,7 +211,7 @@ export default function InvoicesPage() {
     // Fee Terms
     getFeeTerms(schoolId, selectedYearId || undefined)
       .then(({ terms: t }) => setTerms(t || []))
-      .catch(() => {});
+      .catch(() => { });
   }, [schoolId, selectedYearId]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -301,7 +238,7 @@ export default function InvoicesPage() {
     try {
       const res = await getStudentFeeSummaries(schoolId, filters);
       setStudents(res.students);
-      setAllFilteredStudents(res.allFilteredStudents);
+      allFilteredStudentsRef.current = res.allFilteredStudents;
       setStudentMetrics(res.metrics);
       setStudentTotalCount(res.totalCount);
       setStudentTotalPages(res.totalPages);
@@ -326,57 +263,8 @@ export default function InvoicesPage() {
   ]);
 
   useEffect(() => {
-    if (activeTab === "student-wise") {
-      loadStudentFeeSummaries();
-    }
-  }, [activeTab, loadStudentFeeSummaries]);
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // FETCH INVOICE-WISE RECORDS
-  // ───────────────────────────────────────────────────────────────────────────
-  const loadInvoices = useCallback(async () => {
-    if (!schoolId) return;
-    setInvoiceLoading(true);
-
-    const filters: InvoiceFilters = {
-      academic_year_id: selectedYearId || undefined,
-      class_id: invoiceClassId !== "all" ? invoiceClassId : undefined,
-      section_id: invoiceSectionId !== "all" ? invoiceSectionId : undefined,
-      term_id: invoiceTermId !== "all" ? invoiceTermId : undefined,
-      status: invoiceStatus !== "all" ? (invoiceStatus as any) : undefined,
-      search: invoiceSearch.trim() || undefined,
-      page: invoicePage,
-      pageSize: invoicePageSize,
-    };
-
-    try {
-      const res = await getSchoolInvoices(schoolId, filters);
-      setInvoices(res.invoices);
-      setInvoiceMetrics(res.metrics);
-      setInvoiceTotalCount(res.totalCount);
-      setInvoiceTotalPages(res.totalPages);
-    } catch (err) {
-      console.error("Error loading invoices:", err);
-    } finally {
-      setInvoiceLoading(false);
-    }
-  }, [
-    schoolId,
-    selectedYearId,
-    invoiceClassId,
-    invoiceSectionId,
-    invoiceStatus,
-    invoiceTermId,
-    invoiceSearch,
-    invoicePage,
-    invoicePageSize,
-  ]);
-
-  useEffect(() => {
-    if (activeTab === "invoice-wise") {
-      loadInvoices();
-    }
-  }, [activeTab, loadInvoices]);
+    loadStudentFeeSummaries();
+  }, [loadStudentFeeSummaries]);
 
   // Load reminder rows for SendRemindersDrawer
   const handleOpenReminders = async () => {
@@ -411,10 +299,10 @@ export default function InvoicesPage() {
   const handleExportStudentCSV = () => {
     const targetList =
       selectedStudentIds.size > 0
-        ? allFilteredStudents.filter((s) => selectedStudentIds.has(s.student_id))
-        : allFilteredStudents.length > 0
-        ? allFilteredStudents
-        : students;
+        ? allFilteredStudentsRef.current.filter((s) => selectedStudentIds.has(s.student_id))
+        : allFilteredStudentsRef.current.length > 0
+          ? allFilteredStudentsRef.current
+          : students;
 
     const csvData = exportStudentFeeCSV(targetList);
     const blob = new Blob([csvData], { type: "text/csv;charset=utf-8;" });
@@ -425,6 +313,7 @@ export default function InvoicesPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
     setAlertSuccess(`Exported fee ledger for ${targetList.length} students.`);
     setTimeout(() => setAlertSuccess(null), 3000);
   };
@@ -602,32 +491,6 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* ── 2. Primary Tab Switcher: Student-wise vs Invoice-wise ──────────── */}
-      <div className="flex items-center gap-6 border-b border-slate-200">
-        <button
-          type="button"
-          onClick={() => setActiveTab("student-wise")}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === "student-wise"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Student-wise
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("invoice-wise")}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === "invoice-wise"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Invoice-wise
-        </button>
-      </div>
-
       {/* Global Toast Alert */}
       {alertSuccess && (
         <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center justify-between">
@@ -635,30 +498,41 @@ export default function InvoicesPage() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span>{alertSuccess}</span>
           </div>
-          <button onClick={() => setAlertSuccess(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button aria-label="Close" onClick={() => setAlertSuccess(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* ─── TAB 1: STUDENT-WISE VIEW (PRIMARY UPGRADE) ───────────────────────── */}
-      {activeTab === "student-wise" && (
-        <div className="space-y-5">
+      {/* ─── STUDENT-WISE FEE MANAGEMENT ───────────────────────── */}
+      <div className="space-y-5">
           {/* ── 7 Financial Summary Cards ── */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {/* Card 1: Total Students with Fee Records */}
+            {/* Card 1: Total Enrolled Students */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
               <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
                 <Users className="w-4 h-4" />
               </div>
               <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {studentMetrics.total_students_with_records}
+                {studentMetrics.total_enrolled_count ?? studentMetrics.total_students_count}
               </div>
-              <div className="text-xs font-semibold text-slate-800">Total Students</div>
-              <div className="text-[11px] text-slate-400">with fee records</div>
+              <div className="text-xs font-semibold text-slate-800">Total Enrolled</div>
+              <div className="text-[11px] text-slate-400">across all classes</div>
             </div>
 
-            {/* Card 2: Total Fees for Academic Year */}
+            {/* Card 2: Structure Assigned (Fee-Eligible) */}
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+                {studentMetrics.structure_assigned_count ?? 0}
+              </div>
+              <div className="text-xs font-semibold text-slate-800">Structure Assigned</div>
+              <div className="text-[11px] text-indigo-600 font-medium">active fee structures</div>
+            </div>
+
+            {/* Card 3: Total Billed / Fees */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
               <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-2">
                 <IndianRupee className="w-4 h-4" />
@@ -666,11 +540,13 @@ export default function InvoicesPage() {
               <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
                 {formatINR(studentMetrics.total_fees_paise)}
               </div>
-              <div className="text-xs font-semibold text-slate-800">Total Fees</div>
-              <div className="text-[11px] text-slate-400">for 2026–2027</div>
+              <div className="text-xs font-semibold text-slate-800">Total Billed</div>
+              <div className="text-[11px] text-slate-400">
+                {studentMetrics.students_with_invoices_count ?? studentMetrics.total_students_with_records} with invoices
+              </div>
             </div>
 
-            {/* Card 3: Total Collected */}
+            {/* Card 4: Total Collected */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
               <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mb-2">
                 <Receipt className="w-4 h-4" />
@@ -680,11 +556,11 @@ export default function InvoicesPage() {
               </div>
               <div className="text-xs font-semibold text-slate-800">Total Collected</div>
               <div className="text-[11px] text-emerald-600 font-medium">
-                {studentMetrics.collection_percentage}% of total
+                {studentMetrics.collection_percentage}% collection
               </div>
             </div>
 
-            {/* Card 4: Total Pending */}
+            {/* Card 5: Total Pending */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
               <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-2">
                 <Wallet className="w-4 h-4" />
@@ -694,11 +570,11 @@ export default function InvoicesPage() {
               </div>
               <div className="text-xs font-semibold text-slate-800">Total Pending</div>
               <div className="text-[11px] text-amber-600 font-medium">
-                {studentMetrics.pending_percentage}% of total
+                {studentMetrics.with_dues_count} with dues
               </div>
             </div>
 
-            {/* Card 5: Overdue Amount */}
+            {/* Card 6: Overdue Amount */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
               <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-2">
                 <Clock className="w-4 h-4" />
@@ -708,35 +584,21 @@ export default function InvoicesPage() {
               </div>
               <div className="text-xs font-semibold text-slate-800">Overdue Amount</div>
               <div className="text-[11px] text-rose-600 font-medium">
-                {studentMetrics.overdue_percentage}% of total
-              </div>
-            </div>
-
-            {/* Card 6: Fully Paid */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-2">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {studentMetrics.fully_paid_count}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Fully Paid</div>
-              <div className="text-[11px] text-purple-600 font-medium">
-                {studentMetrics.fully_paid_percentage}% of students
+                {studentMetrics.overdue_count} overdue
               </div>
             </div>
 
             {/* Card 7: Students with Dues */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-2">
+              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-2">
                 <AlertCircle className="w-4 h-4" />
               </div>
               <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
                 {studentMetrics.with_dues_count}
               </div>
               <div className="text-xs font-semibold text-slate-800">Students with Dues</div>
-              <div className="text-[11px] text-rose-600 font-medium">
-                {studentMetrics.with_dues_percentage}% of students
+              <div className="text-[11px] text-purple-600 font-medium">
+                {studentMetrics.with_dues_percentage}% of total
               </div>
             </div>
           </div>
@@ -747,7 +609,7 @@ export default function InvoicesPage() {
               {/* Search Input */}
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
+                <input aria-label="Search students"
                   type="text"
                   placeholder="Search by student name, admission no., parent name or phone..."
                   value={studentSearch}
@@ -755,10 +617,10 @@ export default function InvoicesPage() {
                     setStudentSearch(e.target.value);
                     setStudentPage(1);
                   }}
-                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors placeholder:text-slate-400"
                 />
                 {studentSearch && (
-                  <button
+                  <button aria-label="Close"
                     onClick={() => setStudentSearch("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
@@ -769,7 +631,7 @@ export default function InvoicesPage() {
 
               {/* Class Filter */}
               <div className="flex items-center gap-2">
-                <select
+                <select aria-label="Class Filter"
                   value={studentClassId}
                   onChange={(e) => {
                     setStudentClassId(e.target.value);
@@ -786,7 +648,7 @@ export default function InvoicesPage() {
                 </select>
 
                 {/* Section Filter */}
-                <select
+                <select aria-label="Section Filter"
                   value={studentSectionId}
                   onChange={(e) => {
                     setStudentSectionId(e.target.value);
@@ -805,7 +667,7 @@ export default function InvoicesPage() {
                 </select>
 
                 {/* Fee Status Filter */}
-                <select
+                <select aria-label="Fee Status Filter"
                   value={studentFeeStatus}
                   onChange={(e) => {
                     setStudentFeeStatus(e.target.value);
@@ -823,7 +685,7 @@ export default function InvoicesPage() {
                 </select>
 
                 {/* Transport Filter */}
-                <select
+                <select aria-label="Transport Filter"
                   value={studentTransport}
                   onChange={(e) => {
                     setStudentTransport(e.target.value as any);
@@ -840,11 +702,10 @@ export default function InvoicesPage() {
                 <button
                   type="button"
                   onClick={() => setIsMoreFiltersOpen(!isMoreFiltersOpen)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-                    isMoreFiltersOpen || dueDateFrom || dueDateTo
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${isMoreFiltersOpen || dueDateFrom || dueDateTo
                       ? "bg-blue-50 border-blue-200 text-blue-700"
                       : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                  }`}
+                    }`}
                 >
                   <Filter className="w-3.5 h-3.5" />
                   <span>More Filters</span>
@@ -857,7 +718,7 @@ export default function InvoicesPage() {
               <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-4 text-xs">
                 <div className="flex items-center gap-2">
                   <span className="text-slate-500 font-medium">Due Date From:</span>
-                  <input
+                  <input aria-label="Select date"
                     type="date"
                     value={dueDateFrom}
                     onChange={(e) => setDueDateFrom(e.target.value)}
@@ -866,7 +727,7 @@ export default function InvoicesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-slate-500 font-medium">To:</span>
-                  <input
+                  <input aria-label="Select date"
                     type="date"
                     value={dueDateTo}
                     onChange={(e) => setDueDateTo(e.target.value)}
@@ -892,18 +753,54 @@ export default function InvoicesPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setQuickPill("all");
+                  setQuickPill("with_invoices");
                   setStudentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "all"
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  quickPill === "with_invoices"
                     ? "bg-blue-50 text-blue-700 border border-blue-200 font-bold"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
                 }`}
               >
-                <span>All Students</span>
+                <span>With Invoices</span>
                 <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold">
-                  {studentMetrics.total_students_with_records}
+                  {studentMetrics.students_with_invoices_count || studentMetrics.total_students_with_records}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickPill("structure_assigned");
+                  setStudentPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  quickPill === "structure_assigned"
+                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+                }`}
+              >
+                <span>Structure Assigned</span>
+                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold text-indigo-700">
+                  {studentMetrics.structure_assigned_count}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickPill("transport_only");
+                  setStudentPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  quickPill === "transport_only"
+                    ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+                }`}
+              >
+                <span>Transport Only</span>
+                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold text-amber-700">
+                  {studentMetrics.transport_only_count}
                 </span>
               </button>
 
@@ -913,7 +810,7 @@ export default function InvoicesPage() {
                   setQuickPill("with_dues");
                   setStudentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
                   quickPill === "with_dues"
                     ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
@@ -931,7 +828,7 @@ export default function InvoicesPage() {
                   setQuickPill("overdue");
                   setStudentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
                   quickPill === "overdue"
                     ? "bg-rose-50 text-rose-700 border border-rose-200 font-bold"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
@@ -949,7 +846,7 @@ export default function InvoicesPage() {
                   setQuickPill("fully_paid");
                   setStudentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
                   quickPill === "fully_paid"
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
@@ -964,36 +861,18 @@ export default function InvoicesPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setQuickPill("partially_paid");
+                  setQuickPill("all");
                   setStudentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "partially_paid"
-                    ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  quickPill === "all"
+                    ? "bg-slate-200 text-slate-800 border border-slate-300 font-bold"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
                 }`}
               >
-                <span>Partially Paid</span>
+                <span>All Enrolled</span>
                 <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold">
-                  {studentMetrics.partially_paid_count}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("upcoming");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "upcoming"
-                    ? "bg-sky-50 text-sky-700 border border-sky-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>Upcoming</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold">
-                  {studentMetrics.upcoming_count}
+                  {studentMetrics.total_enrolled_count || studentMetrics.total_students_count}
                 </span>
               </button>
             </div>
@@ -1005,38 +884,39 @@ export default function InvoicesPage() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-[#F8FAFC] border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
-                    <th className="py-3.5 px-4 w-10">
-                      <input
+                    <th className="py-3.5 px-3 w-10">
+                      <input aria-label="Select all"
                         type="checkbox"
                         checked={students.length > 0 && selectedStudentIds.size === students.length}
                         onChange={(e) => handleSelectAllStudents(e.target.checked)}
                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Student</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Class / Section</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Parent / Contact</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Total Fee</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Paid</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Pending</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Overdue</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Next Due Date</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600">Status</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-600 text-right">Actions</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600">Student</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600">Class / Section</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600">Academic Year & Structure</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Total Billed</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Discounts</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Amount Paid</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Outstanding</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Overdue</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-center">Next Due Date</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-center">Current Status</th>
+                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Actions</th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
                   {studentLoading ? (
                     <tr>
-                      <td colSpan={11} className="py-12 text-center text-slate-400">
+                      <td colSpan={12} className="py-12 text-center text-slate-400">
                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
                         <span>Loading student fee records...</span>
                       </td>
                     </tr>
                   ) : students.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="py-12 text-center text-slate-500">
+                      <td colSpan={12} className="py-12 text-center text-slate-500">
                         <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                         <div className="font-semibold text-slate-700">No students found matching your criteria.</div>
                         <p className="text-xs text-slate-400 mt-1">Try modifying your search or clearing active filters.</p>
@@ -1046,17 +926,18 @@ export default function InvoicesPage() {
                     students.map((std) => {
                       const isSelected = selectedStudentIds.has(std.student_id);
                       const avatarCls = getAvatarColor(std.student_name);
+                      const grossBilled = std.total_billed_paise || std.total_applicable_paise;
+                      const discounts = std.total_concession_paise || 0;
 
                       return (
                         <tr
                           key={std.student_id}
-                          className={`hover:bg-slate-50/70 transition-colors group ${
-                            isSelected ? "bg-blue-50/40" : ""
-                          }`}
+                          className={`hover:bg-slate-50/70 transition-colors group ${isSelected ? "bg-blue-50/40" : ""
+                            }`}
                         >
                           {/* Checkbox */}
-                          <td className="py-3.5 px-4">
-                            <input
+                          <td className="py-3.5 px-3">
+                            <input aria-label="Select item"
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => handleToggleSelectStudent(std.student_id)}
@@ -1065,10 +946,10 @@ export default function InvoicesPage() {
                           </td>
 
                           {/* Student Info */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-3">
+                          <td className="py-3.5 px-3">
+                            <div className="flex items-center gap-2.5">
                               <div
-                                className={`w-9 h-9 rounded-full font-bold flex items-center justify-center text-xs shrink-0 ${avatarCls}`}
+                                className={`w-8 h-8 rounded-full font-bold flex items-center justify-center text-xs shrink-0 ${avatarCls}`}
                               >
                                 {std.avatar_url ? (
                                   <img
@@ -1081,7 +962,7 @@ export default function InvoicesPage() {
                                 )}
                               </div>
                               <div>
-                                <div
+                                <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                                   onClick={() => setDrawerStudentId(std.student_id)}
                                   className="font-bold text-slate-900 hover:text-blue-600 cursor-pointer transition-colors"
                                 >
@@ -1095,67 +976,101 @@ export default function InvoicesPage() {
                           </td>
 
                           {/* Class / Section */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 px-3">
                             <div className="font-semibold text-slate-800">{std.class_name}</div>
                             <div className="text-[11px] text-slate-500">{std.section_name}</div>
                           </td>
 
-                          {/* Parent / Contact */}
-                          <td className="py-3.5 px-4">
-                            <div className="font-semibold text-slate-800">{std.parent_name}</div>
-                            <div className="text-[11px] text-slate-500 font-mono">{std.parent_phone}</div>
+                          {/* Academic Year & Fee Structure */}
+                          <td className="py-3.5 px-3">
+                            <div className="font-semibold text-slate-800 text-[11px]">{std.academic_year_name || "2026–2027"}</div>
+                            {std.has_fee_structure ? (
+                              <div className="text-[11px] text-blue-700 font-medium truncate max-w-[170px]" title={std.applicable_fee_structure_name}>
+                                {std.applicable_fee_structure_name}
+                              </div>
+                            ) : std.is_transport_only ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                Transport Only
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">
+                                {std.applicable_fee_structure_name || "No Structure"}
+                              </span>
+                            )}
                           </td>
 
-                          {/* Total Fee */}
-                          <td className="py-3.5 px-4 font-bold text-slate-900 tabular-nums">
-                            {formatINR(std.total_applicable_paise)}
+                          {/* Total Billed */}
+                          <td className="py-3.5 px-3 font-bold text-slate-900 tabular-nums text-right">
+                            {formatINR(grossBilled)}
                           </td>
 
-                          {/* Paid */}
-                          <td className="py-3.5 px-4 font-semibold text-emerald-600 tabular-nums">
+                          {/* Discounts & Adjustments */}
+                          <td className="py-3.5 px-3 font-semibold text-purple-700 tabular-nums text-right">
+                            {discounts > 0 ? (
+                              <span>-{formatINR(discounts)}</span>
+                            ) : (
+                              <span className="text-slate-400 font-normal">—</span>
+                            )}
+                          </td>
+
+                          {/* Amount Paid */}
+                          <td className="py-3.5 px-3 font-semibold text-emerald-600 tabular-nums text-right">
                             {formatINR(std.total_paid_paise)}
                           </td>
 
-                          {/* Pending */}
-                          <td className="py-3.5 px-4 font-bold text-amber-600 tabular-nums">
-                            {formatINR(std.total_pending_paise)}
+                          {/* Outstanding Balance */}
+                          <td className="py-3.5 px-3 tabular-nums text-right">
+                            <div className={`font-bold ${std.total_pending_paise > 0 ? "text-amber-700" : "text-slate-600"}`}>
+                              {formatINR(std.total_pending_paise)}
+                            </div>
+                            {(std.advance_credit_paise || 0) > 0 && (
+                              <div className="text-[10px] text-sky-600 font-semibold" title="Unallocated advance credit available">
+                                -{formatINR(std.advance_credit_paise || 0)} credit
+                              </div>
+                            )}
                           </td>
 
-                          {/* Overdue */}
-                          <td className="py-3.5 px-4 tabular-nums">
+                          {/* Overdue Balance */}
+                          <td className="py-3.5 px-3 tabular-nums text-right">
                             {std.total_overdue_paise > 0 ? (
                               <span className="font-bold text-rose-600">
                                 {formatINR(std.total_overdue_paise)}
                               </span>
                             ) : (
-                              <span className="text-slate-500 font-medium">₹0</span>
+                              <span className="text-slate-400 font-medium">₹0</span>
                             )}
                           </td>
 
                           {/* Next Due Date */}
-                          <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
-                            {formatDateDisplay(std.next_due_date)}
+                          <td className="py-3.5 px-3 text-slate-700 whitespace-nowrap text-center">
+                            {std.total_pending_paise === 0 ? (
+                              <span className="text-[11px] text-emerald-600 font-semibold">Cleared</span>
+                            ) : (
+                              formatDateDisplay(std.next_due_date)
+                            )}
                           </td>
 
-                          {/* Status */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
+                          {/* Current Status */}
+                          <td className="py-3.5 px-3 whitespace-nowrap text-center">
                             {renderStudentStatusBadge(std.fee_status)}
                           </td>
 
                           {/* Actions */}
-                          <td className="py-3.5 px-4 text-right">
+                          <td className="py-3.5 px-3 text-right">
                             <div className="flex items-center justify-end gap-1.5 relative">
                               <button
                                 type="button"
                                 onClick={() => setDrawerStudentId(std.student_id)}
-                                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                                title="Open Student Fee Ledger"
                               >
-                                View
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View</span>
                               </button>
 
                               {/* Three-dots menu */}
                               <div className="relative">
-                                <button
+                                <button aria-label="Three-dots menu"
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1239,7 +1154,7 @@ export default function InvoicesPage() {
 
               <div className="flex items-center gap-2">
                 {/* Previous */}
-                <button
+                <button aria-label="Previous"
                   type="button"
                   disabled={studentPage <= 1}
                   onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
@@ -1257,11 +1172,10 @@ export default function InvoicesPage() {
                         key={p}
                         type="button"
                         onClick={() => setStudentPage(p)}
-                        className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${
-                          studentPage === p
+                        className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${studentPage === p
                             ? "bg-blue-600 text-white font-bold"
                             : "hover:bg-slate-100 text-slate-700"
-                        }`}
+                          }`}
                       >
                         {p}
                       </button>
@@ -1273,11 +1187,10 @@ export default function InvoicesPage() {
                       <button
                         type="button"
                         onClick={() => setStudentPage(studentTotalPages)}
-                        className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${
-                          studentPage === studentTotalPages
+                        className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${studentPage === studentTotalPages
                             ? "bg-blue-600 text-white font-bold"
                             : "hover:bg-slate-100 text-slate-700"
-                        }`}
+                          }`}
                       >
                         {studentTotalPages}
                       </button>
@@ -1286,7 +1199,7 @@ export default function InvoicesPage() {
                 </div>
 
                 {/* Next */}
-                <button
+                <button aria-label="Next"
                   type="button"
                   disabled={studentPage >= studentTotalPages}
                   onClick={() => setStudentPage((p) => Math.min(studentTotalPages, p + 1))}
@@ -1296,7 +1209,7 @@ export default function InvoicesPage() {
                 </button>
 
                 {/* Page Size Select */}
-                <select
+                <select aria-label="Page Size Select"
                   value={studentPageSize}
                   onChange={(e) => {
                     setStudentPageSize(Number(e.target.value));
@@ -1313,171 +1226,6 @@ export default function InvoicesPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* ─── TAB 2: INVOICE-WISE VIEW (PRESERVED) ─────────────────────────────── */}
-      {activeTab === "invoice-wise" && (
-        <div className="space-y-5">
-          {/* Invoice Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {formatINR(invoiceMetrics.totalInvoicedPaise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Invoiced</div>
-              <div className="text-[11px] text-slate-400">{invoiceMetrics.invoiceCount} invoices</div>
-            </div>
-
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="text-xl font-bold text-emerald-700 tabular-nums font-display">
-                {formatINR(invoiceMetrics.totalPaidPaise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Collected</div>
-              <div className="text-[11px] text-emerald-600">{invoiceMetrics.paidCount} fully paid</div>
-            </div>
-
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="text-xl font-bold text-amber-700 tabular-nums font-display">
-                {formatINR(invoiceMetrics.outstandingPaise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Outstanding</div>
-              <div className="text-[11px] text-amber-600">{invoiceMetrics.pendingCount} pending</div>
-            </div>
-
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="text-xl font-bold text-rose-700 tabular-nums font-display">
-                {formatINR(invoiceMetrics.overduePaise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Overdue</div>
-              <div className="text-[11px] text-rose-600">{invoiceMetrics.overdueCount} overdue</div>
-            </div>
-          </div>
-
-          {/* Invoices Filter Bar */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search invoice number, student name, admission number..."
-                  value={invoiceSearch}
-                  onChange={(e) => {
-                    setInvoiceSearch(e.target.value);
-                    setInvoicePage(1);
-                  }}
-                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-
-              <select
-                value={invoiceClassId}
-                onChange={(e) => {
-                  setInvoiceClassId(e.target.value);
-                  setInvoicePage(1);
-                }}
-                className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700"
-              >
-                <option value="all">All Classes</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={invoiceStatus}
-                onChange={(e) => {
-                  setInvoiceStatus(e.target.value);
-                  setInvoicePage(1);
-                }}
-                className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700"
-              >
-                <option value="all">All Status</option>
-                <option value="paid">Paid</option>
-                <option value="partial">Partially Paid</option>
-                <option value="pending">Pending</option>
-                <option value="overdue">Overdue</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Invoices Table */}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#F8FAFC] border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-                  <tr>
-                    <th className="py-3 px-4">Invoice No</th>
-                    <th className="py-3 px-4">Student</th>
-                    <th className="py-3 px-4">Class</th>
-                    <th className="py-3 px-4">Billing Period</th>
-                    <th className="py-3 px-4">Due Date</th>
-                    <th className="py-3 px-4">Amount</th>
-                    <th className="py-3 px-4">Paid</th>
-                    <th className="py-3 px-4">Balance</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {invoiceLoading ? (
-                    <tr>
-                      <td colSpan={10} className="py-12 text-center text-slate-400">
-                        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
-                        <span>Loading invoices...</span>
-                      </td>
-                    </tr>
-                  ) : invoices.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="py-12 text-center text-slate-500">
-                        No invoices found.
-                      </td>
-                    </tr>
-                  ) : (
-                    invoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50/70">
-                        <td className="py-3 px-4 font-bold text-slate-900">{inv.invoice_no}</td>
-                        <td className="py-3 px-4 font-semibold text-slate-800">{inv.student_name}</td>
-                        <td className="py-3 px-4 text-slate-600">{inv.class_name}</td>
-                        <td className="py-3 px-4 text-slate-600">{inv.billing_period}</td>
-                        <td className="py-3 px-4 text-slate-600">{inv.due_date}</td>
-                        <td className="py-3 px-4 font-bold tabular-nums">{formatPaise(inv.total_paise)}</td>
-                        <td className="py-3 px-4 font-semibold text-emerald-600 tabular-nums">{formatPaise(inv.paid_paise)}</td>
-                        <td className="py-3 px-4 font-bold text-amber-600 tabular-nums">{formatPaise(inv.balance_paise)}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                              inv.status === "paid"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : inv.status === "overdue"
-                                ? "bg-rose-100 text-rose-700"
-                                : "bg-amber-100 text-amber-700"
-                            }`}
-                          >
-                            {inv.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedInvoiceForDetail(inv)}
-                            className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg"
-                          >
-                            View
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Slide-over Drawer: Student Fee Ledger ─────────────────────────────── */}
       <StudentFeeLedgerDrawer
@@ -1504,7 +1252,6 @@ export default function InvoicesPage() {
           setCollectStudentId(undefined);
           setAlertSuccess(`Payment recorded successfully! Receipt #${rcptNo} generated.`);
           loadStudentFeeSummaries();
-          loadInvoices();
         }}
         initialStudentId={collectStudentId}
         academicYearId={selectedYearId}
@@ -1523,10 +1270,10 @@ export default function InvoicesPage() {
           setAlertSuccess("Fee reminders successfully dispatched.");
           loadStudentFeeSummaries();
         }}
-        onOpenTemplates={() => {}}
+        onOpenTemplates={() => { }}
       />
 
-      {/* ── Modals: Bulk Generate, Import, Details, Cancel ───────────────────── */}
+      {/* ── Modals: Bulk Generate, Import ───────────────────────────────────── */}
       <BulkGenerateModal
         isOpen={isBulkModalOpen}
         onClose={() => setIsBulkModalOpen(false)}
@@ -1539,7 +1286,6 @@ export default function InvoicesPage() {
           setIsBulkModalOpen(false);
           setAlertSuccess("Invoices generated successfully.");
           loadStudentFeeSummaries();
-          loadInvoices();
         }}
       />
 
@@ -1551,41 +1297,8 @@ export default function InvoicesPage() {
           setIsImportModalOpen(false);
           setAlertSuccess("Fee records imported successfully.");
           loadStudentFeeSummaries();
-          loadInvoices();
         }}
       />
-
-      {selectedInvoiceForDetail && (
-        <InvoiceDetailsModal
-          isOpen={!!selectedInvoiceForDetail}
-          invoice={selectedInvoiceForDetail}
-          schoolBranding={{ name: schoolName }}
-          onClose={() => setSelectedInvoiceForDetail(null)}
-          onCollectPayment={(inv) => {
-            setSelectedInvoiceForDetail(null);
-            handleOpenCollect(inv.student_id);
-          }}
-          onCancelInvoice={(inv) => {
-            setSelectedInvoiceForDetail(null);
-            setInvoiceToCancel(inv);
-          }}
-        />
-      )}
-
-      {invoiceToCancel && (
-        <CancelInvoiceModal
-          isOpen={!!invoiceToCancel}
-          invoice={invoiceToCancel}
-          onClose={() => setInvoiceToCancel(null)}
-          onConfirmCancel={async (invoiceId, reason) => {
-            await cancelInvoice(schoolId, invoiceId, reason);
-            setInvoiceToCancel(null);
-            setAlertSuccess("Invoice voided successfully.");
-            loadStudentFeeSummaries();
-            loadInvoices();
-          }}
-        />
-      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Search,
@@ -70,7 +70,7 @@ export default function DuesRemindersPage() {
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [selectedYear, setSelectedYear] = useState<string>("2025–2026");
+  const [selectedYearId, setSelectedYearId] = useState<string>("");
   const [selectedClass, setSelectedClass] = useState<string>("all");
   const [selectedSection, setSelectedSection] = useState<string>("all");
   const [selectedDueStatus, setSelectedDueStatus] = useState<string>("all");
@@ -100,12 +100,13 @@ export default function DuesRemindersPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Load Data
-  const loadData = async () => {
+  const loadData = useCallback(async (targetYearId?: string) => {
     if (!schoolId) return;
     setLoading(true);
     try {
+      const yearToLoad = targetYearId !== undefined ? targetYearId : selectedYearId;
       const [res, tpls] = await Promise.all([
-        loadDuesAndRemindersData(schoolId),
+        loadDuesAndRemindersData(schoolId, { academicYearId: yearToLoad || undefined }),
         getReminderTemplates(schoolId),
       ]);
 
@@ -125,16 +126,24 @@ export default function DuesRemindersPage() {
       setClassesList(res.classes);
       setSectionsList(res.sections);
       setTermsList(res.terms);
+
+      // Auto-select current academic year if not yet set
+      if (!yearToLoad && res.academicYears?.length > 0) {
+        const curYear = res.academicYears.find((y: any) => y.is_current) || res.academicYears[0];
+        if (curYear) {
+          setSelectedYearId(curYear.id);
+        }
+      }
     } catch (err) {
       console.error("Error loading Dues & Reminders data:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, selectedYearId]);
 
   useEffect(() => {
     loadData();
-  }, [schoolId]);
+  }, [loadData]);
 
   // Click outside to close action menu
   useEffect(() => {
@@ -150,7 +159,10 @@ export default function DuesRemindersPage() {
   // Filter rows
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {
-      // 1. Search query
+      // 1. Academic Year filter
+      if (selectedYearId && r.academicYearId && r.academicYearId !== selectedYearId) return false;
+
+      // 2. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matches =
@@ -162,16 +174,16 @@ export default function DuesRemindersPage() {
         if (!matches) return false;
       }
 
-      // 2. Class filter
+      // 3. Class filter
       if (selectedClass !== "all" && r.className !== selectedClass) return false;
 
-      // 3. Section filter
+      // 4. Section filter
       if (selectedSection !== "all" && r.sectionName !== selectedSection) return false;
 
-      // 4. Period filter
+      // 5. Period filter
       if (selectedPeriod !== "all" && r.billingPeriod !== selectedPeriod) return false;
 
-      // 5. Due Status filter dropdown
+      // 6. Due Status filter dropdown
       if (selectedDueStatus !== "all") {
         if (selectedDueStatus === "overdue" && r.status !== "overdue") return false;
         if (selectedDueStatus === "due_today" && r.status !== "due_today") return false;
@@ -181,7 +193,7 @@ export default function DuesRemindersPage() {
         if (selectedDueStatus === "partial" && r.paidPaise === 0) return false;
       }
 
-      // 6. Quick chip filters
+      // 7. Quick chip filters
       if (activeChip === "upcoming" && r.status !== "upcoming") return false;
       if (activeChip === "due_today" && r.status !== "due_today") return false;
       if (activeChip === "overdue" && r.status !== "overdue") return false;
@@ -192,7 +204,7 @@ export default function DuesRemindersPage() {
 
       return true;
     });
-  }, [rows, searchQuery, selectedClass, selectedSection, selectedPeriod, selectedDueStatus, activeChip]);
+  }, [rows, selectedYearId, searchQuery, selectedClass, selectedSection, selectedPeriod, selectedDueStatus, activeChip]);
 
   // Pagination calculation
   const totalItems = filteredRows.length;
@@ -314,7 +326,7 @@ export default function DuesRemindersPage() {
         <div className="fixed top-5 right-5 z-50 flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl shadow-lg text-xs font-semibold animate-in slide-in-from-top-3">
           <CheckCircle2 className="w-4 h-4" />
           <span>{toastMessage}</span>
-          <button type="button" onClick={() => setToastMessage(null)} className="ml-2">
+          <button aria-label="Close" type="button" onClick={() => setToastMessage(null)} className="ml-2">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -445,7 +457,7 @@ export default function DuesRemindersPage() {
         {/* Full-width Search Bar */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-3 text-gray-400" />
-          <input
+          <input aria-label="Search fee dues"
             type="text"
             placeholder="Search by student name, admission no., invoice no. or parent phone..."
             value={searchQuery}
@@ -461,23 +473,28 @@ export default function DuesRemindersPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 items-end">
           {/* Academic Year */}
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Academic Year</label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
+            <label htmlFor="duesreminderspage-academic-year" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Academic Year</label>
+            <select id="duesreminderspage-academic-year" aria-label="Academic Year"
+              value={selectedYearId}
+              onChange={(e) => {
+                setSelectedYearId(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
             >
-              <option value="2025–2026">2025–2026</option>
+              <option value="">All Academic Years</option>
               {academicYears.map((y) => (
-                <option key={y.id} value={y.name}>{y.name}</option>
+                <option key={y.id} value={y.id}>
+                  {y.name} {y.is_current ? "(Current)" : ""}
+                </option>
               ))}
             </select>
           </div>
 
           {/* Class */}
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Class</label>
-            <select
+            <label htmlFor="duesreminderspage-class" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Class</label>
+            <select id="duesreminderspage-class" aria-label="Class"
               value={selectedClass}
               onChange={(e) => {
                 setSelectedClass(e.target.value);
@@ -504,8 +521,8 @@ export default function DuesRemindersPage() {
 
           {/* Section */}
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Section</label>
-            <select
+            <label htmlFor="duesreminderspage-section" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Section</label>
+            <select id="duesreminderspage-section" aria-label="Section"
               value={selectedSection}
               onChange={(e) => {
                 setSelectedSection(e.target.value);
@@ -529,8 +546,8 @@ export default function DuesRemindersPage() {
 
           {/* Due Status */}
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Due Status</label>
-            <select
+            <label htmlFor="duesreminderspage-due-status" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Due Status</label>
+            <select id="duesreminderspage-due-status" aria-label="Due Status"
               value={selectedDueStatus}
               onChange={(e) => {
                 setSelectedDueStatus(e.target.value);
@@ -550,8 +567,8 @@ export default function DuesRemindersPage() {
 
           {/* Fee Period */}
           <div>
-            <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Fee Period</label>
-            <select
+            <label htmlFor="duesreminderspage-fee-period" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Fee Period</label>
+            <select id="duesreminderspage-fee-period" aria-label="Fee Period"
               value={selectedPeriod}
               onChange={(e) => {
                 setSelectedPeriod(e.target.value);
@@ -603,7 +620,7 @@ export default function DuesRemindersPage() {
                   setActiveChip(chip.key as QuickFilterType);
                   setCurrentPage(1);
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
                   isActive
                     ? "bg-[#0B7B49] text-white shadow-2xs font-semibold"
                     : chip.key === "overdue"
@@ -657,7 +674,7 @@ export default function DuesRemindersPage() {
             <thead>
               <tr className="bg-slate-50/70 border-b border-[#E6EAF3] text-[11px] font-semibold text-[#5B6478] uppercase tracking-wider">
                 <th className="py-3 px-4 w-10 text-center">
-                  <input
+                  <input aria-label="Select item"
                     type="checkbox"
                     checked={paginatedRows.length > 0 && selectedRowIds.size === paginatedRows.length}
                     onChange={handleToggleSelectAll}
@@ -710,7 +727,7 @@ export default function DuesRemindersPage() {
                     >
                       {/* Checkbox */}
                       <td className="py-3 px-4 text-center">
-                        <input
+                        <input aria-label="Select item"
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelectRow(row.id)}
@@ -804,7 +821,7 @@ export default function DuesRemindersPage() {
 
                       {/* Actions Menu */}
                       <td className="py-3 px-4 text-center relative">
-                        <button
+                        <button aria-label="Actions Menu"
                           type="button"
                           onClick={() => setOpenActionMenuId(openActionMenuId === row.id ? null : row.id)}
                           className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-slate-100 transition-colors"
@@ -914,7 +931,7 @@ export default function DuesRemindersPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
               {/* Prev */}
-              <button
+              <button aria-label="Prev"
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
@@ -957,7 +974,7 @@ export default function DuesRemindersPage() {
               )}
 
               {/* Next */}
-              <button
+              <button aria-label="Next"
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
@@ -969,7 +986,7 @@ export default function DuesRemindersPage() {
 
             {/* Page size select */}
             <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
-              <select
+              <select aria-label="Page size select"
                 value={pageSize}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value));

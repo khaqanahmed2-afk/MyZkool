@@ -5,7 +5,7 @@
  * Actions: Request refund, Approve/Reject, Disburse refund (creates ledger entry).
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, RefreshCw, CheckCircle, XCircle, AlertCircle,
@@ -30,21 +30,21 @@ export default function RefundsPage() {
 
   // Modal state
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [studentId, setStudentId] = useState("");
+  const studentIdRef = useRef("");
   const [amountRs, setAmountRs] = useState("");
   const [reason, setReason] = useState("");
   const [mode, setMode] = useState<"cash" | "bank_transfer" | "cheque" | "upi">("cash");
-  const [yearId, setYearId] = useState("");
+  const yearIdRef = useRef("");
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     if (!schoolId) return;
     const years = JSON.parse(localStorage.getItem(`myzkool_academic_years_${schoolId}`) || "[]");
     const cur = years.find((y: any) => y.is_current);
-    if (cur) setYearId(cur.id);
+    if (cur) yearIdRef.current = cur.id;
   }, [schoolId]);
 
-  const loadRefunds = async () => {
+  const loadRefunds = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
@@ -53,11 +53,11 @@ export default function RefundsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId]);
 
   useEffect(() => {
     loadRefunds();
-  }, [schoolId]);
+  }, [loadRefunds]);
 
   const filtered = refunds.filter(r => {
     if (activeTab === "all") return true;
@@ -65,7 +65,7 @@ export default function RefundsPage() {
   });
 
   const handleCreateRefund = async () => {
-    if (!schoolId || !yearId) return;
+    if (!schoolId || !yearIdRef.current) return;
     const paise = parseFloat(amountRs) ? Math.round(parseFloat(amountRs) * 100) : 0;
     if (paise <= 0) {
       setErrorMsg("Please enter a valid refund amount");
@@ -77,8 +77,8 @@ export default function RefundsPage() {
     }
 
     const res = await requestRefund(schoolId, {
-      student_id: studentId || "std-general",
-      academic_year_id: yearId,
+      student_id: studentIdRef.current || "std-general",
+      academic_year_id: yearIdRef.current,
       amount_paise: paise,
       reason,
       payment_mode: mode,
@@ -228,15 +228,15 @@ export default function RefundsPage() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-900 text-base">Request Fee Refund</h3>
-              <button type="button" onClick={() => setShowRequestModal(false)} className="p-1 text-slate-400">
+              <button aria-label="Close" type="button" onClick={() => setShowRequestModal(false)} className="p-1 text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Amount (₹)</label>
-                <input
+                <label htmlFor="refundspage-amount" className="block text-xs font-semibold text-slate-700 mb-1">Amount (₹)</label>
+                <input id="refundspage-amount"
                   type="number"
                   placeholder="0.00"
                   value={typeof amountRs === "number" && Number.isNaN(amountRs) ? "" : (amountRs ?? "")}
@@ -246,8 +246,8 @@ export default function RefundsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Disbursement Mode</label>
-                <select
+                <label htmlFor="refundspage-disbursement-mode" className="block text-xs font-semibold text-slate-700 mb-1">Disbursement Mode</label>
+                <select id="refundspage-disbursement-mode" aria-label="Disbursement Mode"
                   value={mode}
                   onChange={e => setMode(e.target.value as any)}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -260,8 +260,8 @@ export default function RefundsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Reason (Required)</label>
-                <textarea
+                <label htmlFor="refundspage-reason-required" className="block text-xs font-semibold text-slate-700 mb-1">Reason (Required)</label>
+                <textarea id="refundspage-reason-required"
                   rows={3}
                   placeholder="e.g. Caution deposit refund on graduation / Withdrawal"
                   value={reason}

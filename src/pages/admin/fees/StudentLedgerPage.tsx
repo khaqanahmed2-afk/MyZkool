@@ -25,7 +25,7 @@ export default function StudentLedgerPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <button
+        <button aria-label="Go back"
           type="button"
           onClick={() => navigate(-1)}
           className="p-2 rounded-xl border border-[#E6EAF3] bg-white hover:bg-slate-50 transition-colors text-slate-600"

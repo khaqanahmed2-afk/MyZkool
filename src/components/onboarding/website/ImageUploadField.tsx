@@ -83,7 +83,7 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-[#141A2E]">{label}</label>
+        <span className="text-xs font-semibold text-[#141A2E]">{label}</span>
         {aspectRatioHint && (
           <span className="text-[11px] text-[#94A3B8]">{aspectRatioHint}</span>
         )}
@@ -149,12 +149,12 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
           </div>
         </div>
       ) : (
-        <div
+        <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-4 sm:p-5 text-center cursor-pointer transition-all ${
+          className={`border-2 border-dashed rounded-xl p-4 sm:p-5 text-center cursor-pointer transition-colors ${
             isDragOver
               ? "border-[#2158E0] bg-blue-50/50"
               : "border-[#E2E8F0] hover:border-[#CBD5E1] bg-slate-50/50 hover:bg-slate-50"

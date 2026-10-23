@@ -696,7 +696,7 @@ export async function reorderClasses({
 
   if (isSupabaseConfigured) {
     try {
-      for (const c of updatedClasses) {
+      for await (const c of updatedClasses) {
         await supabase
           .from("classes")
           .update({ sort_order: c.sort_order })
@@ -987,7 +987,7 @@ export async function applyClassTemplate({
   );
   let createdCount = 0;
 
-  for (const tClass of template.classes) {
+  for await (const tClass of template.classes) {
     const exists = existingClasses.some(
       (c) => c.name.trim().toLowerCase() === tClass.name.trim().toLowerCase()
     );
@@ -1186,21 +1186,23 @@ export async function saveAllClassesAndSections({
       const currentStep = currentSchool?.onboarding_step || 3;
       const newStep = Math.max(currentStep, 4);
 
+      const schoolUpdate = {
+        onboarding_step: newStep,
+        updated_at: timestamp,
+      };
       await supabase
         .from("schools")
-        .update({
-          onboarding_step: newStep,
-          updated_at: timestamp,
-        })
+        .update(schoolUpdate)
         .eq("id", schoolId);
 
+      const profileUpdate = {
+        school_id: schoolId,
+        current_onboarding_step: "/onboarding/subscription",
+        updated_at: timestamp,
+      };
       await supabase
         .from("profiles")
-        .update({
-          school_id: schoolId,
-          current_onboarding_step: "/onboarding/subscription",
-          updated_at: timestamp,
-        })
+        .update(profileUpdate)
         .eq("auth_id", userId);
 
       await supabase.auth.updateUser({

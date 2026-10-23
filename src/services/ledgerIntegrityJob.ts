@@ -69,7 +69,7 @@ export async function runLedgerIntegrityCheck(
       }
 
       const allStudents = new Set([...Object.keys(duesBalance), ...Object.keys(ledgerNet)]);
-      for (const studentId of allStudents) {
+      for await (const studentId of allStudents) {
         report.checked++;
         const db = duesBalance[studentId] ?? 0;
         const ln = ledgerNet[studentId] ?? 0;

@@ -9,7 +9,7 @@ export type FeeHeadKind = 'recurring' | 'one_time';
 
 export type StructureAppliesTo = 'all' | 'new_admission' | 'existing';
 
-export type StructureStatus = 'draft' | 'active' | 'archived';
+export type StructureStatus = 'draft' | 'active' | 'archived' | 'superseded';
 
 export type FillPattern = 'equal_all_terms' | 'first_term_only' | 'custom';
 
@@ -108,7 +108,7 @@ export type FeeCycleFrequency = 'monthly' | 'quarterly' | 'three_term' | 'half_y
 
 export type StructureTargetType = 'all_classes' | 'specific_classes' | 'specific_sections' | 'specific_students';
 
-export type FeeHeadFrequency = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'one_time' | 'custom';
+export type FeeHeadFrequency = 'monthly' | 'bimonthly' | 'quarterly' | 'three_term' | 'half_yearly' | 'yearly' | 'annual' | 'one_time' | 'custom';
 
 export interface FeeCycleSchedule {
   academic_year_id: string;
@@ -538,24 +538,24 @@ export interface ProrateOption {
 // ─── Suggested heads constant ────────────────────────────────────────────────
 
 export const SUGGESTED_FEE_HEADS: { code: string; name: string; kind: FeeHeadKind; is_refundable: boolean; rte_waivable: boolean }[] = [
-  { code: 'admission_fee',    name: 'Admission Fee',       kind: 'one_time',   is_refundable: false, rte_waivable: false },
-  { code: 'registration_fee', name: 'Registration Fee',    kind: 'one_time',   is_refundable: false, rte_waivable: false },
-  { code: 'tuition_fee',      name: 'Tuition Fee',         kind: 'recurring',  is_refundable: false, rte_waivable: true  },
-  { code: 'annual_charges',   name: 'Annual Charges',      kind: 'one_time',   is_refundable: false, rte_waivable: true  },
-  { code: 'development_fee',  name: 'Development Fee',     kind: 'recurring',  is_refundable: false, rte_waivable: false },
-  { code: 'exam_fee',         name: 'Exam Fee',            kind: 'recurring',  is_refundable: false, rte_waivable: false },
-  { code: 'computer_fee',     name: 'Computer Fee',        kind: 'recurring',  is_refundable: false, rte_waivable: false },
-  { code: 'activity_fee',     name: 'Activity Fee',        kind: 'recurring',  is_refundable: false, rte_waivable: false },
-  { code: 'library_fee',      name: 'Library Fee',         kind: 'recurring',  is_refundable: false, rte_waivable: false },
-  { code: 'lab_fee',          name: 'Lab Fee',             kind: 'recurring',  is_refundable: false, rte_waivable: false },
-  { code: 'caution_deposit',  name: 'Caution Deposit',     kind: 'one_time',   is_refundable: true,  rte_waivable: false },
-  { code: 'miscellaneous',    name: 'Miscellaneous',       kind: 'one_time',   is_refundable: false, rte_waivable: false },
+  { code: 'admission_fee', name: 'Admission Fee', kind: 'one_time', is_refundable: false, rte_waivable: false },
+  { code: 'registration_fee', name: 'Registration Fee', kind: 'one_time', is_refundable: false, rte_waivable: false },
+  { code: 'tuition_fee', name: 'Tuition Fee', kind: 'recurring', is_refundable: false, rte_waivable: true },
+  { code: 'annual_charges', name: 'Annual Charges', kind: 'one_time', is_refundable: false, rte_waivable: true },
+  { code: 'development_fee', name: 'Development Fee', kind: 'recurring', is_refundable: false, rte_waivable: false },
+  { code: 'exam_fee', name: 'Exam Fee', kind: 'recurring', is_refundable: false, rte_waivable: false },
+  { code: 'computer_fee', name: 'Computer Fee', kind: 'recurring', is_refundable: false, rte_waivable: false },
+  { code: 'activity_fee', name: 'Activity Fee', kind: 'recurring', is_refundable: false, rte_waivable: false },
+  { code: 'library_fee', name: 'Library Fee', kind: 'recurring', is_refundable: false, rte_waivable: false },
+  { code: 'lab_fee', name: 'Lab Fee', kind: 'recurring', is_refundable: false, rte_waivable: false },
+  { code: 'caution_deposit', name: 'Caution Deposit', kind: 'one_time', is_refundable: true, rte_waivable: false },
+  { code: 'miscellaneous', name: 'Miscellaneous', kind: 'one_time', is_refundable: false, rte_waivable: false },
 ];
 
 export const SYSTEM_FEE_HEADS: { code: string; name: string; kind: FeeHeadKind }[] = [
-  { code: 'transport_fee',    name: 'Transport Fee',       kind: 'recurring' },
-  { code: 'late_fee',         name: 'Late Fee',            kind: 'one_time'  },
-  { code: 'prev_year_dues',   name: 'Previous Year Dues',  kind: 'one_time'  },
+  { code: 'transport_fee', name: 'Transport Fee', kind: 'recurring' },
+  { code: 'late_fee', name: 'Late Fee', kind: 'one_time' },
+  { code: 'prev_year_dues', name: 'Previous Year Dues', kind: 'one_time' },
 ];
 
 // ─── Permission keys ─────────────────────────────────────────────────────────
@@ -667,9 +667,11 @@ export interface InvoiceSummaryMetrics {
   pendingCount: number;
   draftCount?: number;
   cancelledCount?: number;
+  distinctStudentsCount?: number;
 }
 
 export interface InvoiceFilters {
+  student_id?: string;
   academic_year_id?: string;
   class_id?: string;
   section_id?: string;

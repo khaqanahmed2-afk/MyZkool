@@ -251,7 +251,7 @@ export function ConcessionTable({
           <thead className="bg-slate-50/75 border-b border-[#E6EAF3] text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
             <tr>
               <th className="w-10 px-4 py-3 text-center">
-                <input
+                <input aria-label="Select all"
                   type="checkbox"
                   checked={isAllSelected}
                   onChange={handleSelectAll}
@@ -305,7 +305,7 @@ export function ConcessionTable({
                   >
                     {/* Checkbox */}
                     <td className="w-10 px-4 py-3 text-center">
-                      <input
+                      <input aria-label="Select item"
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => handleToggleSelect(c.id)}
@@ -322,12 +322,13 @@ export function ConcessionTable({
                           {initials}
                         </div>
                         <div className="min-w-0">
-                          <p
+                          <button
+                            type="button"
                             onClick={() => onViewDetails(c)}
-                            className="text-xs sm:text-sm font-semibold text-slate-900 truncate hover:text-[#00875A] cursor-pointer"
+                            className="text-left text-xs sm:text-sm font-semibold text-slate-900 truncate hover:text-[#00875A] cursor-pointer block max-w-full"
                           >
                             {studentName}
-                          </p>
+                          </button>
                           <p className="text-[11px] text-slate-400 truncate">
                             {c.admission_no || "ADM-2023-000"}
                           </p>
@@ -364,7 +365,7 @@ export function ConcessionTable({
 
                     {/* Actions */}
                     <td className="px-4 py-3 text-right relative">
-                      <button
+                      <button aria-label="Actions"
                         type="button"
                         onClick={() => setMenuOpenId(isMenuOpen ? null : c.id)}
                         className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -375,7 +376,7 @@ export function ConcessionTable({
                       {/* Dropdown Menu */}
                       {isMenuOpen && (
                         <>
-                          <div
+                          <div aria-hidden="true"
                             className="fixed inset-0 z-20"
                             onClick={() => setMenuOpenId(null)}
                           />
@@ -487,7 +488,7 @@ export function ConcessionTable({
         <div className="flex items-center gap-4">
           {/* Pagination Controls */}
           <div className="flex items-center gap-1">
-            <button
+            <button aria-label="Pagination Controls"
               type="button"
               disabled={page <= 1}
               onClick={() => onPageChange(page - 1)}
@@ -528,7 +529,7 @@ export function ConcessionTable({
               return null;
             })}
 
-            <button
+            <button aria-label="Action"
               type="button"
               disabled={page >= totalPages}
               onClick={() => onPageChange(page + 1)}
@@ -540,7 +541,7 @@ export function ConcessionTable({
 
           {/* Rows per page dropdown */}
           <div className="relative">
-            <select
+            <select aria-label="Rows per page dropdown"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="appearance-none pl-2.5 pr-6 py-1 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#00875A] cursor-pointer"

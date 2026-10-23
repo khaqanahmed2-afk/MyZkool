@@ -45,7 +45,7 @@ export function AdminShell() {
       />
 
       {/* Main Content Wrapper */}
-      <div className="flex-1 flex flex-col min-w-0 md:pl-64 transition-all duration-300">
+      <div className="flex-1 flex flex-col min-w-0 md:pl-64 transition-colors duration-300">
         <AdminHeader
           school={school}
           onMenuClick={() => setIsMobileMenuOpen(true)}

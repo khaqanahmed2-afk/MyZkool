@@ -43,32 +43,44 @@ export function ConcessionDetailDrawer({
 
   const handleApprove = async () => {
     setActionLoading(true);
-    await onApprove(concession.id, noteInput);
-    setActionLoading(false);
-    onClose();
+    try {
+      await onApprove(concession.id, noteInput);
+      onClose();
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleReject = async () => {
     if (!noteInput.trim()) return;
     setActionLoading(true);
-    await onReject(concession.id, noteInput);
-    setActionLoading(false);
-    onClose();
+    try {
+      await onReject(concession.id, noteInput);
+      onClose();
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleRevoke = async () => {
     setActionLoading(true);
-    await onRevoke(concession.id, noteInput);
-    setActionLoading(false);
-    onClose();
+    try {
+      await onRevoke(concession.id, noteInput);
+      onClose();
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleDelete = async () => {
     if (window.confirm("Are you sure you want to delete this concession record?")) {
       setActionLoading(true);
-      await onDelete(concession.id);
-      setActionLoading(false);
-      onClose();
+      try {
+        await onDelete(concession.id);
+        onClose();
+      } finally {
+        setActionLoading(false);
+      }
     }
   };
 
@@ -79,7 +91,7 @@ export function ConcessionDetailDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div aria-hidden="true" className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={onClose} />
 
       <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-200">
         {/* Header */}
@@ -88,7 +100,7 @@ export function ConcessionDetailDrawer({
             <h2 className="text-base font-bold text-slate-900">Concession Details</h2>
             <p className="text-xs text-slate-400 mt-0.5">ID: {concession.id.slice(0, 8)}</p>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -198,10 +210,10 @@ export function ConcessionDetailDrawer({
           {/* Actions & Decision Forms */}
           {concession.status === "pending" && (
             <div className="space-y-3 pt-2">
-              <label className="block text-xs font-bold text-slate-800">
+              <label htmlFor="concessiondetaildrawer-rejectmode-rejection-reason-de" className="block text-xs font-bold text-slate-800">
                 {rejectMode ? "Rejection Reason *" : "Decision Notes (Optional)"}
               </label>
-              <textarea
+              <textarea id="concessiondetaildrawer-rejectmode-rejection-reason-de"
                 rows={2}
                 value={noteInput}
                 onChange={(e) => setNoteInput(e.target.value)}
@@ -262,10 +274,10 @@ export function ConcessionDetailDrawer({
             <div className="space-y-3 pt-2">
               {revokeMode ? (
                 <div className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-800">
+                  <label htmlFor="concessiondetaildrawer-reason-for-revoking" className="block text-xs font-bold text-slate-800">
                     Reason for Revoking *
                   </label>
-                  <textarea
+                  <textarea id="concessiondetaildrawer-reason-for-revoking"
                     rows={2}
                     value={noteInput}
                     onChange={(e) => setNoteInput(e.target.value)}

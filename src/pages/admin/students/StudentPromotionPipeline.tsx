@@ -13,8 +13,10 @@
  * - 24-hour promotion undo window
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { StudentPageHeader } from "./StudentPageHeader";
+import { AdminTableHeader } from "./AdminTableHeader";
 import {
   ArrowLeft,
   ArrowRight,
@@ -59,7 +61,7 @@ export default function StudentPromotionPipeline() {
   const [overrides, setOverrides] = useState<Record<string, { action: PromotionAction; target_section_id?: string }>>({});
 
   const [preview, setPreview] = useState<PromotionPreviewResult | null>(null);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const isLoadingPreviewRef = useRef(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResult, setExecutionResult] = useState<any | null>(null);
 
@@ -68,34 +70,42 @@ export default function StudentPromotionPipeline() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pipeline" | "batches">("pipeline");
 
+  const targetSchoolId = (profile as any)?.school_id || "school-1";
+
   useEffect(() => {
+    let isMounted = true;
     async function loadData() {
       try {
-        const sId = (profile as any)?.school_id || "school-1";
-        setSchoolId(sId);
+        setSchoolId(targetSchoolId);
 
         const [ayRes, batches] = await Promise.all([
-          getAcademicYearsForSchool(sId),
-          getPromotionBatches(sId),
+          getAcademicYearsForSchool(targetSchoolId),
+          getPromotionBatches(targetSchoolId),
         ]);
+        if (!isMounted) return;
 
-          if (ayRes.academicYears && ayRes.academicYears.length > 0) {
-            setAcademicYears(ayRes.academicYears);
-            // Default source: current year, target: next year
-            const activeAy = ayRes.academicYears.find((y) => y.is_current) || ayRes.academicYears[0];
-            setSourceYearId(activeAy.id);
+        if (ayRes.academicYears && ayRes.academicYears.length > 0) {
+          setAcademicYears(ayRes.academicYears);
+          // Default source: current year, target: next year
+          const activeAy = ayRes.academicYears.find((y) => y.is_current) || ayRes.academicYears[0];
+          setSourceYearId(activeAy.id);
 
-            const nextAy = ayRes.academicYears.find((y) => y.id !== activeAy.id);
-            if (nextAy) setTargetYearId(nextAy.id);
-          }
+          const nextAy = ayRes.academicYears.find((y) => y.id !== activeAy.id);
+          if (nextAy) setTargetYearId(nextAy.id);
+        }
 
-          setRecentBatches(batches);
+        setRecentBatches(batches);
       } catch (err: any) {
+        if (!isMounted) return;
         setErrorMsg(err.message || "Failed to load promotion data");
       }
     }
     loadData();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetSchoolId]);
 
   // Fetch / refresh preview when source, target, or distribution changes
   useEffect(() => {
@@ -104,22 +114,32 @@ export default function StudentPromotionPipeline() {
       return;
     }
 
+    let isMounted = true;
+
     async function loadPreview() {
-      setIsLoadingPreview(true);
+      isLoadingPreviewRef.current = true;
       setErrorMsg(null);
       try {
         const res = await getPromotionPreview(schoolId, sourceYearId, targetYearId, {
           section_distribution: sectionDistribution,
           overrides: overrides,
         });
+        if (!isMounted) return;
         setPreview(res);
       } catch (err: any) {
+        if (!isMounted) return;
         setErrorMsg(err.message || "Failed to calculate promotion preview");
       } finally {
-        setIsLoadingPreview(false);
+        if (isMounted) {
+          isLoadingPreviewRef.current = false;
+        }
       }
     }
     loadPreview();
+
+    return () => {
+      isMounted = false;
+    };
   }, [schoolId, sourceYearId, targetYearId, sectionDistribution, overrides]);
 
   const handleActionChange = (studentId: string, action: PromotionAction) => {
@@ -184,19 +204,11 @@ export default function StudentPromotionPipeline() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-            <Link to="/admin/students" className="hover:text-blue-600 flex items-center gap-1">
-              <ArrowLeft className="w-4 h-4" /> Students
-            </Link>
-            <span>/</span>
-            <span className="font-medium text-gray-900">Promotion Pipeline</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Year-End Promotion Pipeline</h1>
-          <p className="text-sm text-gray-600">
-            Progress students to their next class, handle detentions, manage section distributions, and carry forward arrears.
-          </p>
-        </div>
+        <StudentPageHeader
+          currentPage="Promotion Pipeline"
+          title="Year-End Promotion Pipeline"
+          description="Progress students to their next class, handle detentions, manage section distributions, and carry forward arrears."
+        />
 
         {/* 24h Undo Window Banner if recent committed batch exists */}
         {recentBatches.length > 0 && recentBatches[0].status === "committed" && (
@@ -300,10 +312,10 @@ export default function StudentPromotionPipeline() {
             {/* Step 1: Academic Years & Section Mode */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                <label htmlFor="studentpromotionpipeline-source-academic-year" className="block text-xs font-semibold text-gray-700 uppercase mb-1">
                   Source Academic Year
                 </label>
-                <select
+                <select id="studentpromotionpipeline-source-academic-year" aria-label="Source Academic Year"
                   value={sourceYearId}
                   onChange={(e) => setSourceYearId(e.target.value)}
                   className="w-full border-gray-300 rounded-lg shadow-sm text-sm p-2 border"
@@ -318,10 +330,10 @@ export default function StudentPromotionPipeline() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                <label htmlFor="studentpromotionpipeline-target-academic-year" className="block text-xs font-semibold text-gray-700 uppercase mb-1">
                   Target Academic Year
                 </label>
-                <select
+                <select id="studentpromotionpipeline-target-academic-year" aria-label="Target Academic Year"
                   value={targetYearId}
                   onChange={(e) => setTargetYearId(e.target.value)}
                   className="w-full border-gray-300 rounded-lg shadow-sm text-sm p-2 border"
@@ -339,10 +351,10 @@ export default function StudentPromotionPipeline() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                <label htmlFor="studentpromotionpipeline-section-distribution-mode" className="block text-xs font-semibold text-gray-700 uppercase mb-1">
                   Section Distribution Mode
                 </label>
-                <select
+                <select id="studentpromotionpipeline-section-distribution-mode" aria-label="Section Distribution Mode"
                   value={sectionDistribution}
                   onChange={(e) => setSectionDistribution(e.target.value as SectionDistributionMode)}
                   className="w-full border-gray-300 rounded-lg shadow-sm text-sm p-2 border"
@@ -454,7 +466,7 @@ export default function StudentPromotionPipeline() {
                               )}
                             </td>
                             <td className="px-4 py-2.5">
-                              <select
+                              <select aria-label="Promotion action"
                                 value={item.action}
                                 onChange={(e) => handleActionChange(item.student_id, e.target.value as PromotionAction)}
                                 className="text-xs p-1.5 border border-gray-300 rounded-md font-medium"
@@ -480,15 +492,15 @@ export default function StudentPromotionPipeline() {
         <div className="space-y-4">
           <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Batch ID</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">From / To Year</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Executed At</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Action</th>
-                </tr>
-              </thead>
+              <AdminTableHeader
+                columns={[
+                  { label: "Batch ID" },
+                  { label: "From / To Year" },
+                  { label: "Executed At" },
+                  { label: "Status" },
+                  { label: "Action", align: "right" },
+                ]}
+              />
               <tbody className="divide-y divide-gray-200">
                 {recentBatches.length === 0 ? (
                   <tr>

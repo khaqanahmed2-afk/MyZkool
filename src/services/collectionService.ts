@@ -172,8 +172,13 @@ async function collectFeesLocal(
     mode: p.mode,
     amount_paise: p.amount_paise,
     reference_no: p.reference_no ?? null,
-    bank_name: null, instrument_no: null, instrument_date: null,
-    cheque_status: null, gateway_order_id: null, gateway_payment_id: null,
+    bank_name: p.bank_name ?? null,
+    instrument_no: p.instrument_no ?? null,
+    instrument_date: p.instrument_date ?? null,
+    cheque_status: p.mode === "cheque" ? "received" : null,
+    gateway_order_id: null,
+    gateway_payment_id: null,
+    status: p.mode === "cheque" && settings.cheque_receipt_timing === "on_clearance" ? "pending" : "successful",
     created_at: now(),
   }));
   lsSet(PAYMENTS_KEY(schoolId), [...lsGet<FeePayment>(PAYMENTS_KEY(schoolId)), ...paymentRows]);
@@ -438,6 +443,48 @@ export async function cancelReceipt(
         created_at: now(),
       });
     }
+  }
+
+  // Reverse any advance credit generated from this receipt
+  const credits = lsGet<FeeCredit>(CREDITS_KEY(schoolId));
+  let creditsUpdated = false;
+  for (let i = 0; i < credits.length; i++) {
+    if (credits[i].source_receipt_id === receiptId && credits[i].school_id === schoolId) {
+      const revoked = credits[i].remaining_paise;
+      credits[i].remaining_paise = 0;
+      creditsUpdated = true;
+      if (revoked > 0) {
+        ledger.push({
+          id: uuid(),
+          school_id: schoolId,
+          student_id: receipt.student_id,
+          academic_year_id: receipt.academic_year_id,
+          due_id: null,
+          receipt_id: receiptId,
+          entry_type: "reversal",
+          amount_paise: revoked,
+          note: `Reversal of advance credit from ${receipt.receipt_no}: ${input.reason}`,
+          created_by: actorId ?? null,
+          created_at: now(),
+        });
+      }
+    }
+  }
+  if (creditsUpdated) {
+    lsSet(CREDITS_KEY(schoolId), credits);
+  }
+
+  // Update payment status to cancelled
+  const payments = lsGet<FeePayment>(PAYMENTS_KEY(schoolId));
+  let paymentsUpdated = false;
+  for (let i = 0; i < payments.length; i++) {
+    if (payments[i].receipt_id === receiptId && payments[i].school_id === schoolId) {
+      payments[i].status = "cancelled";
+      paymentsUpdated = true;
+    }
+  }
+  if (paymentsUpdated) {
+    lsSet(PAYMENTS_KEY(schoolId), payments);
   }
 
   // Mark receipt cancelled

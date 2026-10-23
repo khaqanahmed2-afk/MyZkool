@@ -87,7 +87,7 @@ export const WebsiteLivePreview: React.FC<WebsiteLivePreviewProps> = ({
           <button
             type="button"
             onClick={() => setViewMode("desktop")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               viewMode === "desktop"
                 ? "bg-white text-[#141A2E] shadow-xs"
                 : "text-[#5B6478] hover:text-[#141A2E]"
@@ -100,7 +100,7 @@ export const WebsiteLivePreview: React.FC<WebsiteLivePreviewProps> = ({
           <button
             type="button"
             onClick={() => setViewMode("mobile")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               viewMode === "mobile"
                 ? "bg-white text-[#141A2E] shadow-xs"
                 : "text-[#5B6478] hover:text-[#141A2E]"
@@ -164,7 +164,7 @@ export const WebsiteLivePreview: React.FC<WebsiteLivePreviewProps> = ({
 
         {/* Scrollable Realistic Website Preview Frame */}
         <div
-          className={`overflow-y-auto max-h-[640px] bg-white transition-all ${
+          className={`overflow-y-auto max-h-[640px] bg-white transition-colors ${
             viewMode === "mobile"
               ? "max-w-[340px] mx-auto border-x border-[#E2E8F0] my-2 rounded-xl shadow-xs"
               : "w-full"

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import {
   Calendar, Check, CheckCircle2, AlertCircle, Plus, Trash2,
@@ -84,7 +84,7 @@ export default function FeeTermsPage() {
   const [currentStep, setCurrentStep] = useState<StepId>("setup");
 
   // Core data states
-  const [yearId, setYearId] = useState<string>("ay_current");
+  const yearIdRef = useRef<string>("ay_current");
   const [yearName, setYearName] = useState<string>("2025-2026");
   const [sessionStart, setSessionStart] = useState<string>("2025-04-01");
   const [defaultDueDay, setDefaultDueDay] = useState<number>(10);
@@ -127,7 +127,7 @@ export default function FeeTermsPage() {
       const resolvedYearName = currentYear?.name || "2025-2026";
       const resolvedStart = currentYear?.start_date || `${currentYear?.start_year || 2025}-04-01`;
 
-      setYearId(resolvedYearId);
+      yearIdRef.current = resolvedYearId;
       setYearName(resolvedYearName);
       setSessionStart(resolvedStart);
 
@@ -218,7 +218,7 @@ export default function FeeTermsPage() {
       // Keep existing terms or leave editable
       return;
     }
-    const presetTerms = generateTermPreset(yearId, activeSchoolId || "default", chosenFreq, sessionStart, defaultDueDay, defaultGraceDays);
+    const presetTerms = generateTermPreset(yearIdRef.current, activeSchoolId || "default", chosenFreq, sessionStart, defaultDueDay, defaultGraceDays);
     setTerms(presetTerms);
 
     // Auto-update head mapping for the new terms
@@ -394,7 +394,7 @@ export default function FeeTermsPage() {
     try {
       const res = await saveFeeCycleSchedule(
         activeSchoolId,
-        yearId,
+        yearIdRef.current,
         terms,
         headMapping,
         frequency
@@ -514,7 +514,7 @@ export default function FeeTermsPage() {
                   {FREQUENCY_OPTIONS.map((opt) => {
                     const isSelected = frequency === opt.id;
                     return (
-                      <div
+                      <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                         key={opt.id}
                         onClick={() => applyFrequencyPreset(opt.id)}
                         className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
@@ -557,8 +557,8 @@ export default function FeeTermsPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[#141A2E] mb-1">Session Start Date</label>
-                    <input
+                    <label htmlFor="feetermspage-session-start-date" className="block text-xs font-semibold text-[#141A2E] mb-1">Session Start Date</label>
+                    <input id="feetermspage-session-start-date" aria-label="Session Start Date"
                       type="date"
                       value={sessionStart}
                       onChange={e => {
@@ -571,15 +571,15 @@ export default function FeeTermsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#141A2E] mb-1">Default Due Day of Month</label>
-                    <input
+                    <label htmlFor="feetermspage-default-due-day-of-month" className="block text-xs font-semibold text-[#141A2E] mb-1">Default Due Day of Month</label>
+                    <input id="feetermspage-default-due-day-of-month" aria-label="Default Due Day of Month"
                       type="number"
                       min={1}
                       max={28}
                       value={Number.isNaN(defaultDueDay) ? "" : (defaultDueDay ?? 10)}
                       onChange={e => {
-                        const val = parseInt(e.target.value, 10);
-                        setDefaultDueDay(isNaN(val) ? ("" as any) : val);
+                        const val = e.currentTarget.valueAsNumber;
+                        setDefaultDueDay(Number.isFinite(val) ? Math.trunc(val) : ("" as any));
                       }}
                       className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm text-[#141A2E] outline-none focus:border-[#2158E0]"
                     />
@@ -587,15 +587,15 @@ export default function FeeTermsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#141A2E] mb-1">Late Grace Period (Days)</label>
-                    <input
+                    <label htmlFor="feetermspage-late-grace-period-days" className="block text-xs font-semibold text-[#141A2E] mb-1">Late Grace Period (Days)</label>
+                    <input id="feetermspage-late-grace-period-days" aria-label="Late Grace Period (Days)"
                       type="number"
                       min={0}
                       max={30}
                       value={Number.isNaN(defaultGraceDays) ? "" : (defaultGraceDays ?? 0)}
                       onChange={e => {
-                        const val = parseInt(e.target.value, 10);
-                        setDefaultGraceDays(isNaN(val) ? ("" as any) : val);
+                        const val = e.currentTarget.valueAsNumber;
+                        setDefaultGraceDays(Number.isFinite(val) ? Math.trunc(val) : ("" as any));
                       }}
                       className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm text-[#141A2E] outline-none focus:border-[#2158E0]"
                     />
@@ -652,10 +652,10 @@ export default function FeeTermsPage() {
                     </thead>
                     <tbody>
                       {terms.map((term, i) => (
-                        <tr key={term.id || i} className="border-b border-[#E6EAF3] last:border-0 hover:bg-gray-50/50">
+                        <tr key={term.id || term.term_key || term.name} className="border-b border-[#E6EAF3] last:border-0 hover:bg-gray-50/50">
                           <td className="px-4 py-3 font-medium text-xs text-gray-500">{i + 1}</td>
                           <td className="px-3 py-2">
-                            <input
+                            <input aria-label="Term name"
                               type="text"
                               value={term.name}
                               onChange={e => handleUpdateTerm(i, "name", e.target.value)}
@@ -664,7 +664,7 @@ export default function FeeTermsPage() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
+                            <input aria-label="Select date"
                               type="date"
                               value={term.period_start || ""}
                               onChange={e => handleUpdateTerm(i, "period_start", e.target.value)}
@@ -672,7 +672,7 @@ export default function FeeTermsPage() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
+                            <input aria-label="Select date"
                               type="date"
                               value={term.period_end || ""}
                               onChange={e => handleUpdateTerm(i, "period_end", e.target.value)}
@@ -680,7 +680,7 @@ export default function FeeTermsPage() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
+                            <input aria-label="Select term"
                               type="date"
                               value={term.due_date}
                               onChange={e => handleUpdateTerm(i, "due_date", e.target.value)}
@@ -688,13 +688,13 @@ export default function FeeTermsPage() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
+                            <input aria-label="Input value"
                               type="number"
                               min={0}
                               value={Number.isNaN(term.late_grace_days) ? 0 : (term.late_grace_days ?? 0)}
                               onChange={e => {
-                                const val = parseInt(e.target.value, 10);
-                                handleUpdateTerm(i, "late_grace_days", isNaN(val) ? 0 : val);
+                                const val = e.currentTarget.valueAsNumber;
+                                handleUpdateTerm(i, "late_grace_days", Number.isFinite(val) ? Math.trunc(val) : 0);
                               }}
                               className="w-16 border border-gray-200 focus:border-[#2158E0] rounded-lg px-2 py-1.5 text-xs text-[#141A2E] outline-none text-center bg-white"
                             />
@@ -780,7 +780,8 @@ export default function FeeTermsPage() {
                   <div className="space-y-4">
                     {heads.map((head) => {
                       const assignedTermKeys = headMapping[head.id] || [];
-                      const isAllAssigned = allTermKeys.every(k => assignedTermKeys.includes(k));
+                      const assignedTermKeySet = new Set(assignedTermKeys);
+                      const isAllAssigned = allTermKeys.every(k => assignedTermKeySet.has(k));
                       const isNoneAssigned = assignedTermKeys.length === 0;
 
                       return (
@@ -831,7 +832,7 @@ export default function FeeTermsPage() {
                           <div className="flex flex-wrap gap-2">
                             {terms.map((term, tIdx) => {
                               const termKey = term.id || term.name;
-                              const isChecked = assignedTermKeys.includes(termKey) || (term.id && assignedTermKeys.includes(term.id)) || assignedTermKeys.includes(term.name);
+                              const isChecked = assignedTermKeySet.has(termKey) || (term.id ? assignedTermKeySet.has(term.id) : false) || assignedTermKeySet.has(term.name);
 
                               return (
                                 <button
@@ -876,17 +877,18 @@ export default function FeeTermsPage() {
                       <tbody>
                         {heads.map((head) => {
                           const assigned = headMapping[head.id] || [];
+                          const assignedSet = new Set(assigned);
                           return (
                             <tr key={head.id} className="border-b border-[#E6EAF3] last:border-0 hover:bg-gray-50/50">
                               <td className="px-4 py-2.5 font-medium text-[#141A2E]">{head.name}</td>
                               <td className="px-2 py-2.5 text-gray-500 capitalize">{head.kind}</td>
                               {terms.map((term) => {
                                 const termKey = term.id || term.name;
-                                const isChecked = assigned.includes(termKey) || (term.id && assigned.includes(term.id)) || assigned.includes(term.name);
+                                const isChecked = assignedSet.has(termKey) || (term.id ? assignedSet.has(term.id) : false) || assignedSet.has(term.name);
 
                                 return (
                                   <td key={termKey} className="text-center px-3 py-2.5">
-                                    <input
+                                    <input aria-label="Select item"
                                       type="checkbox"
                                       checked={isChecked}
                                       onChange={() => toggleHeadForTerm(head.id, termKey)}
@@ -936,8 +938,8 @@ export default function FeeTermsPage() {
                     <span>Please correct the following before saving:</span>
                   </div>
                   <ul className="list-disc list-inside text-xs text-amber-700 space-y-1">
-                    {validationIssues.map((issue, idx) => (
-                      <li key={idx}>{issue}</li>
+                    {validationIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
                     ))}
                   </ul>
                 </div>

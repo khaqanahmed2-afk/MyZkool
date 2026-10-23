@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useId } from "react";
+import React, { useState, useEffect, useCallback, useId, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
@@ -41,7 +41,7 @@ export default function AcademicSetup() {
 
   // School context state
   const [school, setSchool] = useState<School | null>(null);
-  const [existingYearId, setExistingYearId] = useState<string | null>(null);
+  const existingYearIdRef = useRef<string | null>(null);
   const [existingYearSummary, setExistingYearSummary] = useState<{
     label: string;
     startDate: string;
@@ -53,7 +53,7 @@ export default function AcademicSetup() {
   // Form input state
   const [formData, setFormData] = useState<AcademicYearInput>(() => getDefaultAcademicYear());
   const [isCustomLabel, setIsCustomLabel] = useState(false);
-  const [isFormDirty, setIsFormDirty] = useState(false);
+  const isFormDirtyRef = useRef(false);
 
   // Active preset tracker
   const [activePresetId, setActivePresetId] = useState<string | null>("apr_mar");
@@ -123,7 +123,7 @@ export default function AcademicSetup() {
           const activeYear =
             academicYears.find((y) => y.is_current) || academicYears[0];
 
-          setExistingYearId(activeYear.id);
+          existingYearIdRef.current = activeYear.id;
           setExistingYearSummary({
             label: activeYear.label,
             startDate: activeYear.start_date,
@@ -179,7 +179,7 @@ export default function AcademicSetup() {
     const preset = ACADEMIC_CALENDAR_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
 
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
     setActivePresetId(presetId);
 
     const sYear = formData.start_year || new Date().getFullYear();
@@ -222,17 +222,17 @@ export default function AcademicSetup() {
 
   // 3. Date Change Handlers with Smart Synchronization
   const handleStartDateChange = (val: string) => {
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
+    let newStartYear = formData.start_year;
+    if (isValidCalendarDate(val)) {
+      newStartYear = parseInt(val.split("-")[0], 10);
+    }
+
+    // Check if preset matches
+    const matched = matchPresetFromDates(val, formData.end_date);
+    setActivePresetId(matched);
+
     setFormData((prev) => {
-      let newStartYear = prev.start_year;
-      if (isValidCalendarDate(val)) {
-        newStartYear = parseInt(val.split("-")[0], 10);
-      }
-
-      // Check if preset matches
-      const matched = matchPresetFromDates(val, prev.end_date);
-      setActivePresetId(matched);
-
       const updatedLabel = isCustomLabel
         ? prev.label
         : formatDefaultAcademicYearLabel(newStartYear, prev.end_year);
@@ -256,16 +256,16 @@ export default function AcademicSetup() {
   };
 
   const handleEndDateChange = (val: string) => {
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
+    let newEndYear = formData.end_year;
+    if (isValidCalendarDate(val)) {
+      newEndYear = parseInt(val.split("-")[0], 10);
+    }
+
+    const matched = matchPresetFromDates(formData.start_date, val);
+    setActivePresetId(matched);
+
     setFormData((prev) => {
-      let newEndYear = prev.end_year;
-      if (isValidCalendarDate(val)) {
-        newEndYear = parseInt(val.split("-")[0], 10);
-      }
-
-      const matched = matchPresetFromDates(prev.start_date, val);
-      setActivePresetId(matched);
-
       const updatedLabel = isCustomLabel
         ? prev.label
         : formatDefaultAcademicYearLabel(prev.start_year, newEndYear);
@@ -289,18 +289,17 @@ export default function AcademicSetup() {
 
   // 4. Year Field Change Handlers (Keep Dates in Sync)
   const handleStartYearChange = (newYear: number) => {
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
+    let updatedStartDate = formData.start_date;
+    if (Number.isFinite(newYear) && newYear >= 1000 && formData.start_date && /^\d{4}-\d{2}-\d{2}$/.test(formData.start_date)) {
+      const parts = formData.start_date.split("-");
+      updatedStartDate = `${newYear}-${parts[1]}-${parts[2]}`;
+    }
+
+    const matched = matchPresetFromDates(updatedStartDate, formData.end_date);
+    setActivePresetId(matched);
+
     setFormData((prev) => {
-      // If start_date exists and newYear is valid 4-digit number, update its year portion
-      let updatedStartDate = prev.start_date;
-      if (Number.isFinite(newYear) && newYear >= 1000 && prev.start_date && /^\d{4}-\d{2}-\d{2}$/.test(prev.start_date)) {
-        const parts = prev.start_date.split("-");
-        updatedStartDate = `${newYear}-${parts[1]}-${parts[2]}`;
-      }
-
-      const matched = matchPresetFromDates(updatedStartDate, prev.end_date);
-      setActivePresetId(matched);
-
       const updatedLabel = isCustomLabel
         ? prev.label
         : formatDefaultAcademicYearLabel(newYear, prev.end_year);
@@ -323,17 +322,17 @@ export default function AcademicSetup() {
   };
 
   const handleEndYearChange = (newYear: number) => {
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
+    let updatedEndDate = formData.end_date;
+    if (Number.isFinite(newYear) && newYear >= 1000 && formData.end_date && /^\d{4}-\d{2}-\d{2}$/.test(formData.end_date)) {
+      const parts = formData.end_date.split("-");
+      updatedEndDate = `${newYear}-${parts[1]}-${parts[2]}`;
+    }
+
+    const matched = matchPresetFromDates(formData.start_date, updatedEndDate);
+    setActivePresetId(matched);
+
     setFormData((prev) => {
-      let updatedEndDate = prev.end_date;
-      if (Number.isFinite(newYear) && newYear >= 1000 && prev.end_date && /^\d{4}-\d{2}-\d{2}$/.test(prev.end_date)) {
-        const parts = prev.end_date.split("-");
-        updatedEndDate = `${newYear}-${parts[1]}-${parts[2]}`;
-      }
-
-      const matched = matchPresetFromDates(prev.start_date, updatedEndDate);
-      setActivePresetId(matched);
-
       const updatedLabel = isCustomLabel
         ? prev.label
         : formatDefaultAcademicYearLabel(prev.start_year, newYear);
@@ -357,7 +356,7 @@ export default function AcademicSetup() {
 
   // 5. Label Handlers
   const handleLabelChange = (val: string) => {
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
     setIsCustomLabel(true);
     setFormData((prev) => ({ ...prev, label: val }));
     if (errors.label) {
@@ -366,7 +365,7 @@ export default function AcademicSetup() {
   };
 
   const handleResetLabelToAuto = () => {
-    setIsFormDirty(true);
+    isFormDirtyRef.current = true;
     setIsCustomLabel(false);
     const autoLabel = formatDefaultAcademicYearLabel(
       formData.start_year,
@@ -411,7 +410,7 @@ export default function AcademicSetup() {
         schoolId: school.id,
         userId: user.id,
         input: { ...formData, is_current: true },
-        existingAcademicYearId: existingYearId,
+        existingAcademicYearId: existingYearIdRef.current,
       });
 
       if (!result.success) {
@@ -421,7 +420,7 @@ export default function AcademicSetup() {
       }
 
       setSaveSuccess(true);
-      setIsFormDirty(false);
+      isFormDirtyRef.current = false;
 
       // Refresh auth session so that updated onboarding progress is reflected
       await refreshSession();
@@ -439,7 +438,7 @@ export default function AcademicSetup() {
 
   // 7. Save & Exit Handler
   const handleSaveAndExit = async () => {
-    if (!isFormDirty || !school || !user) {
+    if (!isFormDirtyRef.current || !school || !user) {
       await signOut();
       navigate("/login");
       return;
@@ -454,7 +453,7 @@ export default function AcademicSetup() {
           schoolId: school.id,
           userId: user.id,
           input: { ...formData, is_current: true },
-          existingAcademicYearId: existingYearId,
+          existingAcademicYearId: existingYearIdRef.current,
         });
       } catch (err) {
         console.warn("Background save on exit encountered error:", err);
@@ -640,7 +639,7 @@ export default function AcademicSetup() {
                     type="button"
                     id={`preset-${preset.id}`}
                     onClick={() => handleApplyPreset(preset.id)}
-                    className={`p-3 rounded-lg border text-left transition-all cursor-pointer relative ${
+                    className={`p-3 rounded-lg border text-left transition-colors cursor-pointer relative ${
                       isSelected
                         ? "border-[#2158E0] bg-blue-50/50 ring-1 ring-[#2158E0]/30 shadow-2xs"
                         : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1] hover:bg-[#F8FAFC]"
@@ -791,8 +790,8 @@ export default function AcademicSetup() {
                     required
                     value={Number.isNaN(formData.start_year) ? "" : (formData.start_year ?? "")}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      handleStartYearChange(isNaN(val) ? ("" as any) : val);
+                      const val = e.currentTarget.valueAsNumber;
+                      handleStartYearChange(Number.isFinite(val) ? Math.trunc(val) : ("" as any));
                     }}
                     placeholder="2026"
                     aria-required="true"
@@ -831,8 +830,8 @@ export default function AcademicSetup() {
                     required
                     value={Number.isNaN(formData.end_year) ? "" : (formData.end_year ?? "")}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      handleEndYearChange(isNaN(val) ? ("" as any) : val);
+                      const val = e.currentTarget.valueAsNumber;
+                      handleEndYearChange(Number.isFinite(val) ? Math.trunc(val) : ("" as any));
                     }}
                     placeholder="2027"
                     aria-required="true"
@@ -919,7 +918,7 @@ export default function AcademicSetup() {
               type="submit"
               id="academic-continue-btn"
               disabled={isSubmitting}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:opacity-60 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-all cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:opacity-60 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
               {isSubmitting ? (
                 <>

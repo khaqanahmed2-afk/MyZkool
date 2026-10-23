@@ -10,7 +10,7 @@
  * - Print day book
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Lock, Unlock, Printer, AlertTriangle, CheckCircle2,
@@ -32,8 +32,8 @@ export default function DayClosePage() {
   const { schoolId, user, role } = useAuth();
   const navigate = useNavigate();
 
-  const [dateStr, setDateStr] = useState(new Date().toISOString().split("T")[0]);
-  const [loading, setLoading] = useState(true);
+  const [dateStr, setDateStr] = useState(() => new Date().toISOString().split("T")[0]);
+  const loadingRef = useRef(true);
   const [summary, setSummary] = useState<DaySummary | null>(null);
 
   // Denominations
@@ -57,9 +57,9 @@ export default function DayClosePage() {
   const [reopenError, setReopenError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
-  const loadSummary = async () => {
+  const loadSummary = useCallback(async () => {
     if (!schoolId) return;
-    setLoading(true);
+    loadingRef.current = true;
     try {
       const data = await getDaySummary(schoolId, dateStr);
       setSummary(data);
@@ -70,13 +70,13 @@ export default function DayClosePage() {
         setCountedPaise(0);
       }
     } finally {
-      setLoading(false);
+      loadingRef.current = false;
     }
-  };
+  }, [schoolId, dateStr]);
 
   useEffect(() => {
     loadSummary();
-  }, [schoolId, dateStr]);
+  }, [loadSummary]);
 
   const updateCount = (key: keyof DenominationCount, countStr: string) => {
     const val = parseInt(countStr) || 0;
@@ -234,7 +234,7 @@ export default function DayClosePage() {
                     <span className="font-semibold text-slate-700">{item.label}</span>
                     <span className="text-[11px] text-slate-400 tabular-nums">{fmt(subtotal)}</span>
                   </div>
-                  <input
+                  <input aria-label="Denomination count"
                     type="number"
                     min="0"
                     disabled={summary?.is_closed}
@@ -276,8 +276,8 @@ export default function DayClosePage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Day Close Notes</label>
-            <textarea
+            <label htmlFor="dayclosepage-day-close-notes" className="block text-xs font-semibold text-slate-700 mb-1">Day Close Notes</label>
+            <textarea id="dayclosepage-day-close-notes"
               rows={3}
               disabled={summary?.is_closed}
               value={closingNotes}
@@ -314,7 +314,7 @@ export default function DayClosePage() {
                 <ShieldAlert className="w-5 h-5 text-amber-600" />
                 <h3 className="font-bold text-slate-900 text-base">Reopen Business Day</h3>
               </div>
-              <button type="button" onClick={() => setShowReopenModal(false)} className="p-1 text-slate-400">
+              <button aria-label="Close" type="button" onClick={() => setShowReopenModal(false)} className="p-1 text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -324,8 +324,8 @@ export default function DayClosePage() {
             </p>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Reason for Reopening (Min 10 characters)</label>
-              <textarea
+              <label htmlFor="dayclosepage-reason-for-reopening-min-10-ch" className="block text-xs font-semibold text-slate-700 mb-1">Reason for Reopening (Min 10 characters)</label>
+              <textarea id="dayclosepage-reason-for-reopening-min-10-ch"
                 rows={3}
                 value={reopenReason}
                 onChange={e => setReopenReason(e.target.value)}

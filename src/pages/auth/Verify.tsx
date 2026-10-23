@@ -3,14 +3,21 @@ import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { AuthLayout } from "../../components/auth/AuthLayout";
 import { MailCheck, RefreshCw, ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 export default function Verify() {
+  usePageMetadata({
+    title: "Verify School Email",
+    description: "Verify your email address to activate your MyZkool school ERP workspace.",
+    noindex: true,
+  });
+
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, resendVerificationEmail, profile, refreshSession } = useAuth();
 
   const [email, setEmail] = useState<string>(
-    searchParams.get("email") || user?.email || ""
+    () => searchParams.get("email") || user?.email || ""
   );
   const [isResending, setIsResending] = useState(false);
   const [resendStatus, setResendStatus] = useState<"idle" | "sent" | "error">("idle");
@@ -97,7 +104,7 @@ export default function Verify() {
           <button
             type="button"
             onClick={() => navigate(profile?.current_onboarding_step || "/onboarding/school")}
-            className="w-full py-3.5 px-6 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-[#2158E0]/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3.5 px-6 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-[#2158E0]/20 transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>Continue to School Setup</span>
             <ArrowRight className="w-4 h-4" />
@@ -170,7 +177,7 @@ export default function Verify() {
             type="button"
             onClick={handleResend}
             disabled={isResending || cooldownSeconds > 0}
-            className="w-full py-2.5 px-4 rounded-xl border border-[#D5DDEB] bg-white hover:bg-[#F8FAFC] active:bg-[#EDF2F7] text-xs font-semibold text-[#141A2E] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full py-2.5 px-4 rounded-xl border border-[#D5DDEB] bg-white hover:bg-[#F8FAFC] active:bg-[#EDF2F7] text-xs font-semibold text-[#141A2E] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isResending ? "animate-spin" : ""}`} />
             <span>

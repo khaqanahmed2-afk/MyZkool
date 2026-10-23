@@ -22,23 +22,27 @@ import { DEFAULT_SUBSCRIPTION_PLANS } from "../types/subscription";
 
 export const SUBSCRIPTION_CACHE_KEY_PREFIX = "myzkool_subscription_";
 
+const inrFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
+
+const inrCentsFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 export const formatINR = (amount: number | null | undefined): string => {
   if (amount === null || amount === undefined) return "Custom Quote";
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return inrFormatter.format(amount);
 };
 
 export const formatINRCents = (amount: number | null | undefined): string => {
   if (amount === null || amount === undefined) return "Custom Quote";
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  return inrCentsFormatter.format(amount);
 };
 
 /**
@@ -679,20 +683,22 @@ export async function saveSubscriptionSetupProgress({
       const currentStep = currentSchool?.onboarding_step || 4;
       const newStep = Math.max(currentStep, 5);
 
+      const schoolUpdate = {
+        onboarding_step: newStep,
+        updated_at: timestamp,
+      };
       await supabase
         .from("schools")
-        .update({
-          onboarding_step: newStep,
-          updated_at: timestamp,
-        })
+        .update(schoolUpdate)
         .eq("id", schoolId);
 
+      const profileUpdate = {
+        current_onboarding_step: "/onboarding/website",
+        updated_at: timestamp,
+      };
       await supabase
         .from("profiles")
-        .update({
-          current_onboarding_step: "/onboarding/website",
-          updated_at: timestamp,
-        })
+        .update(profileUpdate)
         .eq("auth_id", userId);
 
       await supabase.auth.updateUser({

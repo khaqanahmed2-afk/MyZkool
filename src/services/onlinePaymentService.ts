@@ -204,8 +204,10 @@ export async function requestParentPayOTP(
     if (parent?.phone) parentPhone = parent.phone;
   }
 
-  // 3. Generate 6-digit OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  // 3. Generate 6-digit OTP using cryptographically secure randomness
+  const otpArray = new Uint32Array(1);
+  crypto.getRandomValues(otpArray);
+  const otpCode = String(100000 + (otpArray[0] % 900000));
   const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
 
   const sessionRecord: ParentPaySession = {
@@ -390,12 +392,14 @@ export async function getParentPayContext(
 
   // Find linked children via student_parents
   const studentParents = lsGet<any>(`myzkool_student_parents_${schoolId}`);
-  const linkedStudentIds = studentParents
-    .filter((sp: any) => sp.parent_id === parentId)
-    .map((sp: any) => sp.student_id);
+  const linkedStudentIdSet = new Set(
+    studentParents
+      .filter((sp: any) => sp.parent_id === parentId)
+      .map((sp: any) => sp.student_id)
+  );
 
   const students = lsGet<any>(`myzkool_students_${schoolId}`).filter(
-    (s: any) => linkedStudentIds.includes(s.id) && !s.deleted_at
+    (s: any) => linkedStudentIdSet.has(s.id) && !s.deleted_at
   );
 
   const enrollments = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
@@ -405,14 +409,20 @@ export async function getParentPayContext(
   const feeHeads = lsGet<any>(`myzkool_fee_heads_${schoolId}`);
   const terms = lsGet<any>(`myzkool_fee_terms_${schoolId}`);
 
+  const enrollmentMap = new Map<string, any>(enrollments.map((e: any) => [e.student_id, e]));
+  const classMap = new Map<string, any>(classes.map((c: any) => [c.id, c]));
+  const sectionMap = new Map<string, any>(sections.map((s: any) => [s.id, s]));
+  const feeHeadMap = new Map<string, any>(feeHeads.map((h: any) => [h.id, h]));
+  const termMap = new Map<string, any>(terms.map((t: any) => [t.id, t]));
+
   const todayStr = new Date().toISOString().split("T")[0];
   let totalOutstandingPaise = 0;
   const studentCards: ParentPayStudentCard[] = [];
 
   for (const st of students) {
-    const enr = enrollments.find((e: any) => e.student_id === st.id);
-    const cls = classes.find((c: any) => c.id === (enr?.class_id || st.admission_class_id));
-    const sec = sections.find((s: any) => s.id === enr?.section_id);
+    const enr = enrollmentMap.get(st.id);
+    const cls = classMap.get(enr?.class_id || st.admission_class_id);
+    const sec = sectionMap.get(enr?.section_id);
 
     const sDues = dues.filter(
       (d) =>
@@ -422,8 +432,8 @@ export async function getParentPayContext(
     );
 
     const mappedDues = sDues.map((d) => {
-      const head = feeHeads.find((h: any) => h.id === d.fee_head_id);
-      const term = terms.find((t: any) => t.id === d.term_id);
+      const head = feeHeadMap.get(d.fee_head_id);
+      const term = termMap.get(d.term_id);
       const isOverdue = d.due_date < todayStr;
       return {
         due_id: d.id,
@@ -501,15 +511,16 @@ export async function createOnlinePaymentOrder(
 
   // 2. Fetch dues from database/store (CRITICAL: ignore clientSuppliedAmount)
   const allDues = lsGet<StudentDue>(`myzkool_student_dues_${schoolId}`);
-  const matchedDues = allDues.filter((d) => selectedDueIds.includes(d.id));
+  const selectedDueIdSet = new Set(selectedDueIds);
+  const matchedDues = allDues.filter((d) => selectedDueIdSet.has(d.id));
 
   if (matchedDues.length === 0) {
     return { success: false, error: "Selected dues not found or already settled." };
   }
 
   // Cross-tenant & parent verification: ensure dues belong to parent's children
-  const parentStudentIds = context.students.map((s) => s.student_id);
-  const unauthorizedDue = matchedDues.find((d) => !parentStudentIds.includes(d.student_id));
+  const parentStudentIdSet = new Set(context.students.map((s) => s.student_id));
+  const unauthorizedDue = matchedDues.find((d) => !parentStudentIdSet.has(d.student_id));
   if (unauthorizedDue) {
     return { success: false, error: "Unauthorized due selection detected." };
   }
@@ -616,13 +627,14 @@ export async function finaliseOnlineOrderCapture(
   }
 
   const allDues = lsGet<StudentDue>(`myzkool_student_dues_${schoolId}`);
+  const duesMap = new Map<string, StudentDue>(allDues.map((d) => [d.id, d]));
   const createdReceiptIds: string[] = [];
   const createdAdvanceIds: string[] = [];
 
   // Group dues by student
   const studentDuesMap = new Map<string, string[]>();
   for (const dueId of order.due_ids) {
-    const due = allDues.find((d) => d.id === dueId);
+    const due = duesMap.get(dueId);
     if (due) {
       const list = studentDuesMap.get(due.student_id) || [];
       list.push(due.id);
@@ -631,7 +643,7 @@ export async function finaliseOnlineOrderCapture(
   }
 
   // Collect fees per student
-  for (const [studentId, dueIds] of studentDuesMap.entries()) {
+  for await (const [studentId, dueIds] of studentDuesMap.entries()) {
     const studentSelectedDues = allDues.filter((d) => dueIds.includes(d.id));
     const stillUnpaidDues = studentSelectedDues.filter(
       (d) => (d.status === "pending" || d.status === "partial") && d.balance_paise > 0
@@ -854,8 +866,7 @@ export async function runOnlineReconciliationJob(
 
   const nonCaptureStatusUpdates = new Map<string, { status: "failed" | "expired"; updated_at: string }>();
 
-  for (let i = 0; i < orders.length; i++) {
-    const o = orders[i];
+  for await (const o of orders) {
     if (o.status !== "created" && o.status !== "authorised") continue;
 
     const createdAtTime = new Date(o.created_at).getTime();

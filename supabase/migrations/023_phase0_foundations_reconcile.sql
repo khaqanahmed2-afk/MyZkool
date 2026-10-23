@@ -236,3 +236,42 @@ drop policy if exists tenant_write_school_members on school_members;
 create policy tenant_write_school_members on school_members
   for all using (school_id in (select my_school_ids()))
   with check (school_id in (select my_school_ids()));
+
+alter table profiles enable row level security;
+drop policy if exists profiles_read_own on profiles;
+create policy profiles_read_own on profiles
+  for select using (user_id = auth.uid());
+drop policy if exists profiles_write_own on profiles;
+create policy profiles_write_own on profiles
+  for all using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+alter table plans enable row level security;
+drop policy if exists plans_read_all on plans;
+create policy plans_read_all on plans
+  for select using (true);
+
+alter table plan_features enable row level security;
+drop policy if exists plan_features_read_all on plan_features;
+create policy plan_features_read_all on plan_features
+  for select using (true);
+
+alter table otp_requests enable row level security;
+drop policy if exists otp_requests_anon_insert on otp_requests;
+create policy otp_requests_anon_insert on otp_requests
+  for insert with check (mobile is not null and code_hash is not null);
+drop policy if exists otp_requests_read_self on otp_requests;
+create policy otp_requests_read_self on otp_requests
+  for select using (mobile is not null);
+
+alter table device_tokens enable row level security;
+drop policy if exists device_tokens_own on device_tokens;
+create policy device_tokens_own on device_tokens
+  for all using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+alter table jobs enable row level security;
+drop policy if exists jobs_service_access on jobs;
+-- Server-only background queue: service_role bypasses RLS automatically.
+-- With RLS enabled and no permissive client policies, client roles (anon/authenticated) cannot access jobs.
+

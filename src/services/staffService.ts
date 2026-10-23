@@ -250,7 +250,7 @@ export async function createStaff({
   // 1. Persist to Supabase if configured
   if (isSupabaseConfigured) {
     try {
-      const { error: insertError } = await supabase.from("staff").insert({
+      const staffPayload = {
         id: newMember.id,
         school_id: newMember.school_id,
         user_id: newMember.user_id,
@@ -265,7 +265,8 @@ export async function createStaff({
         status: newMember.status,
         created_at: newMember.created_at,
         updated_at: newMember.updated_at,
-      });
+      };
+      const { error: insertError } = await supabase.from("staff").insert(staffPayload);
 
       if (insertError) {
         console.warn("Supabase staff insert warning:", insertError);
@@ -382,20 +383,21 @@ export async function updateStaff({
   // 1. Supabase update
   if (isSupabaseConfigured) {
     try {
+      const updatePayload = {
+        first_name: updatedMember.first_name,
+        last_name: updatedMember.last_name,
+        email: updatedMember.email,
+        phone: updatedMember.phone,
+        role: updatedMember.role,
+        designation: updatedMember.designation,
+        employee_code: updatedMember.employee_code,
+        joining_date: updatedMember.joining_date,
+        status: updatedMember.status,
+        updated_at: timestamp,
+      };
       await supabase
         .from("staff")
-        .update({
-          first_name: updatedMember.first_name,
-          last_name: updatedMember.last_name,
-          email: updatedMember.email,
-          phone: updatedMember.phone,
-          role: updatedMember.role,
-          designation: updatedMember.designation,
-          employee_code: updatedMember.employee_code,
-          joining_date: updatedMember.joining_date,
-          status: updatedMember.status,
-          updated_at: timestamp,
-        })
+        .update(updatePayload)
         .eq("id", staffId)
         .eq("school_id", schoolId);
     } catch (err) {

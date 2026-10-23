@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Sliders, Plus, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
 import type {
@@ -41,7 +41,7 @@ export default function ConcessionRulesPage() {
     totalCount: 0,
   });
   const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const refreshingRef = useRef<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Metadata
@@ -67,7 +67,7 @@ export default function ConcessionRulesPage() {
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   const [isPoliciesDrawerOpen, setIsPoliciesDrawerOpen] = useState(false);
   const [selectedConcessionForDetail, setSelectedConcessionForDetail] = useState<StudentConcession | null>(null);
-  const [selectedConcessionForEdit, setSelectedConcessionForEdit] = useState<StudentConcession | null>(null);
+  const selectedConcessionForEditRef = useRef<StudentConcession | null>(null);
 
   // Feedback Toasts
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -131,7 +131,7 @@ export default function ConcessionRulesPage() {
   const loadConcessions = useCallback(async (isSilent = false) => {
     if (!activeSchoolId) return;
     if (!isSilent) setLoading(true);
-    else setRefreshing(true);
+    else refreshingRef.current = true;
     setError(null);
 
     try {
@@ -149,7 +149,7 @@ export default function ConcessionRulesPage() {
       setError(err?.message || "Failed to load concessions.");
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      refreshingRef.current = false;
     }
   }, [activeSchoolId, filters]);
 
@@ -271,6 +271,7 @@ export default function ConcessionRulesPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
     showToast("success", `Exported ${concessions.length} concession records to CSV.`);
   };
 
@@ -390,7 +391,7 @@ export default function ConcessionRulesPage() {
         loading={loading}
         onViewDetails={(c) => setSelectedConcessionForDetail(c)}
         onEdit={(c) => {
-          setSelectedConcessionForEdit(c);
+          selectedConcessionForEditRef.current = c;
           setIsAddDrawerOpen(true);
         }}
         onApprove={(c) => handleApprove(c.id)}

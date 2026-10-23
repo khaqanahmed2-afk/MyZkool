@@ -389,12 +389,13 @@ export async function saveAcademicSetup({
         const currentStep = currentSchool?.onboarding_step || 2;
         const newStep = Math.max(currentStep, 3);
 
+        const schoolUpdate = {
+          onboarding_step: newStep,
+          updated_at: timestamp,
+        };
         await supabase
           .from("schools")
-          .update({
-            onboarding_step: newStep,
-            updated_at: timestamp,
-          })
+          .update(schoolUpdate)
           .eq("id", schoolId);
       } catch (schoolErr) {
         console.warn("Could not advance school onboarding_step:", schoolErr);
@@ -402,13 +403,14 @@ export async function saveAcademicSetup({
 
       // Update profiles: ensure school_id is bound and advance step
       try {
+        const profileUpdate = {
+          school_id: schoolId,
+          current_onboarding_step: "/onboarding/classes",
+          updated_at: timestamp,
+        };
         await supabase
           .from("profiles")
-          .update({
-            school_id: schoolId,
-            current_onboarding_step: "/onboarding/classes",
-            updated_at: timestamp,
-          })
+          .update(profileUpdate)
           .eq("auth_id", userId);
       } catch (profileErr) {
         console.warn("Could not update user profile onboarding step:", profileErr);

@@ -59,6 +59,10 @@ export class Fast2SmsAdapter implements SmsAdapter {
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Fast2SMS responded with status ${response.status}`);
+      }
+
       const data = (await response.json()) as any;
       if (data.return) {
         return { success: true, messageId: data.request_id };

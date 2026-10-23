@@ -387,9 +387,10 @@ export async function createAssignment(
   // 5. Fee snapshot (Rule C7.5)
   let monthlyFeePaise = 0;
   try {
+    const feeStopId = (input.service_type === "drop_only" && dropStopId) ? dropStopId : input.pickup_stop_id;
     monthlyFeePaise = await calculateStopMonthlyFee(
       schoolId,
-      input.pickup_stop_id,
+      feeStopId,
       input.service_type
     );
   } catch (err: any) {
@@ -526,9 +527,10 @@ export async function changeAssignment(
   }
   let newMonthlyFeePaise = 0;
   try {
+    const newFeeStopId = (input.new_service_type === "drop_only" && newDropStopId) ? newDropStopId : input.new_pickup_stop_id;
     newMonthlyFeePaise = await calculateStopMonthlyFee(
       schoolId,
-      input.new_pickup_stop_id,
+      newFeeStopId,
       input.new_service_type
     );
   } catch (err: any) {
@@ -830,7 +832,7 @@ export async function bulkAssignStudents(
   const created: TransportAssignment[] = [];
   const failed: { student_id: string; error: string }[] = [];
 
-  for (const studentId of input.student_ids) {
+  for await (const studentId of input.student_ids) {
     const res = await createAssignment(schoolId, {
       student_id: studentId,
       academic_year_id: input.academic_year_id,
@@ -1177,6 +1179,7 @@ export async function getStudentTransportDetails(
   if (activeAssignment) {
     const students = lsGet<any>(STUDENTS_KEY(schoolId));
     const classes = lsGet<any>(CLASSES_KEY(schoolId));
+    const classMap = new Map<string, any>(classes.map((c: any) => [c.id, c]));
     const currentStudent = students.find((s: any) => s.id === studentId);
 
     if (currentStudent && (currentStudent.father_phone || currentStudent.mother_phone || currentStudent.guardian_phone)) {
@@ -1192,7 +1195,7 @@ export async function getStudentTransportDetails(
             (s.father_phone === parentPhone || s.mother_phone === parentPhone || s.guardian_phone === parentPhone)
         );
         if (sib) {
-          const cls = classes.find((c: any) => c.id === sib.class_id);
+          const cls = classMap.get(sib.class_id);
           siblingsOnRoute.push({
             student_id: sib.id,
             student_name: `${sib.first_name} ${sib.last_name || ""}`.trim(),
@@ -1400,10 +1403,12 @@ export async function getRenewalPreview(
   }
 
   const oldRiders = allAssignments.filter((a) => a.academic_year_id === oldYearId && a.status === "active");
+  const studentMap = new Map<string, any>(students.map((st: any) => [st.id, st]));
+  const classMap = new Map<string, any>(classes.map((c: any) => [c.id, c]));
   const previewItems: RenewalPreviewItem[] = [];
 
-  for (const oldAssign of oldRiders) {
-    const s = students.find((st: any) => st.id === oldAssign.student_id);
+  for await (const oldAssign of oldRiders) {
+    const s = studentMap.get(oldAssign.student_id);
     const isLeftSchool = !s || s.status === "withdrawn" || s.status === "transferred" || s.status === "alumni";
 
     // Check if already assigned in new year
@@ -1426,7 +1431,7 @@ export async function getRenewalPreview(
       newFeePaise = oldAssign.monthly_fee_paise;
     }
 
-    const cls = classes.find((c: any) => c.id === s?.class_id);
+    const cls = s?.class_id ? classMap.get(s.class_id) : undefined;
 
     let status: "eligible" | "left_school" | "already_assigned" = "eligible";
     if (isLeftSchool) status = "left_school";
@@ -1461,7 +1466,7 @@ export async function commitRenewal(
 ): Promise<{ success: boolean; count: number; error?: string }> {
   let renewedCount = 0;
 
-  for (const item of input.renewals) {
+  for await (const item of input.renewals) {
     // Check if already assigned (idempotent)
     const existing = await getActiveAssignmentForStudent(
       schoolId,

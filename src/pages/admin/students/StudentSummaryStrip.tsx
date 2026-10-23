@@ -97,7 +97,7 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
             type="button"
             onClick={() => onFilterClick(card.key)}
             aria-pressed={isActive}
-            className={`p-4 bg-white border rounded-2xl text-left transition-all duration-150 cursor-pointer shadow-2xs hover:shadow-xs group flex flex-col justify-between ${
+            className={`p-4 bg-white border rounded-2xl text-left transition duration-150 cursor-pointer shadow-2xs hover:shadow-xs group flex flex-col justify-between ${
               isActive
                 ? `border-transparent ring-2 ${card.activeRing} ${card.activeBg}`
                 : "border-[#E6EAF3] hover:border-slate-300 hover:bg-slate-50/50"

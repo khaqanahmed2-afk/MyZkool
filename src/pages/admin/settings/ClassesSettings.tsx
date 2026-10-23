@@ -10,7 +10,7 @@
  * - Parent Merge Tool for resolving duplicate parent phone numbers
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -51,7 +51,7 @@ import { ParentMergePreview } from "../../../types/students";
 export default function ClassesSettings() {
   const { user, profile } = useAuth();
 
-  const [schoolId, setSchoolId] = useState<string>("");
+  const schoolIdRef = useRef<string>("");
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [selectedYearId, setSelectedYearId] = useState<string>("");
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -89,28 +89,50 @@ export default function ClassesSettings() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     async function loadData() {
       try {
-        const sId = (profile as any)?.school_id || "school-1";
-        setSchoolId(sId);
+        const sId = profile?.school_id || "school-1";
+        if (!isMounted) return;
+        schoolIdRef.current = sId;
 
         const ayRes = await getAcademicYearsForSchool(sId);
+        if (!isMounted) return;
         if (ayRes.academicYears && ayRes.academicYears.length > 0) {
           setAcademicYears(ayRes.academicYears);
           const activeAy = ayRes.academicYears.find((y) => y.is_current) || ayRes.academicYears[0];
           setSelectedYearId(activeAy.id);
-          await loadClasses(sId, activeAy.id);
+          const classRes = await getClassesWithSections(sId, activeAy.id || undefined);
+          if (!isMounted) return;
+          if (classRes.classes) {
+            setClasses(classRes.classes);
+            if (classRes.classes.length > 0) {
+              setSelectedClassId((prev) => (classRes.classes.some((c) => c.id === prev) ? prev : classRes.classes[0].id));
+            }
+          }
         } else {
           // Fallback if no academic years configured
           setSelectedYearId("");
-          await loadClasses(sId, "");
+          const classRes = await getClassesWithSections(sId, undefined);
+          if (!isMounted) return;
+          if (classRes.classes) {
+            setClasses(classRes.classes);
+            if (classRes.classes.length > 0) {
+              setSelectedClassId((prev) => (classRes.classes.some((c) => c.id === prev) ? prev : classRes.classes[0].id));
+            }
+          }
         }
       } catch (err: any) {
+        if (!isMounted) return;
         setErrorMsg(err.message || "Failed to load classes settings");
       }
     }
     loadData();
-  }, [profile?.school_id]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [profile]);
 
   const loadClasses = async (sId: string, ayId?: string) => {
     const classRes = await getClassesWithSections(sId, ayId || undefined);
@@ -135,7 +157,7 @@ export default function ClassesSettings() {
 
     try {
       const res = await createClass({
-        schoolId,
+        schoolId: schoolIdRef.current,
         academicYearId: selectedYearId || "ay-default",
         userId: user?.id,
         input: {
@@ -150,7 +172,7 @@ export default function ClassesSettings() {
         setNewClassDisplayName("");
         setNewClassSections("A, B");
         setShowAddClassModal(false);
-        await loadClasses(schoolId, selectedYearId);
+        await loadClasses(schoolIdRef.current, selectedYearId);
         setSelectedClassId(res.classRecord.id);
       } else {
         setErrorMsg(res.error || "Failed to create class");
@@ -170,7 +192,7 @@ export default function ClassesSettings() {
 
     try {
       const res = await createSection({
-        schoolId,
+        schoolId: schoolIdRef.current,
         academicYearId: selectedYearId || "ay-default",
         classId: selectedClassId,
         input: {
@@ -183,7 +205,7 @@ export default function ClassesSettings() {
         setNewSectionName("");
         setNewSectionDisplayName("");
         setShowAddSectionModal(false);
-        await loadClasses(schoolId, selectedYearId);
+        await loadClasses(schoolIdRef.current, selectedYearId);
       } else {
         setErrorMsg(res.error || "Failed to create section");
       }
@@ -196,7 +218,7 @@ export default function ClassesSettings() {
 
   const handleYearChange = async (ayId: string) => {
     setSelectedYearId(ayId);
-    await loadClasses(schoolId, ayId);
+    await loadClasses(schoolIdRef.current, ayId);
   };
 
   const handleMoveClass = async (index: number, direction: "up" | "down") => {
@@ -214,12 +236,12 @@ export default function ClassesSettings() {
     }));
 
     setClasses(newClasses);
-    await updateClassesDisplayOrder(schoolId, selectedYearId, orders);
+    await updateClassesDisplayOrder(schoolIdRef.current, selectedYearId, orders);
   };
 
   const handleCapacityChange = async (sectionId: string, capacity: number) => {
     setSectionCapacities((prev) => ({ ...prev, [sectionId]: capacity }));
-    await updateSectionSettings(schoolId, sectionId, { capacity });
+    await updateSectionSettings(schoolIdRef.current, sectionId, { capacity });
   };
 
   const handleCopyFromPreviousYear = async () => {
@@ -232,9 +254,9 @@ export default function ClassesSettings() {
     }
 
     try {
-      const res = await copySectionsFromPreviousYear(schoolId, prevYear.id, selectedYearId);
+      const res = await copySectionsFromPreviousYear(schoolIdRef.current, prevYear.id, selectedYearId);
       setCopySuccessMsg(`Copied ${res.copied_count} sections from ${prevYear.name}`);
-      await loadClasses(schoolId, selectedYearId);
+      await loadClasses(schoolIdRef.current, selectedYearId);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to copy sections");
     }
@@ -243,7 +265,7 @@ export default function ClassesSettings() {
   // Parent Merge Handlers
   const handleLookupSurviving = async () => {
     setMergeError(null);
-    const res = await lookupParentByPhone(schoolId, survivingPhone);
+    const res = await lookupParentByPhone(schoolIdRef.current, survivingPhone);
     if (res.found && res.parent) {
       setSurvivingParent(res.parent);
     } else {
@@ -253,7 +275,7 @@ export default function ClassesSettings() {
 
   const handleLookupDuplicate = async () => {
     setMergeError(null);
-    const res = await lookupParentByPhone(schoolId, duplicatePhone);
+    const res = await lookupParentByPhone(schoolIdRef.current, duplicatePhone);
     if (res.found && res.parent) {
       setDuplicateParent(res.parent);
     } else {
@@ -265,7 +287,7 @@ export default function ClassesSettings() {
     if (!survivingParent || !duplicateParent) return;
     setMergeError(null);
     try {
-      const preview = await previewParentMerge(schoolId, survivingParent.id, duplicateParent.id);
+      const preview = await previewParentMerge(schoolIdRef.current, survivingParent.id, duplicateParent.id);
       setMergePreview(preview);
     } catch (err: any) {
       setMergeError(err.message || "Failed to preview parent merge");
@@ -278,7 +300,7 @@ export default function ClassesSettings() {
     setMergeError(null);
     try {
       const res = await executeParentMerge(
-        schoolId,
+        schoolIdRef.current,
         user?.id || "admin",
         survivingParent.id,
         duplicateParent.id
@@ -321,7 +343,7 @@ export default function ClassesSettings() {
         {/* Academic Year Selector */}
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-gray-500" />
-          <select
+          <select aria-label="Select academic year"
             value={selectedYearId}
             onChange={(e) => handleYearChange(e.target.value)}
             className="border-gray-300 rounded-lg text-sm p-2 border shadow-sm font-medium"
@@ -403,7 +425,7 @@ export default function ClassesSettings() {
                 </div>
               ) : (
                 classes.map((cls, idx) => (
-                  <div
+                  <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                     key={cls.id}
                     onClick={() => setSelectedClassId(cls.id)}
                     className={`flex items-center justify-between p-2.5 rounded-lg text-sm cursor-pointer transition-colors ${
@@ -414,7 +436,7 @@ export default function ClassesSettings() {
                   >
                     <span className="truncate">{cls.name}</span>
                     <div className="flex items-center gap-1">
-                      <button
+                      <button aria-label="Move up"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMoveClass(idx, "up");
@@ -424,7 +446,7 @@ export default function ClassesSettings() {
                       >
                         <ChevronUp className="w-4 h-4" />
                       </button>
-                      <button
+                      <button aria-label="Move up"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMoveClass(idx, "down");
@@ -480,10 +502,10 @@ export default function ClassesSettings() {
 
                           <div className="flex items-center gap-4">
                             <div>
-                              <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
+                              <label htmlFor={`section-capacity-${sec.id}`} className="block text-xs font-semibold text-gray-600 uppercase mb-1">
                                 Capacity
                               </label>
-                              <input
+                              <input id={`section-capacity-${sec.id}`} aria-label="Capacity"
                                 type="number"
                                 min="1"
                                 max="100"
@@ -540,9 +562,9 @@ export default function ClassesSettings() {
             <div className="p-4 bg-gray-50 rounded-lg border space-y-3">
               <span className="text-xs font-bold text-green-700 uppercase">1. Surviving Parent (To Keep)</span>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Phone Number</label>
+                <label htmlFor="classessettings-phone-number" className="block text-xs font-semibold text-gray-700 mb-1">Phone Number</label>
                 <div className="flex gap-2">
-                  <input
+                  <input id="classessettings-phone-number"
                     type="text"
                     placeholder="10-digit phone"
                     value={survivingPhone}
@@ -569,9 +591,9 @@ export default function ClassesSettings() {
             <div className="p-4 bg-gray-50 rounded-lg border space-y-3">
               <span className="text-xs font-bold text-red-700 uppercase">2. Duplicate Parent (To Merge & Remove)</span>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Phone Number</label>
+                <label htmlFor="classessettings-phone-number-2" className="block text-xs font-semibold text-gray-700 mb-1">Phone Number</label>
                 <div className="flex gap-2">
-                  <input
+                  <input id="classessettings-phone-number-2"
                     type="text"
                     placeholder="10-digit phone"
                     value={duplicatePhone}
@@ -654,10 +676,10 @@ export default function ClassesSettings() {
             <h3 className="text-lg font-bold text-gray-900">Add New Class</h3>
             <form onSubmit={handleCreateClass} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label htmlFor="classessettings-class-name" className="block text-xs font-semibold text-gray-700 mb-1">
                   Class Name <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="classessettings-class-name"
                   type="text"
                   placeholder="e.g. Class 1, Grade 5, Nursery"
                   value={newClassName}
@@ -667,10 +689,10 @@ export default function ClassesSettings() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label htmlFor="classessettings-display-name-optional" className="block text-xs font-semibold text-gray-700 mb-1">
                   Display Name (Optional)
                 </label>
-                <input
+                <input id="classessettings-display-name-optional"
                   type="text"
                   placeholder="e.g. Grade 1 - Primary"
                   value={newClassDisplayName}
@@ -679,10 +701,10 @@ export default function ClassesSettings() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label htmlFor="classessettings-initial-sections-comma-separat" className="block text-xs font-semibold text-gray-700 mb-1">
                   Initial Sections (comma separated)
                 </label>
-                <input
+                <input id="classessettings-initial-sections-comma-separat"
                   type="text"
                   placeholder="e.g. A, B, C"
                   value={newClassSections}
@@ -723,10 +745,10 @@ export default function ClassesSettings() {
             </h3>
             <form onSubmit={handleCreateSection} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label htmlFor="classessettings-section-name" className="block text-xs font-semibold text-gray-700 mb-1">
                   Section Name <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="classessettings-section-name"
                   type="text"
                   placeholder="e.g. A, B, Rose, Lotus"
                   value={newSectionName}
@@ -736,10 +758,10 @@ export default function ClassesSettings() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label htmlFor="classessettings-display-name-optional-2" className="block text-xs font-semibold text-gray-700 mb-1">
                   Display Name (Optional)
                 </label>
-                <input
+                <input id="classessettings-display-name-optional-2"
                   type="text"
                   placeholder="e.g. Section C"
                   value={newSectionDisplayName}

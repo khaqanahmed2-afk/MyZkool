@@ -100,25 +100,95 @@ export function loadRazorpayCheckoutScript(): Promise<boolean> {
 }
 
 /**
+ * Resilient API POST helper with fallback for dev ports (e.g. Vite on 5173 -> backend on 3000)
+ * and safe error parsing that never crashes with 'Unexpected end of JSON input'.
+ */
+async function postApiJson<T>(endpoint: string, payload: any): Promise<T> {
+  const tryFetch = async (url: string) => {
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  };
+
+  let res: Response | null = null;
+  let lastErr: any = null;
+
+  try {
+    res = await tryFetch(endpoint);
+  } catch (netErr: any) {
+    lastErr = netErr;
+    res = null;
+  }
+
+  // If primary attempt failed, returned 404, or returned 405 (typical when hitting standalone Vite without proxy),
+  // retry against port 3000 if running in a browser on a different port or localhost.
+  if (!res || res.status === 404 || res.status === 405) {
+    if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.port !== "3000") {
+      try {
+        const fallbackUrl = `http://localhost:3000${endpoint}`;
+        const fallbackRes = await tryFetch(fallbackUrl);
+        if (fallbackRes.ok) {
+          res = fallbackRes;
+        } else if (!res) {
+          res = fallbackRes;
+        }
+      } catch {
+        // keep original response or error
+      }
+    }
+  }
+
+  if (!res) {
+    throw new Error(lastErr?.message || "Failed to connect to API server. Please check your network connection.");
+  }
+
+  const rawText = await res.text().catch(() => "");
+  let jsonBody: any = null;
+  if (rawText && rawText.trim().length > 0) {
+    try {
+      jsonBody = JSON.parse(rawText);
+    } catch {
+      // Non-JSON response (e.g. HTML 404 or empty 405)
+    }
+  }
+
+  if (!res.ok) {
+    if (res.status === 405) {
+      throw new Error(
+        "Payment gateway endpoint returned HTTP 405 (Method Not Allowed). Please ensure the backend server is running on http://localhost:3000, or proceed using the 14-Day Free Trial."
+      );
+    }
+    if (res.status === 404) {
+      throw new Error(
+        "Payment endpoint not found (HTTP 404). Please ensure the backend server is running on http://localhost:3000."
+      );
+    }
+    const errMsg =
+      jsonBody?.error ||
+      jsonBody?.details ||
+      jsonBody?.message ||
+      `Request failed with status ${res.status}`;
+    throw new Error(errMsg);
+  }
+
+  if (!jsonBody) {
+    throw new Error("Empty response received from payment server.");
+  }
+
+  return jsonBody as T;
+}
+
+/**
  * Step 1: Call Backend to Create Order
  */
 export async function createOrder(
   data: CreateOrderRequest
 ): Promise<CreateOrderResponse> {
-  const res = await fetch("/api/create-order", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  });
-
-  const body = await res.json();
-  if (!res.ok) {
-    throw new Error(body.error || body.details || `Order creation failed (${res.status})`);
-  }
-
-  return body;
+  return postApiJson<CreateOrderResponse>("/api/create-order", data);
 }
 
 /**
@@ -127,20 +197,7 @@ export async function createOrder(
 export async function verifyPayment(
   data: VerifyPaymentRequest
 ): Promise<VerifyPaymentResponse> {
-  const res = await fetch("/api/verify-payment", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  });
-
-  const body = await res.json();
-  if (!res.ok) {
-    throw new Error(body.error || body.details || `Payment verification failed (${res.status})`);
-  }
-
-  return body;
+  return postApiJson<VerifyPaymentResponse>("/api/verify-payment", data);
 }
 
 /**
@@ -277,23 +334,11 @@ export async function initiateSubscriptionCheckout(
   // 1. Create order on server using trusted server-side pricing
   let orderData: any;
   try {
-    const res = await fetch("/api/create-order", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        school_id: options.schoolId,
-        plan_slug: options.planSlug,
-        billing_cycle: options.billingCycle,
-      }),
+    orderData = await postApiJson("/api/create-order", {
+      school_id: options.schoolId,
+      plan_slug: options.planSlug,
+      billing_cycle: options.billingCycle,
     });
-
-    const body = await res.json();
-    if (!res.ok) {
-      throw new Error(body.error || body.details || `Order creation failed (${res.status})`);
-    }
-    orderData = body;
   } catch (err: any) {
     options.onError(err.message || "Failed to initialize subscription order on server.", err);
     return;
@@ -332,23 +377,16 @@ export async function initiateSubscriptionCheckout(
     }) => {
       try {
         // 3. Verify signature and activate subscription on backend
-        const verifyRes = await fetch("/api/verify-payment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature,
-            school_id: options.schoolId,
-            plan_slug: options.planSlug,
-            billing_cycle: options.billingCycle,
-          }),
+        const verifyData: any = await postApiJson("/api/verify-payment", {
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature,
+          school_id: options.schoolId,
+          plan_slug: options.planSlug,
+          billing_cycle: options.billingCycle,
         });
 
-        const verifyData = await verifyRes.json();
-        if (!verifyRes.ok || !verifyData.success) {
+        if (!verifyData.success) {
           options.onError(
             verifyData.error || "Payment signature verification failed.",
             verifyData

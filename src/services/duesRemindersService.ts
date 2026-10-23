@@ -23,6 +23,10 @@ import type {
 } from "../types/duesReminders";
 import type { FeeReminderRule, FeeFollowup } from "../types/feeOperations";
 import type { StudentInvoice } from "../types/fees";
+import {
+  computeAuthoritativeFinancialSummary,
+  getTodayIST,
+} from "./feeCalculationService";
 
 function lsGet<T>(key: string): T[] {
   if (typeof localStorage === "undefined") return [];
@@ -37,10 +41,6 @@ function lsSet<T>(key: string, data: T[]): void {
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(key, JSON.stringify(data));
   }
-}
-
-function getTodayIST(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
 function formatDisplayDate(dateStr: string): string {
@@ -86,8 +86,9 @@ function getAvatarForName(name: string): { bg: string; text: string; initials: s
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. DEFAULT TEMPLATES SEED
 // ─────────────────────────────────────────────────────────────────────────────
-export const DEFAULT_REMINDER_TEMPLATES: Omit<ReminderTemplate, "id" | "schoolId" | "createdAt" | "updatedAt">[] = [
+export const DEFAULT_REMINDER_TEMPLATES: (Omit<ReminderTemplate, "schoolId" | "createdAt" | "updatedAt"> & { id: string })[] = [
   {
+    id: "tpl_default",
     name: "Payment Reminder (Default)",
     purpose: "general",
     channel: "whatsapp",
@@ -96,6 +97,7 @@ export const DEFAULT_REMINDER_TEMPLATES: Omit<ReminderTemplate, "id" | "schoolId
     isActive: true,
   },
   {
+    id: "tpl_upcoming",
     name: "Upcoming Fee Due",
     purpose: "upcoming",
     channel: "whatsapp",
@@ -104,6 +106,7 @@ export const DEFAULT_REMINDER_TEMPLATES: Omit<ReminderTemplate, "id" | "schoolId
     isActive: true,
   },
   {
+    id: "tpl_due_today",
     name: "Due Today",
     purpose: "due_today",
     channel: "whatsapp",
@@ -112,6 +115,7 @@ export const DEFAULT_REMINDER_TEMPLATES: Omit<ReminderTemplate, "id" | "schoolId
     isActive: true,
   },
   {
+    id: "tpl_overdue",
     name: "Overdue Fee Notice",
     purpose: "overdue",
     channel: "whatsapp",
@@ -120,6 +124,7 @@ export const DEFAULT_REMINDER_TEMPLATES: Omit<ReminderTemplate, "id" | "schoolId
     isActive: true,
   },
   {
+    id: "tpl_partial",
     name: "Partial Payment Follow-up",
     purpose: "partial",
     channel: "whatsapp",
@@ -152,8 +157,12 @@ export async function loadDuesAndRemindersData(
   });
   const invoices = invoiceRes.invoices || [];
 
-  // 2. Load total student count and outbox notifications
+  // 2. Load total student count, financial records, and outbox notifications
   let totalStudentsCount = 0;
+  let rawDues: any[] = [];
+  let rawCredits: any[] = [];
+  let rawReceipts: any[] = [];
+  let rawStudents: any[] = [];
   let outboxItems: any[] = [];
   let followups: FeeFollowup[] = [];
   let classes: any[] = [];
@@ -165,6 +174,10 @@ export async function loadDuesAndRemindersData(
     try {
       const [
         studentsCountRes,
+        studentsListRes,
+        duesRes,
+        creditsRes,
+        receiptsRes,
         outboxRes,
         followupsRes,
         classesRes,
@@ -173,20 +186,33 @@ export async function loadDuesAndRemindersData(
         termsRes,
       ] = await Promise.all([
         supabase.from("students").select("id", { count: "exact", head: true }).eq("school_id", schoolId).is("deleted_at", null),
+        supabase.from("students").select("id, first_name, last_name, admission_no, status, deleted_at").eq("school_id", schoolId).is("deleted_at", null),
+        supabase.from("student_dues").select("*").eq("school_id", schoolId),
+        supabase.from("fee_credits").select("student_id, remaining_paise").eq("school_id", schoolId),
+        supabase.from("fee_receipts").select("id, total_paise, status, academic_year_id, receipt_date").eq("school_id", schoolId),
         supabase.from("notification_outbox").select("*").eq("school_id", schoolId),
         supabase.from("fee_followups").select("*").eq("school_id", schoolId),
         supabase.from("classes").select("id, name").eq("school_id", schoolId).order("name"),
         supabase.from("sections").select("id, name, class_id").eq("school_id", schoolId).order("name"),
-        supabase.from("academic_years").select("id, name, is_current").eq("school_id", schoolId),
+        supabase.from("academic_years").select("id, label, is_current").eq("school_id", schoolId),
         supabase.from("fee_terms").select("id, name, term_code").eq("school_id", schoolId),
       ]);
 
       totalStudentsCount = studentsCountRes.count || 0;
+      rawStudents = studentsListRes.data || [];
+      rawDues = duesRes.data || [];
+      rawCredits = creditsRes.data || [];
+      rawReceipts = receiptsRes.data || [];
       outboxItems = outboxRes.data || [];
       followups = (followupsRes.data || []) as FeeFollowup[];
       classes = classesRes.data || [];
       sections = sectionsRes.data || [];
-      academicYears = yearsRes.data || [];
+      academicYears = (yearsRes.data || []).map((y: any) => ({
+        id: y.id,
+        name: y.label || y.name || "Academic Year",
+        label: y.label || y.name || "Academic Year",
+        is_current: Boolean(y.is_current),
+      }));
       terms = termsRes.data || [];
     } catch (err) {
       console.warn("Notice: Falling back to local storage caches for metadata", err);
@@ -194,9 +220,20 @@ export async function loadDuesAndRemindersData(
   }
 
   // Fallback to local storage if DB empty or offline
+  if (rawStudents.length === 0) {
+    rawStudents = lsGet<any>(`myzkool_students_${schoolId}`).filter((s: any) => !s.deleted_at);
+  }
   if (totalStudentsCount === 0) {
-    const cachedStudents = lsGet<any>(`myzkool_students_${schoolId}`).filter((s) => !s.deleted_at);
-    totalStudentsCount = cachedStudents.length;
+    totalStudentsCount = rawStudents.length;
+  }
+  if (rawDues.length === 0) {
+    rawDues = lsGet<any>(`myzkool_student_dues_${schoolId}`);
+  }
+  if (rawCredits.length === 0) {
+    rawCredits = lsGet<any>(`myzkool_fee_credits_${schoolId}`);
+  }
+  if (rawReceipts.length === 0) {
+    rawReceipts = lsGet<any>(`myzkool_fee_receipts_${schoolId}`);
   }
   if (outboxItems.length === 0) {
     outboxItems = lsGet<any>(`myzkool_notification_outbox_${schoolId}`);
@@ -211,11 +248,27 @@ export async function loadDuesAndRemindersData(
     sections = lsGet<any>(`myzkool_sections_${schoolId}`);
   }
   if (academicYears.length === 0) {
-    academicYears = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+    const cachedYears = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+    academicYears = cachedYears.map((y: any) => ({
+      id: y.id,
+      name: y.label || y.name || "Academic Year",
+      label: y.label || y.name || "Academic Year",
+      is_current: Boolean(y.is_current),
+    }));
   }
   if (terms.length === 0) {
     terms = lsGet<any>(`myzkool_fee_terms_${schoolId}`);
   }
+
+  // Authoritative financial calculations
+  const authSummary = computeAuthoritativeFinancialSummary({
+    dues: rawDues,
+    credits: rawCredits,
+    receipts: rawReceipts,
+    students: rawStudents,
+    academicYearId: options.academicYearId,
+    asOfDateStr: todayStr,
+  });
 
   // Build outbox mapping by invoice / student
   const remindersByInvoice = new Map<string, any[]>();
@@ -233,24 +286,34 @@ export async function loadDuesAndRemindersData(
     }
   }
 
-  // Build rows from invoices
-  let totalOutstandingPaise = 0;
-  let pendingInvoicesCount = 0;
-  let overduePaise = 0;
-  let overdueInvoicesCount = 0;
-  const distinctStudentsWithDues = new Set<string>();
+  // Map student advance credits for FIFO allocation across invoices
+  const studentCreditsRemaining = new Map<string, number>();
+  for (const c of rawCredits) {
+    const rem = Number(c.remaining_paise) || 0;
+    if (rem > 0) {
+      studentCreditsRemaining.set(c.student_id, (studentCreditsRemaining.get(c.student_id) || 0) + rem);
+    }
+  }
+
+  // Sort invoices by due_date ascending for deterministic FIFO application of advance credits
+  const nonCancelledInvoices = invoices.filter((inv) => inv.status !== "cancelled");
+  nonCancelledInvoices.sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
 
   const rows: DuesReminderRow[] = [];
 
-  for (const inv of invoices) {
-    // Skip cancelled invoices completely
-    if (inv.status === "cancelled") continue;
-
-    const balancePaise = inv.balance_paise || 0;
-    const paidPaise = inv.paid_paise || 0;
+  for (const inv of nonCancelledInvoices) {
+    const invGrossBal = inv.balance_paise || 0;
     const grossPaise = inv.gross_paise || 0;
     const concessionPaise = inv.concession_paise || 0;
     const netPaise = inv.total_paise || (inv.gross_paise - inv.concession_paise) || 0;
+
+    // Apply student advance credit FIFO to offset earliest dues first
+    const availableCredit = studentCreditsRemaining.get(inv.student_id) || 0;
+    const creditApplied = Math.min(availableCredit, invGrossBal);
+    studentCreditsRemaining.set(inv.student_id, availableCredit - creditApplied);
+
+    const balancePaise = invGrossBal - creditApplied;
+    const paidPaise = (inv.paid_paise || 0) + creditApplied;
 
     const dueDueDateStr = inv.due_date ? inv.due_date.split("T")[0] : todayStr;
     const dueDueDate = new Date(dueDueDateStr);
@@ -269,17 +332,6 @@ export async function loadDuesAndRemindersData(
       status = "due_soon";
     } else {
       status = "upcoming";
-    }
-
-    if (balancePaise > 0) {
-      totalOutstandingPaise += balancePaise;
-      pendingInvoicesCount++;
-      distinctStudentsWithDues.add(inv.student_id);
-
-      if (daysOverdue > 0) {
-        overduePaise += balancePaise;
-        overdueInvoicesCount++;
-      }
     }
 
     // Class & Section formatting (e.g. "10-A")
@@ -345,12 +397,12 @@ export async function loadDuesAndRemindersData(
   }
 
   const metrics: DuesSummaryMetrics = {
-    totalOutstandingPaise,
-    pendingInvoicesCount,
-    overduePaise,
-    overdueInvoicesCount,
-    studentsWithDuesCount: distinctStudentsWithDues.size,
-    totalStudentsCount: Math.max(totalStudentsCount, distinctStudentsWithDues.size),
+    totalOutstandingPaise: authSummary.net_outstanding_paise,
+    pendingInvoicesCount: rows.filter((r) => r.balancePaise > 0).length,
+    overduePaise: authSummary.net_overdue_paise,
+    overdueInvoicesCount: rows.filter((r) => r.balancePaise > 0 && r.status === "overdue").length,
+    studentsWithDuesCount: authSummary.distinct_students_with_dues_count,
+    totalStudentsCount: authSummary.total_students_count,
     remindersPendingCount,
   };
 

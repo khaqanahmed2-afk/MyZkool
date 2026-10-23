@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Wallet,
@@ -43,7 +43,9 @@ const PAYMENT_METHOD_TABS = [
   { id: "cheque", label: "Cheque" },
   { id: "online", label: "Online" },
   { id: "failed", label: "Failed" },
+  { id: "cancelled", label: "Cancelled" },
   { id: "refunded", label: "Refunded" },
+  { id: "reversed", label: "Reversed" },
 ] as const;
 
 export default function FeeCollectionsPage() {
@@ -68,7 +70,7 @@ export default function FeeCollectionsPage() {
   // Data & loading state
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<EnrichedTransaction[]>([]);
-  const [allFilteredTransactions, setAllFilteredTransactions] = useState<EnrichedTransaction[]>([]);
+  const allFilteredTransactionsRef = useRef<EnrichedTransaction[]>([]);
   const [classesList, setClassesList] = useState<Array<{ id: string; name: string }>>([]);
   const [yearsList, setYearsList] = useState<Array<{ id: string; label: string; is_current: boolean }>>([]);
   const [summary, setSummary] = useState<CollectionSummaryMetrics>({
@@ -121,7 +123,7 @@ export default function FeeCollectionsPage() {
 
       setSummary(data.summary);
       setTransactions(data.transactions);
-      setAllFilteredTransactions(data.allFilteredTransactions || data.transactions);
+      allFilteredTransactionsRef.current = data.allFilteredTransactions || data.transactions;
       setTotalCount(data.totalCount);
       setTotalPages(data.totalPages);
       setClassesList(data.classes);
@@ -213,13 +215,18 @@ export default function FeeCollectionsPage() {
   const getStatusBadge = (status: EnrichedTransaction["status"]) => {
     switch (status) {
       case "received":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#E8F7EE] text-[#0B7B49] border border-emerald-200">Received</span>;
+      case "successful":
+        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#E8F7EE] text-[#0B7B49] border border-emerald-200">Successful</span>;
       case "pending":
         return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">Pending</span>;
       case "failed":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">Failed</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">Failed</span>;
+      case "cancelled":
+        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300">Cancelled</span>;
       case "refunded":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">Refunded</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">Refunded</span>;
+      case "reversed":
+        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">Reversed</span>;
       default:
         return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-700">{status}</span>;
     }
@@ -228,7 +235,7 @@ export default function FeeCollectionsPage() {
   // Export handlers
   const handleExportCSV = () => {
     setIsExportDropdownOpen(false);
-    const toExport = allFilteredTransactions.length > 0 ? allFilteredTransactions : transactions;
+    const toExport = allFilteredTransactionsRef.current.length > 0 ? allFilteredTransactionsRef.current : transactions;
     exportCollectionsCSV(toExport);
   };
 
@@ -367,12 +374,12 @@ export default function FeeCollectionsPage() {
         {/* Search Input */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
+          <input aria-label="Search fee collections"
             type="text"
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search by student name, admission no., receipt no. or transaction id..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#0B7B49] focus:ring-1 focus:ring-[#0B7B49] transition-all"
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#0B7B49] focus:ring-1 focus:ring-[#0B7B49] transition-colors"
           />
         </div>
 
@@ -380,8 +387,8 @@ export default function FeeCollectionsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Academic Year */}
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 block mb-1">Academic Year</label>
-            <select
+            <label htmlFor="feecollectionspage-academic-year" className="text-[11px] font-semibold text-gray-500 block mb-1">Academic Year</label>
+            <select id="feecollectionspage-academic-year" aria-label="Academic Year"
               value={academicYearId}
               onChange={(e) => setAcademicYearId(e.target.value)}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
@@ -396,8 +403,8 @@ export default function FeeCollectionsPage() {
 
           {/* Class */}
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 block mb-1">Class</label>
-            <select
+            <label htmlFor="feecollectionspage-class" className="text-[11px] font-semibold text-gray-500 block mb-1">Class</label>
+            <select id="feecollectionspage-class" aria-label="Class"
               value={selectedClassId}
               onChange={(e) => setSelectedClassId(e.target.value)}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
@@ -413,8 +420,8 @@ export default function FeeCollectionsPage() {
 
           {/* Payment Method */}
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 block mb-1">Payment Method</label>
-            <select
+            <label htmlFor="feecollectionspage-payment-method" className="text-[11px] font-semibold text-gray-500 block mb-1">Payment Method</label>
+            <select id="feecollectionspage-payment-method" aria-label="Payment Method"
               value={selectedPaymentMethod}
               onChange={(e) => setSelectedPaymentMethod(e.target.value)}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
@@ -430,8 +437,8 @@ export default function FeeCollectionsPage() {
 
           {/* Date Range */}
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 block mb-1">Date Range</label>
-            <select
+            <label htmlFor="feecollectionspage-date-range" className="text-[11px] font-semibold text-gray-500 block mb-1">Date Range</label>
+            <select id="feecollectionspage-date-range" aria-label="Date Range"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value as any)}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
@@ -446,17 +453,19 @@ export default function FeeCollectionsPage() {
 
           {/* Status */}
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 block mb-1">Status</label>
-            <select
+            <label htmlFor="feecollectionspage-status" className="text-[11px] font-semibold text-gray-500 block mb-1">Status</label>
+            <select id="feecollectionspage-status" aria-label="Status"
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
             >
-              <option value="all">All</option>
-              <option value="received">Received</option>
+              <option value="all">All Statuses</option>
+              <option value="successful">Successful</option>
               <option value="pending">Pending</option>
               <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
               <option value="refunded">Refunded</option>
+              <option value="reversed">Reversed</option>
             </select>
           </div>
 
@@ -480,7 +489,7 @@ export default function FeeCollectionsPage() {
                 key={tab.id}
                 type="button"
                 onClick={() => handleTabChange(tab.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors shrink-0 cursor-pointer ${
                   isActive
                     ? "bg-[#0B7B49] text-white shadow-2xs font-bold"
                     : "bg-[#F8FAFC] text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-[#E6EAF3]"
@@ -513,7 +522,7 @@ export default function FeeCollectionsPage() {
             <thead className="bg-[#F8FAFC] text-gray-500 font-semibold border-b border-[#E6EAF3]">
               <tr>
                 <th className="py-3 px-4 w-10 text-center">
-                  <input
+                  <input aria-label="Select item"
                     type="checkbox"
                     checked={selectedRowIds.size === transactions.length && transactions.length > 0}
                     onChange={handleToggleSelectAll}
@@ -569,7 +578,7 @@ export default function FeeCollectionsPage() {
                     >
                       {/* Checkbox */}
                       <td className="py-3.5 px-4 text-center">
-                        <input
+                        <input aria-label="Select item"
                           type="checkbox"
                           checked={isRowSelected}
                           onChange={() => handleToggleRow(tx.id)}
@@ -636,7 +645,7 @@ export default function FeeCollectionsPage() {
 
                       {/* Actions Menu */}
                       <td className="py-3.5 px-4 text-center relative">
-                        <button
+                        <button aria-label="Actions Menu"
                           type="button"
                           onClick={() => setActiveMenuRowId(activeMenuRowId === tx.id ? null : tx.id)}
                           className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -646,7 +655,7 @@ export default function FeeCollectionsPage() {
 
                         {activeMenuRowId === tx.id && (
                           <>
-                            <div
+                            <div aria-hidden="true"
                               className="fixed inset-0 z-10"
                               onClick={() => setActiveMenuRowId(null)}
                             />
@@ -714,7 +723,7 @@ export default function FeeCollectionsPage() {
 
           {/* Page numbers navigation */}
           <div className="flex items-center gap-1">
-            <button
+            <button aria-label="Previous"
               disabled={currentPage <= 1}
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -754,7 +763,7 @@ export default function FeeCollectionsPage() {
               </>
             )}
 
-            <button
+            <button aria-label="Next"
               disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -765,7 +774,7 @@ export default function FeeCollectionsPage() {
 
           {/* Page size dropdown */}
           <div className="flex items-center gap-2">
-            <select
+            <select aria-label="Page size dropdown"
               value={pageSize}
               onChange={(e) => {
                 setPageSize(Number(e.target.value));

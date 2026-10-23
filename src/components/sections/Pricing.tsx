@@ -29,7 +29,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
           <div className="mt-8 inline-flex items-center p-1.5 bg-[#F1F5F9] rounded-full border border-[#E6EAF3] max-w-md w-full justify-between">
             <button
               onClick={() => setBillingCycle("monthly")}
-              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer ${
+              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-colors cursor-pointer ${
                 billingCycle === "monthly"
                   ? "bg-white text-[#141A2E] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -39,7 +39,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
             </button>
             <button
               onClick={() => setBillingCycle("6month")}
-              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-colors flex items-center justify-center gap-1 cursor-pointer ${
                 billingCycle === "6month"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -50,7 +50,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
             </button>
             <button
               onClick={() => setBillingCycle("12month")}
-              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-full transition-colors flex items-center justify-center gap-1 cursor-pointer ${
                 billingCycle === "12month"
                   ? "bg-white text-[#2158E0] shadow-xs"
                   : "text-[#5B6478] hover:text-[#141A2E]"
@@ -66,7 +66,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch mb-20">
           
           {/* 1. Basic Plan */}
-          <div className="bg-[#F8FAFC] rounded-2xl border border-[#E6EAF3] p-7 flex flex-col justify-between hover:shadow-md transition-all">
+          <div className="bg-[#F8FAFC] rounded-2xl border border-[#E6EAF3] p-7 flex flex-col justify-between hover:shadow-md transition">
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold font-heading text-[#141A2E]">Basic</h3>
@@ -137,7 +137,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
 
             <button
               onClick={() => onOpenDemo("Basic")}
-              className="w-full py-3.5 px-4 rounded-full border border-[#E6EAF3] bg-white text-[#141A2E] hover:border-[#2158E0] hover:text-[#2158E0] font-semibold text-sm transition-all cursor-pointer shadow-xs"
+              className="w-full py-3.5 px-4 rounded-full border border-[#E6EAF3] bg-white text-[#141A2E] hover:border-[#2158E0] hover:text-[#2158E0] font-semibold text-sm transition-colors cursor-pointer shadow-xs"
             >
               Choose Basic
             </button>
@@ -222,14 +222,14 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
 
             <button
               onClick={() => onOpenDemo("Pro")}
-              className="w-full py-3.5 px-4 rounded-full bg-white text-[#2158E0] hover:bg-blue-50 font-bold text-sm transition-all cursor-pointer shadow-md shadow-black/10 active:scale-[0.98]"
+              className="w-full py-3.5 px-4 rounded-full bg-white text-[#2158E0] hover:bg-blue-50 font-bold text-sm transition cursor-pointer shadow-md shadow-black/10 active:scale-[0.98]"
             >
               Choose Pro Plan
             </button>
           </div>
 
           {/* 3. Custom Plan */}
-          <div className="bg-[#F8FAFC] rounded-2xl border border-[#E6EAF3] p-7 flex flex-col justify-between hover:shadow-md transition-all">
+          <div className="bg-[#F8FAFC] rounded-2xl border border-[#E6EAF3] p-7 flex flex-col justify-between hover:shadow-md transition">
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold font-heading text-[#141A2E]">Custom</h3>
@@ -271,7 +271,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
 
             <button
               onClick={() => onOpenDemo("Custom")}
-              className="w-full py-3.5 px-4 rounded-full border border-[#E6EAF3] bg-white text-[#141A2E] hover:border-[#2158E0] hover:text-[#2158E0] font-semibold text-sm transition-all cursor-pointer shadow-xs"
+              className="w-full py-3.5 px-4 rounded-full border border-[#E6EAF3] bg-white text-[#141A2E] hover:border-[#2158E0] hover:text-[#2158E0] font-semibold text-sm transition-colors cursor-pointer shadow-xs"
             >
               Contact Us for a Quote
             </button>
@@ -308,14 +308,14 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
             </div>
             <button
               onClick={() => onOpenDemo()}
-              className="text-xs font-semibold px-4 py-2 bg-[#2158E0] text-white rounded-full hover:bg-[#1a4ec4] transition-all cursor-pointer"
+              className="text-xs font-semibold px-4 py-2 bg-[#2158E0] text-white rounded-full hover:bg-[#1a4ec4] transition-colors cursor-pointer"
             >
               Get Free Consultation
             </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
+            <table className="w-full min-w-[620px] text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[#E6EAF3] bg-white text-[#141A2E]">
                   <th className="py-4 px-6 font-bold text-base">Feature</th>
@@ -329,7 +329,7 @@ export const Pricing: React.FC<PricingProps> = ({ onOpenDemo }) => {
               <tbody className="divide-y divide-[#E6EAF3]">
                 {PRICING_COMPARISON_ROWS.map((row, idx) => (
                   <tr 
-                    key={idx} 
+                    key={row.feature} 
                     className={`hover:bg-[#F8FAFC] transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-[#FAFBFD]"}`}
                   >
                     <td className="py-3.5 px-6 font-medium text-[#141A2E]">

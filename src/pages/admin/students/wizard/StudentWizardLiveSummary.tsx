@@ -1,5 +1,5 @@
 import React from "react";
-import { User, CheckCircle2, ShieldCheck, Bus, CreditCard, FileText } from "lucide-react";
+import { User, CheckCircle2, ShieldCheck, Bus, CreditCard, FileText, Hash } from "lucide-react";
 import { AdmissionWizardPayload } from "../../../../types/students";
 import { maskAadhaar } from "../../../../utils/aadhaarValidation";
 
@@ -8,6 +8,7 @@ interface StudentWizardLiveSummaryProps {
   payload: AdmissionWizardPayload;
   classNamePreview?: string;
   sectionNamePreview?: string;
+  feeStructureNamePreview?: string;
 }
 
 const STEP_LABELS = [
@@ -16,7 +17,7 @@ const STEP_LABELS = [
   "Academic & Class",
   "Documents Vault",
   "Sensitive / Aadhaar",
-  "Medical",
+  "Medical Information",
   "Transport",
   "Fee Assignment",
   "Review & Submit",
@@ -27,6 +28,7 @@ export const StudentWizardLiveSummary: React.FC<StudentWizardLiveSummaryProps> =
   payload,
   classNamePreview,
   sectionNamePreview,
+  feeStructureNamePreview,
 }) => {
   const { step1_basic, step2_guardian, step3_academic, step5_sensitive, step7_transport, step8_fee } = payload;
   const fullName = `${step1_basic.first_name || ""} ${step1_basic.last_name || ""}`.trim() || "New Student";
@@ -41,15 +43,18 @@ export const StudentWizardLiveSummary: React.FC<StudentWizardLiveSummaryProps> =
     ? maskAadhaar(step5_sensitive.aadhaar_number)
     : "Not provided";
 
+  const totalSteps = 9;
+  const progressPercent = Math.round((Math.min(currentStep, totalSteps) / totalSteps) * 100);
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sticky top-6 space-y-6">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sticky top-20 space-y-6">
       {/* Header Profile Snippet */}
       <div className="flex items-center space-x-4">
         {step1_basic.photo_path ? (
           <img
             src={step1_basic.photo_path}
             alt="Preview"
-            className="w-16 h-16 rounded-xl object-cover border border-slate-200"
+            className="w-16 h-16 rounded-xl object-cover border border-slate-200 shadow-2xs"
           />
         ) : (
           <div className="w-16 h-16 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
@@ -88,20 +93,30 @@ export const StudentWizardLiveSummary: React.FC<StudentWizardLiveSummaryProps> =
       <div>
         <div className="flex items-center justify-between text-xs mb-1.5">
           <span className="font-semibold text-slate-700">
-            Step {Math.min(currentStep, 8)} of 8: {STEP_LABELS[currentStep - 1] || "Review"}
+            Step {Math.min(currentStep, totalSteps)} of {totalSteps}: {STEP_LABELS[currentStep - 1] || "Review"}
           </span>
-          <span className="text-slate-500 font-medium">{Math.round((Math.min(currentStep, 8) / 8) * 100)}%</span>
+          <span className="text-slate-500 font-bold">{progressPercent}%</span>
         </div>
         <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
           <div
-            className="bg-[#2158E0] h-2 rounded-full transition-all duration-300"
-            style={{ width: `${(Math.min(currentStep, 8) / 8) * 100}%` }}
+            className="bg-[#2158E0] h-2 rounded-full transition-[width] duration-300"
+            style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
 
       {/* Quick Fact Highlights */}
       <div className="space-y-3 pt-2 border-t border-slate-100 text-xs">
+        {/* Admission Number */}
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500 flex items-center gap-1">
+            <Hash className="w-3.5 h-3.5 text-blue-600" /> Admission No:
+          </span>
+          <span className="font-mono text-slate-800 font-semibold truncate max-w-[170px]">
+            {step1_basic.admission_no || "Auto upon submit"}
+          </span>
+        </div>
+
         {/* Parent & Contact */}
         <div className="flex items-start justify-between">
           <span className="text-slate-500">Primary Contact:</span>
@@ -113,7 +128,7 @@ export const StudentWizardLiveSummary: React.FC<StudentWizardLiveSummaryProps> =
         {/* WhatsApp Consent */}
         <div className="flex items-center justify-between">
           <span className="text-slate-500">WhatsApp Updates:</span>
-          <span className={`font-medium ${primaryParent?.whatsapp_consent !== false ? "text-emerald-600" : "text-amber-600"}`}>
+          <span className={`font-semibold ${primaryParent?.whatsapp_consent !== false ? "text-emerald-700" : "text-amber-700"}`}>
             {primaryParent?.whatsapp_consent !== false ? "Opted In" : "Opted Out"}
           </span>
         </div>
@@ -141,8 +156,10 @@ export const StudentWizardLiveSummary: React.FC<StudentWizardLiveSummaryProps> =
           <span className="text-slate-500 flex items-center gap-1">
             <CreditCard className="w-3.5 h-3.5 text-slate-500" /> Fee Structure:
           </span>
-          <span className="text-slate-800 font-medium">
-            {step8_fee?.fee_structure_id ? "Standard Plan" : (step3_academic.is_rte ? "RTE Concession" : "Pending Assign")}
+          <span className="text-slate-800 font-medium truncate max-w-[160px]">
+            {step3_academic.is_rte
+              ? "RTE Concession"
+              : feeStructureNamePreview || (step8_fee?.fee_structure_id ? "Standard Plan" : "Pending Assign")}
           </span>
         </div>
 

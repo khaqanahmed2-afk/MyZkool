@@ -1332,7 +1332,7 @@ export async function rollbackImportBatch(
   }
 
   // 3. Rule A4.5: Block rollback if any student has receipts, transport assignments, or later edits
-  for (const student of students) {
+  for await (const student of students) {
     // Check fee receipts / balance
     const feeRes = await getFeeService(schoolId).getStudentBalance(student.id);
     const balance = feeRes?.balance || 0;
@@ -1418,11 +1418,12 @@ export async function rollbackImportBatch(
 
     // Update enrollments
     if (rolledBackIds.length > 0) {
+      const rolledBackIdSet = new Set(rolledBackIds);
       const seKey = getStudentEnrollmentsCacheKey(schoolId);
       const rawSE = localStorage.getItem(seKey);
       const allSE: StudentEnrollment[] = rawSE ? JSON.parse(rawSE) : [];
       allSE.forEach((se) => {
-        if (rolledBackIds.includes(se.student_id)) {
+        if (rolledBackIdSet.has(se.student_id)) {
           se.status = "left";
           se.updated_at = nowStr;
         }
@@ -1517,6 +1518,7 @@ export async function getPromotionPreview(
       student_count: count,
     });
   }
+  const classMappingMap = new Map<string, PromotionClassMapping>(classMappings.map((m) => [m.from_class_id, m]));
 
   const overrides = config?.overrides || {};
   const distribution = config?.section_distribution || "keep_letter";
@@ -1528,7 +1530,7 @@ export async function getPromotionPreview(
   let leaveCount = 0;
   let passOutCount = 0;
 
-  for (const enr of enrollments) {
+  for await (const enr of enrollments) {
     const student = studentMap.get(enr.student_id);
     if (!student) continue;
 
@@ -1538,7 +1540,7 @@ export async function getPromotionPreview(
     const hasDues = dues > 0;
     if (hasDues) duesCount++;
 
-    const mapping = classMappings.find((m) => m.from_class_id === enr.class_id);
+    const mapping = classMappingMap.get(enr.class_id);
     const isLastClass = !mapping || mapping.to_class_id === null;
 
     // Default action
@@ -1646,7 +1648,7 @@ export async function executePromotion(
 
   const newEnrollments: StudentEnrollment[] = [];
 
-  for (const item of preview.students) {
+  for await (const item of preview.students) {
     if (item.action === "promote" || item.action === "detain") {
       newEnrollments.push({
         id: crypto.randomUUID(),
@@ -1688,7 +1690,7 @@ export async function executePromotion(
     await supabase.from("promotion_batches").insert(promotionBatch);
 
     // Update old enrollments
-    for (const item of preview.students) {
+    for await (const item of preview.students) {
       const statusVal: EnrollmentStatus =
         item.action === "leave"
           ? "left"
@@ -1818,12 +1820,12 @@ export async function undoPromotion(
 
   // Check if any student has fee transactions or attendance in the new year
   // If dependency exists: throw CANNOT_UNDO_PROMOTION error
-  for (const sId of studentIds) {
-    const balance = await getFeeService(schoolId).getStudentBalance(sId);
+  for await (const sId of studentIds) {
     // If payments were accepted in the new year (we verify through simulated check if tagged)
     if ((batch.summary as any)?.has_new_year_payments) {
       throw new Error("CANNOT_UNDO_PROMOTION: Fee receipts or attendance records exist in the target academic year.");
     }
+    const balance = await getFeeService(schoolId).getStudentBalance(sId);
   }
 
   // 4. Revert enrollments
@@ -1833,7 +1835,7 @@ export async function undoPromotion(
     await supabase.from("student_enrollments").delete().eq("promotion_batch_id", batchId).eq("school_id", schoolId);
 
     // Restore old enrollments to active
-    for (const sId of studentIds) {
+    for await (const sId of studentIds) {
       await supabase
         .from("student_enrollments")
         .update({
@@ -2100,7 +2102,7 @@ export async function issueTransferCertificate(
 export async function approveTransferCertificate(
   schoolId: string,
   tcId: string,
-  ownerId: string
+  approverId: string
 ): Promise<StudentTransferCertificate> {
   let updatedTC: StudentTransferCertificate | null = null;
   const nowStr = new Date().toISOString();
@@ -2110,7 +2112,7 @@ export async function approveTransferCertificate(
       .from("student_transfer_certificates")
       .update({
         status: "approved",
-        approved_by: ownerId,
+        approved_by: approverId,
         updated_at: nowStr,
       })
       .eq("school_id", schoolId)
@@ -2125,7 +2127,7 @@ export async function approveTransferCertificate(
     const target = tcs.find((t) => t.id === tcId);
     if (!target) throw new Error("Transfer certificate not found");
     target.status = "approved";
-    target.approved_by = ownerId;
+    target.approved_by = approverId;
     target.updated_at = nowStr;
     localStorage.setItem(tcKey, JSON.stringify(tcs));
     updatedTC = target;
@@ -2134,7 +2136,7 @@ export async function approveTransferCertificate(
   if (!updatedTC) throw new Error("Transfer certificate not found");
 
   await audit(schoolId, {
-    actor_id: ownerId,
+    actor_id: approverId,
     actor_role: "owner",
     entity_type: "transfer_certificate",
     entity_id: tcId,
@@ -2318,7 +2320,7 @@ export async function executeParentMerge(
 
   if (isSupabaseConfigured) {
     // 1. Move student_parents links
-    for (const student of preview.students_to_link) {
+    for await (const student of preview.students_to_link) {
       await supabase
         .from("student_parents")
         .update({ parent_id: survivingParentId, updated_at: nowStr })
@@ -2328,7 +2330,7 @@ export async function executeParentMerge(
     }
 
     // 2. Remove any duplicate links that were already shared
-    for (const student of preview.already_linked_students) {
+    for await (const student of preview.already_linked_students) {
       await supabase
         .from("student_parents")
         .delete()
@@ -2410,7 +2412,7 @@ export async function updateClassesDisplayOrder(
   const nowStr = new Date().toISOString();
 
   if (isSupabaseConfigured) {
-    for (const item of orders) {
+    for await (const item of orders) {
       await supabase
         .from("classes")
         .update({ sort_order: item.sort_order, updated_at: nowStr })
@@ -3215,7 +3217,7 @@ export async function deleteStudentAndData(
 
       // 5. Clean up orphaned parents
       if (cleanOrphanParents && parentIds.length > 0) {
-        for (const pId of parentIds) {
+        for await (const pId of parentIds) {
           const { count } = await supabase
             .from("student_parents")
             .select("id", { count: "exact", head: true })
@@ -3361,7 +3363,7 @@ export async function bulkDeleteStudentsAndData(
   const errors: string[] = [];
   let deletedCount = 0;
 
-  for (const sId of studentIds) {
+  for await (const sId of studentIds) {
     try {
       await deleteStudentAndData(schoolId, sId, options);
       deletedCount++;

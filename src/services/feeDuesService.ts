@@ -242,12 +242,15 @@ async function generateDuesForStudent(
 
   const { settings } = await getFeeSettings(schoolId);
   const roundToRupee = settings.round_to_rupee;
+  const feeHeadMap = new Map<string, FeeHead>(feeHeads.map(h => [h.id, h]));
+  const termMap = new Map<string, FeeTerm>(terms.map(t => [t.id, t]));
+  const fromTerm = prorateFrom ? termMap.get(prorateFrom) : undefined;
 
   for (const assignment of assignments) {
     const { items, terms: itemTerms } = await getStructureGrid(schoolId, assignment.structure_id);
 
     for (const item of items) {
-      const head = feeHeads.find(h => h.id === item.fee_head_id);
+      const head = feeHeadMap.get(item.fee_head_id);
       let itemTermAmounts = itemTerms.filter(it => it.item_id === item.id);
       if (itemTermAmounts.length === 0 && item.amount_paise && item.amount_paise > 0) {
         itemTermAmounts = terms
@@ -267,12 +270,11 @@ async function generateDuesForStudent(
       }
 
       for (const termAmount of itemTermAmounts) {
-        const term = terms.find(t => t.id === termAmount.term_id);
+        const term = termMap.get(termAmount.term_id);
         if (!term) continue;
 
         // Prorate: skip terms before the requested start
         if (prorateFrom) {
-          const fromTerm = terms.find(t => t.id === prorateFrom);
           if (fromTerm && term.sort_order < fromTerm.sort_order) { skipped++; continue; }
         }
 
@@ -363,6 +365,7 @@ export async function previewDuesGeneration(
   classIds?: string[]
 ): Promise<{ preview: DuesGenerationPreview; error?: string }> {
   // Fetch students for the given classes
+  const classIdSet = classIds?.length ? new Set(classIds) : null;
   let students: Array<{ id: string; first_name: string; last_name: string; admission_no: string; is_rte: boolean; class_id?: string | null; section_id?: string | null }> = [];
   if (isSupabaseConfigured) {
     let q = supabase.from("students").select(`
@@ -375,12 +378,12 @@ export async function previewDuesGeneration(
       class_id: s.student_enrollments?.[0]?.class_id || s.class_id,
       section_id: s.student_enrollments?.[0]?.section_id || s.section_id,
     })).filter((s: any) => {
-      if (classIds?.length) return classIds.includes(s.class_id);
+      if (classIdSet) return classIdSet.has(s.class_id);
       return true;
     });
   } else {
     const cached = lsGet<any>(`myzkool_students_${schoolId}`);
-    students = cached.filter((s: any) => !s.deleted_at && (classIds?.length ? classIds.includes(s.class_id) : true));
+    students = cached.filter((s: any) => !s.deleted_at && (classIdSet ? classIdSet.has(s.class_id) : true));
   }
 
   const structures = await getStructuresForSchool(schoolId);
@@ -391,7 +394,7 @@ export async function previewDuesGeneration(
   let totalDemandPaise = 0;
   let alreadyGeneratedCount = 0;
 
-  for (const student of students) {
+  for await (const student of students) {
     const matchedStructure = resolveStructureForStudent(structures, yearId, student);
     if (!matchedStructure) {
       exceptions.push({
@@ -430,6 +433,7 @@ export async function generateDues(
   classIds?: string[],
   actorId?: string
 ): Promise<{ result: DuesGenerationResult; error?: string }> {
+  const classIdSet = classIds?.length ? new Set(classIds) : null;
   let students: Array<{ id: string; first_name: string; last_name: string; admission_no: string; is_rte: boolean; class_id?: string | null; section_id?: string | null }> = [];
   if (isSupabaseConfigured) {
     const { data } = await supabase.from("students").select(`
@@ -441,23 +445,25 @@ export async function generateDues(
       class_id: s.student_enrollments?.[0]?.class_id || s.class_id,
       section_id: s.student_enrollments?.[0]?.section_id || s.section_id,
     })).filter((s: any) => {
-      if (classIds?.length) return classIds.includes(s.class_id);
+      if (classIdSet) return classIdSet.has(s.class_id);
       return true;
     });
   } else {
     const cached = lsGet<any>(`myzkool_students_${schoolId}`);
-    students = cached.filter((s: any) => !s.deleted_at && (classIds?.length ? classIds.includes(s.class_id) : true));
+    students = cached.filter((s: any) => !s.deleted_at && (classIdSet ? classIdSet.has(s.class_id) : true));
   }
 
-  const structures = await getStructuresForSchool(schoolId);
-  const { terms: allTerms } = await getFeeTerms(schoolId, yearId);
-  const { heads: feeHeads } = await getFeeHeads(schoolId, true);
+  const [structures, { terms: allTerms }, { heads: feeHeads }] = await Promise.all([
+    getStructuresForSchool(schoolId),
+    getFeeTerms(schoolId, yearId),
+    getFeeHeads(schoolId, true),
+  ]);
 
   let totalCreated = 0;
   let totalSkipped = 0;
   const exceptions: DuesGenerationException[] = [];
 
-  for (const student of students) {
+  for await (const student of students) {
     const matchedStructure = resolveStructureForStudent(structures, yearId, student);
     if (!matchedStructure) {
       exceptions.push({
@@ -554,8 +560,10 @@ export async function assignFeeStructure(
   }
 
   // Generate dues
-  const { heads: feeHeads } = await getFeeHeads(schoolId, true);
-  const { terms } = await getFeeTerms(schoolId, effectiveYearId);
+  const [{ heads: feeHeads }, { terms }] = await Promise.all([
+    getFeeHeads(schoolId, true),
+    getFeeTerms(schoolId, effectiveYearId),
+  ]);
 
   let existingDues: StudentDue[] = [];
   if (isSupabaseConfigured) {
@@ -615,8 +623,10 @@ export async function autoAssignOnAdmission(
 
   if (!matching.length) return { assigned: false };
 
-  const { heads: feeHeads } = await getFeeHeads(schoolId, true);
-  const { terms } = await getFeeTerms(schoolId, yearId);
+  const [{ heads: feeHeads }, { terms }] = await Promise.all([
+    getFeeHeads(schoolId, true),
+    getFeeTerms(schoolId, yearId),
+  ]);
   const createdAssignmentIds: string[] = [];
 
   for (const structure of matching) {
@@ -725,7 +735,7 @@ export async function cancelFutureDues(
   let cancelled = 0;
   let totalCreditPaise = 0;
 
-  for (const due of toCancel) {
+  for await (const due of toCancel) {
     if (due.paid_paise === 0) {
       // 1. Unpaid future due: cancel due and write cancel_due entry to reduce ledger balance
       if (isSupabaseConfigured) {
@@ -829,8 +839,10 @@ export async function applyRteConcession(
   yearId: string,
   actorId?: string
 ): Promise<{ updated: number; error?: string }> {
-  const { dues } = await getStudentDues(schoolId, studentId, yearId);
-  const { heads } = await getFeeHeads(schoolId, true);
+  const [{ dues }, { heads }] = await Promise.all([
+    getStudentDues(schoolId, studentId, yearId),
+    getFeeHeads(schoolId, true),
+  ]);
   const headMap = new Map(heads.map(h => [h.id, h]));
 
   const toUpdate = dues.filter(d => {
@@ -839,7 +851,7 @@ export async function applyRteConcession(
   });
 
   let updated = 0;
-  for (const due of toUpdate) {
+  for await (const due of toUpdate) {
     const newConcession = due.gross_paise;
     const newNet = 0;
     if (isSupabaseConfigured) {
@@ -920,34 +932,20 @@ export async function createTransportDues(
     }
   }
 
-  // Idempotency check: if non-cancelled dues already exist for this assignment, return existing count without duplicating
-  let existingDues: StudentDue[] = [];
-  if (isSupabaseConfigured) {
-    const { data: dbDues } = await supabase
-      .from("student_dues")
-      .select("*")
-      .eq("school_id", schoolId)
-      .eq("source", "transport")
-      .eq("source_ref", assignmentId)
-      .neq("status", "cancelled");
-    existingDues = (dbDues || []) as StudentDue[];
-  } else {
-    const all = lsGet<StudentDue>(DUES_KEY(schoolId));
-    existingDues = all.filter(
-      (d) => d.source === "transport" && d.source_ref === assignmentId && d.status !== "cancelled"
-    );
+  // 1. Charge only students with a valid active transport assignment (Requirement 1)
+  if (assignment.status !== "active") {
+    return {
+      success: false,
+      error: `ASSIGNMENT_NOT_ACTIVE: Transport assignment '${assignmentId}' is '${assignment.status}'. Only active assignments can be billed.`,
+    };
   }
 
-  if (existingDues.length > 0) {
-    return { success: true, count: existingDues.length };
-  }
-
-  // 3. Fetch transport settings
+  // 2. Fetch transport settings
   const settings = await getTransportSettings(schoolId);
   const billingMonths = settings.billing_months || [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
   const partialRule = settings.partial_month_rule || "full_month";
 
-  // 4. Ensure system heads exist and find "Transport Fee"
+  // 3. Ensure system heads exist and find "Transport Fee"
   await ensureSystemHeads(schoolId);
   const { heads } = await getFeeHeads(schoolId, true);
   const transportHead = heads.find(
@@ -957,15 +955,11 @@ export async function createTransportDues(
     return { success: false, error: "Transport Fee head not found" };
   }
 
-  // 5. Calculate starting month for billing based on effective_from and partialRule
-  const effDate = new Date(assignment.effective_from);
-  const effYear = effDate.getFullYear();
-  const effMonth = effDate.getMonth() + 1;
-  const effDay = effDate.getDate();
-
-  let startYear = effYear;
-  let startMonth = effMonth;
-  if (partialRule === "from_next_month" && effDay > 1) {
+  // 4. Calculate starting month for billing based on effective_from and partialRule
+  const [effY, effM, effD] = String(assignment.effective_from).split("-").map(Number);
+  let startYear = effY;
+  let startMonth = effM;
+  if (partialRule === "from_next_month" && effD > 1) {
     startMonth += 1;
     if (startMonth > 12) {
       startMonth = 1;
@@ -976,12 +970,12 @@ export async function createTransportDues(
   let endYear: number | null = null;
   let endMonth: number | null = null;
   if (assignment.effective_to) {
-    const toDate = new Date(assignment.effective_to);
-    endYear = toDate.getFullYear();
-    endMonth = toDate.getMonth() + 1;
+    const [toY, toM] = String(assignment.effective_to).split("-").map(Number);
+    endYear = toY;
+    endMonth = toM;
   }
 
-  // 6. Fetch terms for academic year
+  // 5. Fetch terms for academic year
   const { terms } = await getFeeTerms(schoolId, assignment.academic_year_id);
   const monthlyFeePaise = Number(assignment.monthly_fee_paise) || 0;
 
@@ -989,35 +983,61 @@ export async function createTransportDues(
     return { success: true, count: 0 };
   }
 
-  // Fetch existing transport dues for this assignment to prevent duplicates
+  // Resolve academic year start year from terms or effective start
+  let ayStartYear = effY;
+  if (terms && terms.length > 0 && terms[0].period_start) {
+    ayStartYear = Number(terms[0].period_start.split("-")[0]);
+  } else if (terms && terms.length > 0 && terms[0].due_date) {
+    const dYear = Number(terms[0].due_date.split("-")[0]);
+    const dMonth = Number(terms[0].due_date.split("-")[1]);
+    ayStartYear = dMonth < 4 ? dYear - 1 : dYear;
+  }
+
+  // Fetch existing transport dues for this student in the academic year to prevent duplicates (Requirement 6)
   let existingAssignDues: StudentDue[] = [];
   if (isSupabaseConfigured) {
     const { data } = await supabase
       .from("student_dues")
-      .select("id, term_id, status")
+      .select("id, term_id, status, student_id, academic_year_id")
       .eq("school_id", schoolId)
+      .eq("student_id", assignment.student_id)
+      .eq("academic_year_id", assignment.academic_year_id)
       .eq("source", "transport")
-      .eq("source_ref", assignment.id);
+      .neq("status", "cancelled");
     existingAssignDues = (data || []) as StudentDue[];
   } else {
     const all = lsGet<StudentDue>(DUES_KEY(schoolId));
-    existingAssignDues = all.filter((d) => d.source === "transport" && d.source_ref === assignment.id);
+    existingAssignDues = all.filter(
+      (d) =>
+        d.school_id === schoolId &&
+        d.student_id === assignment.student_id &&
+        d.academic_year_id === assignment.academic_year_id &&
+        d.source === "transport" &&
+        d.status !== "cancelled"
+    );
   }
 
   let createdCount = 0;
 
   if (terms && terms.length > 0) {
-    for (let idx = 0; idx < terms.length; idx++) {
-      const term = terms[idx];
+    // If all terms already have active dues, return existing count idempotently
+    const allTermsCovered = terms.every((t) =>
+      existingAssignDues.some((d) => d.term_id === t.id)
+    );
+    if (allTermsCovered && existingAssignDues.length > 0) {
+      return { success: true, count: existingAssignDues.length };
+    }
 
-      // Check if active due already exists for this term
-      if (existingAssignDues.some((d) => d.term_id === term.id && d.status !== "cancelled")) {
+    for await (const [idx, term] of terms.entries()) {
+
+      // Check if active due already exists for this term (Requirement 6)
+      if (existingAssignDues.some((d) => d.term_id === term.id)) {
         continue;
       }
 
       const termBillingMonths = getTermBillingMonths(
         term,
-        effYear,
+        ayStartYear,
         billingMonths,
         terms.length,
         idx
@@ -1080,7 +1100,7 @@ export async function createTransportDues(
     if (!existingAssignDues.some((d) => d.term_id === null && d.status !== "cancelled")) {
       let totalMonths = 0;
       for (const m of billingMonths) {
-        const year = m < 4 ? effYear + 1 : effYear;
+        const year = m < 4 ? ayStartYear + 1 : ayStartYear;
         const afterStart = year > startYear || (year === startYear && m >= startMonth);
         const beforeEnd = !endYear || year < endYear || (year === endYear && m <= endMonth!);
         if (afterStart && beforeEnd) {
@@ -1166,7 +1186,7 @@ export async function cancelTransportDues(
   let cancelled = 0;
   let totalCreditPaise = 0;
 
-  for (const due of dues) {
+  for await (const due of dues) {
     if (due.due_date >= effectiveDate && due.status !== "cancelled" && due.status !== "waived") {
       if (due.paid_paise === 0) {
         if (isSupabaseConfigured) {
@@ -1246,8 +1266,8 @@ export async function cancelTransportDues(
           academic_year_id: due.academic_year_id,
           due_id: due.id,
           receipt_id: null,
-          entry_type: "adjustment",
-          amount_paise: 0,
+          entry_type: "reversal",
+          amount_paise: creditPaise,
           note: `Transport future paid amount of ₹${(creditPaise / 100).toFixed(2)} converted to credit on stop (${effectiveDate})`,
           created_by: actorId ?? null,
         });

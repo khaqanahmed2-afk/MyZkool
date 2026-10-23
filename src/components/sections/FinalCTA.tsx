@@ -29,7 +29,7 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ onOpenDemo }) => {
           <button
             onClick={onOpenDemo}
             id="final-cta-btn"
-            className="w-full sm:w-auto px-8 py-4 text-base font-bold text-white bg-[#2158E0] hover:bg-[#1a4ec4] rounded-full shadow-xl shadow-[#2158E0]/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer group"
+            className="w-full sm:w-auto px-8 py-4 text-base font-bold text-white bg-[#2158E0] hover:bg-[#1a4ec4] rounded-full shadow-xl shadow-[#2158E0]/40 active:scale-[0.98] transition flex items-center justify-center gap-2.5 cursor-pointer group"
           >
             <span>Book a Free Demo</span>
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />

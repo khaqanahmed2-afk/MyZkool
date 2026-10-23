@@ -75,7 +75,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
             <div className="pt-2 space-y-3">
               <button
                 onClick={onOpenDemo}
-                className="inline-flex items-center gap-2 px-7 py-3.5 text-sm sm:text-base font-semibold text-white bg-[#2158E0] hover:bg-[#1A47C8] rounded-full shadow-lg shadow-[#2158E0]/25 active:scale-[0.98] transition-all cursor-pointer group"
+                className="inline-flex items-center gap-2 px-7 py-3.5 text-sm sm:text-base font-semibold text-white bg-[#2158E0] hover:bg-[#1A47C8] rounded-full shadow-lg shadow-[#2158E0]/25 active:scale-[0.98] transition cursor-pointer group"
               >
                 Explore the Parent App
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" aria-hidden="true" />
@@ -197,26 +197,29 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
               </div>
 
               {/* MAIN PHONE IMAGE */}
-              <img
-                src="/myzkoolp.png"
-                alt="MyZkool Parent Mobile App preview"
-                className="
-                  relative
-                  z-10
-                  w-[72%]
-                  sm:w-[70%]
-                  lg:w-[68%]
-                  h-auto
-                  object-contain
-                  drop-shadow-[0_24px_50px_rgba(15,23,42,0.16)]
-                  select-none
-                  pointer-events-none
-                "
-                width={1024}
-                height={1536}
-                loading="eager"
-                decoding="async"
-              />
+              <picture className="flex justify-center items-center w-full">
+                <source srcSet="/myzkoolp.webp" type="image/webp" />
+                <img
+                  src="/myzkoolp.png"
+                  alt="MyZkool Parent Mobile App preview"
+                  className="
+                    relative
+                    z-10
+                    w-[72%]
+                    sm:w-[70%]
+                    lg:w-[68%]
+                    h-auto
+                    object-contain
+                    drop-shadow-[0_24px_50px_rgba(15,23,42,0.16)]
+                    select-none
+                    pointer-events-none
+                  "
+                  width={1024}
+                  height={1536}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
 
             </div>
           </div>

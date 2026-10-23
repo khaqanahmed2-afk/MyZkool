@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Users,
@@ -33,6 +33,7 @@ import type {
 import { useAuth } from "../../../hooks/useAuth";
 import { checkSchoolFeature } from "../../../middleware/features";
 import { TransportLockedPreview } from "./TransportLockedPreview";
+import { TransportPageHeader } from "./TransportPageHeader";
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -101,6 +102,17 @@ export function TransportStaffPage() {
     message: string;
   } | null>(null);
 
+  const loadStaff = useCallback(async () => {
+    if (!schoolId) return;
+    setLoading(true);
+    try {
+      const data = await getTransportStaff(schoolId);
+      setStaffList(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [schoolId]);
+
   useEffect(() => {
     if (!schoolId) return;
     checkSchoolFeature(schoolId, "transport").then((enabled) => {
@@ -108,15 +120,7 @@ export function TransportStaffPage() {
       if (enabled) loadStaff();
       else setLoading(false);
     });
-  }, [schoolId]);
-
-  async function loadStaff() {
-    if (!schoolId) return;
-    setLoading(true);
-    const data = await getTransportStaff(schoolId);
-    setStaffList(data);
-    setLoading(false);
-  }
+  }, [schoolId, loadStaff]);
 
   function handleOpenAdd() {
     setEditingStaff(null);
@@ -193,81 +197,82 @@ export function TransportStaffPage() {
     }
 
     setIsSubmitting(true);
+    try {
+      if (editingStaff) {
+        // Update existing record
+        const updatePayload: Partial<TransportStaff> = {
+          full_name: cleanName,
+          staff_type: staffType,
+          phone: `+91${cleanPhone10}`,
+          police_verified_on: policeVerifiedOn || null,
+          medical_fit_on: medicalFitOn || null,
+          badge_no: badgeNo.trim() || null,
+          license_no: staffType === "driver" ? licenseNo.trim().toUpperCase() : null,
+          license_expires_on: staffType === "driver" ? licenseExpiresOn : null,
+        };
 
-    if (editingStaff) {
-      // Update existing record
-      const updatePayload: Partial<TransportStaff> = {
-        full_name: cleanName,
-        staff_type: staffType,
-        phone: `+91${cleanPhone10}`,
-        police_verified_on: policeVerifiedOn || null,
-        medical_fit_on: medicalFitOn || null,
-        badge_no: badgeNo.trim() || null,
-        license_no: staffType === "driver" ? licenseNo.trim().toUpperCase() : null,
-        license_expires_on: staffType === "driver" ? licenseExpiresOn : null,
-      };
-
-      if (cleanAadhaar.length === 12) {
-        updatePayload.id_proof_type = "Aadhaar";
-        updatePayload.id_proof_last4 = cleanAadhaar.slice(-4);
-        try {
-          updatePayload.aadhaar_enc = encryptSensitive(cleanAadhaar).packed;
-        } catch {
-          // If encryption fails in environment, keep clean last4
+        if (cleanAadhaar.length === 12) {
+          updatePayload.id_proof_type = "Aadhaar";
+          updatePayload.id_proof_last4 = cleanAadhaar.slice(-4);
+          try {
+            updatePayload.aadhaar_enc = encryptSensitive(cleanAadhaar).packed;
+          } catch {
+            // If encryption fails in environment, keep clean last4
+          }
         }
-      }
 
-      const res = await updateTransportStaff(schoolId, editingStaff.id, updatePayload);
+        const res = await updateTransportStaff(schoolId, editingStaff.id, updatePayload);
+
+        if (!res.success) {
+          setFormError(res.error || "Failed to update staff member.");
+          return;
+        }
+
+        setShowModal(false);
+        setToast({
+          type: "success",
+          message: `Staff member "${cleanName}" updated successfully.`,
+        });
+        loadStaff();
+      } else {
+        // Create new record
+        let aadhaarEnc: string | null = null;
+        try {
+          aadhaarEnc = encryptSensitive(cleanAadhaar).packed;
+        } catch {
+          aadhaarEnc = null;
+        }
+
+        const res = await createTransportStaff(schoolId, {
+          staff_type: staffType,
+          full_name: cleanName,
+          phone: `+91${cleanPhone10}`,
+          license_no: staffType === "driver" ? licenseNo.trim().toUpperCase() : null,
+          license_expires_on: staffType === "driver" ? licenseExpiresOn : null,
+          badge_no: badgeNo.trim() || null,
+          police_verified_on: policeVerifiedOn || null,
+          medical_fit_on: medicalFitOn || null,
+          id_proof_type: "Aadhaar",
+          id_proof_last4: cleanAadhaar.slice(-4),
+          aadhaar_enc: aadhaarEnc,
+          joined_on: new Date().toISOString().split("T")[0],
+          status: "active",
+        });
+
+        if (!res.success) {
+          setFormError(res.error || "Failed to register transport staff.");
+          return;
+        }
+
+        setShowModal(false);
+        setToast({
+          type: "success",
+          message: `Staff member "${cleanName}" registered successfully.`,
+        });
+        loadStaff();
+      }
+    } finally {
       setIsSubmitting(false);
-
-      if (!res.success) {
-        setFormError(res.error || "Failed to update staff member.");
-        return;
-      }
-
-      setShowModal(false);
-      setToast({
-        type: "success",
-        message: `Staff member "${cleanName}" updated successfully.`,
-      });
-      loadStaff();
-    } else {
-      // Create new record
-      let aadhaarEnc: string | null = null;
-      try {
-        aadhaarEnc = encryptSensitive(cleanAadhaar).packed;
-      } catch {
-        aadhaarEnc = null;
-      }
-
-      const res = await createTransportStaff(schoolId, {
-        staff_type: staffType,
-        full_name: cleanName,
-        phone: `+91${cleanPhone10}`,
-        license_no: staffType === "driver" ? licenseNo.trim().toUpperCase() : null,
-        license_expires_on: staffType === "driver" ? licenseExpiresOn : null,
-        badge_no: badgeNo.trim() || null,
-        police_verified_on: policeVerifiedOn || null,
-        medical_fit_on: medicalFitOn || null,
-        id_proof_type: "Aadhaar",
-        id_proof_last4: cleanAadhaar.slice(-4),
-        aadhaar_enc: aadhaarEnc,
-        joined_on: new Date().toISOString().split("T")[0],
-        status: "active",
-      });
-      setIsSubmitting(false);
-
-      if (!res.success) {
-        setFormError(res.error || "Failed to register transport staff.");
-        return;
-      }
-
-      setShowModal(false);
-      setToast({
-        type: "success",
-        message: `Staff member "${cleanName}" registered successfully.`,
-      });
-      loadStaff();
     }
   }
 
@@ -318,7 +323,7 @@ export function TransportStaffPage() {
       {/* Toast Alert */}
       {toast && (
         <div
-          className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+          className={`p-3.5 rounded-xl border flex items-center justify-between transition-colors ${
             toast.type === "success"
               ? "bg-green-50 border-green-200 text-green-800"
               : "bg-red-50 border-red-200 text-red-800"
@@ -332,7 +337,7 @@ export function TransportStaffPage() {
             )}
             <span>{toast.message}</span>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={() => setToast(null)}
             className="text-gray-400 hover:text-gray-600 p-1"
           >
@@ -343,27 +348,11 @@ export function TransportStaffPage() {
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
-            title="Return to Transport Dashboard"
-          >
-            <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
-            <span>Back to Transport</span>
-          </button>
-
-          <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
-
-          <div>
-            <h1 className="text-2xl font-black text-[#141A2E] tracking-tight">
-              Drivers & Attendants
-            </h1>
-            <p className="text-xs text-[#5B6478]">
-              Manage driver licenses, police verification dates, and app invites
-            </p>
-          </div>
-        </div>
+        <TransportPageHeader
+          onBack={handleBack}
+          title="Drivers & Attendants"
+          description="Manage driver licenses, police verification dates, and app invites"
+        />
         <button
           onClick={handleOpenAdd}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
@@ -377,7 +366,7 @@ export function TransportStaffPage() {
       <div className="bg-white p-4 rounded-xl border border-[#E6EAF3] shadow-sm flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
+          <input aria-label="Search transport staff"
             type="text"
             placeholder="Search by name, phone, or license number..."
             value={search}
@@ -386,7 +375,7 @@ export function TransportStaffPage() {
           />
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
+          <select aria-label="Filter by role"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
             className="px-3 py-2 rounded-lg border border-[#E6EAF3] text-xs font-semibold bg-white"
@@ -548,7 +537,7 @@ export function TransportStaffPage() {
                     : "Fill in the required transport staff credentials"}
                 </p>
               </div>
-              <button
+              <button aria-label="Close"
                 onClick={() => setShowModal(false)}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
               >
@@ -566,10 +555,10 @@ export function TransportStaffPage() {
             <form onSubmit={handleSaveStaff} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="transportstaffpage-full-name" className="block text-[#5B6478] mb-1 font-semibold">
                     Full Name <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="transportstaffpage-full-name"
                     type="text"
                     placeholder="e.g. Ramesh Kumar"
                     value={fullName}
@@ -579,10 +568,10 @@ export function TransportStaffPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="transportstaffpage-role" className="block text-[#5B6478] mb-1 font-semibold">
                     Role <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <select id="transportstaffpage-role" aria-label="Role"
                     value={staffType}
                     onChange={(e) => setStaffType(e.target.value as StaffType)}
                     className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -595,14 +584,14 @@ export function TransportStaffPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="transportstaffpage-mobile-phone" className="block text-[#5B6478] mb-1 font-semibold">
                     Mobile Phone <span className="text-red-500">*</span>
                   </label>
                   <div className="flex">
                     <span className="inline-flex items-center px-2.5 rounded-l-lg border border-r-0 border-[#E6EAF3] bg-gray-50 text-[#5B6478] font-bold text-xs select-none">
                       +91
                     </span>
-                    <input
+                    <input id="transportstaffpage-mobile-phone"
                       type="tel"
                       placeholder="9876543210"
                       maxLength={10}
@@ -621,10 +610,10 @@ export function TransportStaffPage() {
                   <p className="text-[10px] text-[#5B6478] mt-0.5">10-digit Indian number</p>
                 </div>
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="transportstaffpage-aadhaar-number-editingstaff-sp" className="block text-[#5B6478] mb-1 font-semibold">
                     Aadhaar Number {editingStaff ? "" : <span className="text-red-500">*</span>}
                   </label>
-                  <input
+                  <input id="transportstaffpage-aadhaar-number-editingstaff-sp"
                     type="text"
                     maxLength={12}
                     placeholder={
@@ -653,10 +642,10 @@ export function TransportStaffPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[#5B6478] mb-1 font-semibold">
+                      <label htmlFor="transportstaffpage-license-number" className="block text-[#5B6478] mb-1 font-semibold">
                         License Number <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <input id="transportstaffpage-license-number"
                         type="text"
                         placeholder="e.g. DL-1420110012345"
                         value={licenseNo}
@@ -666,10 +655,10 @@ export function TransportStaffPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-[#5B6478] mb-1 font-semibold">
+                      <label htmlFor="transportstaffpage-license-expiry-date" className="block text-[#5B6478] mb-1 font-semibold">
                         License Expiry Date <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <input id="transportstaffpage-license-expiry-date" aria-label="License Expiry Date"
                         type="date"
                         value={licenseExpiresOn}
                         onChange={(e) => setLicenseExpiresOn(e.target.value)}
@@ -679,10 +668,10 @@ export function TransportStaffPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[#5B6478] mb-1 font-semibold">
+                    <label htmlFor="transportstaffpage-badge-number-optional" className="block text-[#5B6478] mb-1 font-semibold">
                       Badge Number (Optional)
                     </label>
-                    <input
+                    <input id="transportstaffpage-badge-number-optional"
                       type="text"
                       placeholder="e.g. BDG-99882"
                       value={badgeNo}
@@ -695,10 +684,10 @@ export function TransportStaffPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="transportstaffpage-police-verification-date" className="block text-[#5B6478] mb-1 font-semibold">
                     Police Verification Date
                   </label>
-                  <input
+                  <input id="transportstaffpage-police-verification-date" aria-label="Police Verification Date"
                     type="date"
                     value={policeVerifiedOn}
                     onChange={(e) => setPoliceVerifiedOn(e.target.value)}
@@ -706,10 +695,10 @@ export function TransportStaffPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="transportstaffpage-medical-fitness-date" className="block text-[#5B6478] mb-1 font-semibold">
                     Medical Fitness Date
                   </label>
-                  <input
+                  <input id="transportstaffpage-medical-fitness-date" aria-label="Medical Fitness Date"
                     type="date"
                     value={medicalFitOn}
                     onChange={(e) => setMedicalFitOn(e.target.value)}
@@ -751,7 +740,7 @@ export function TransportStaffPage() {
               <h2 className="text-base font-bold text-[#141A2E]">
                 Invite to Driver App
               </h2>
-              <button onClick={() => setInviteResult(null)} className="text-gray-400 hover:text-gray-600 p-1">
+              <button aria-label="Close" onClick={() => setInviteResult(null)} className="text-gray-400 hover:text-gray-600 p-1">
                 ✕
               </button>
             </div>

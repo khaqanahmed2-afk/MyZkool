@@ -37,13 +37,13 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
       {/* Progress Bar Track */}
       <div className="w-full h-1.5 bg-[#E6EAF3] rounded-full overflow-hidden mb-5">
         <div
-          className="h-full bg-[#2158E0] rounded-full transition-all duration-500 ease-out"
+          className="h-full bg-[#2158E0] rounded-full transition-[width] duration-500 ease-out"
           style={{ width: `${Math.max(percentage, 12)}%` }}
         />
       </div>
 
       {/* Responsive Step Indicator Nodes (Desktop & Tablet) */}
-      <div className="hidden sm:grid grid-cols-6 gap-2 mb-6" role="list">
+      <ul className="hidden sm:grid grid-cols-6 gap-2 mb-6 p-0 m-0 list-none">
         {ONBOARDING_STEPS.map((step) => {
           const isCompleted =
             completedStepNumbers.includes(step.stepNumber) ||
@@ -52,15 +52,14 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
           const isUpcoming = !isCompleted && !isActive;
 
           return (
-            <div
+            <li
               key={step.stepNumber}
-              role="listitem"
               aria-current={isActive ? "step" : undefined}
               className="flex flex-col items-center text-center group"
             >
               {/* Circle Node */}
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
                   isCompleted
                     ? "bg-[#10B981] text-white shadow-sm"
                     : isActive
@@ -88,10 +87,10 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
               >
                 {step.title}
               </span>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 };

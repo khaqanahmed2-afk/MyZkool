@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
@@ -81,22 +81,25 @@ export default function FeeSetupChecklist() {
   const navigate = useNavigate();
   const { school: authSchool, schoolId: authSchoolId, loading: authLoading } = useAuth() as any;
   const [doneMask, setDoneMask] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+  const loadingRef = useRef(true);
 
   const activeSchoolId = authSchool?.id || authSchoolId || null;
 
   useEffect(() => {
     if (authLoading) return;
     if (!activeSchoolId) {
-      setLoading(false);
+      loadingRef.current = false;
       return;
     }
 
+    let isMounted = true;
+
     async function check() {
-      setLoading(true);
+      loadingRef.current = true;
       try {
         const mask: Record<string, boolean> = {};
         const { heads } = await getFeeHeads(activeSchoolId!);
+        if (!isMounted) return;
         mask["heads"] = (heads || []).length > 0;
         // terms check using dummy year — just flag as done if any terms exist in localStorage
         const allKeys = typeof localStorage !== "undefined"
@@ -113,10 +116,16 @@ export default function FeeSetupChecklist() {
       } catch (err) {
         console.warn("Checklist load error:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          loadingRef.current = false;
+        }
       }
     }
     check();
+
+    return () => {
+      isMounted = false;
+    };
   }, [activeSchoolId, authLoading]);
 
   const doneCount = Object.values(doneMask).filter(Boolean).length;
@@ -141,7 +150,7 @@ export default function FeeSetupChecklist() {
         </div>
         <div className="w-full bg-gray-100 rounded-full h-2">
           <div
-            className="bg-[#2158E0] h-2 rounded-full transition-all"
+            className="bg-[#2158E0] h-2 rounded-full transition-[width]"
             style={{ width: `${progress}%` }}
           />
         </div>

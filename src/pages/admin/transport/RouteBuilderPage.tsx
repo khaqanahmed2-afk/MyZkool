@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   MapPin,
@@ -38,6 +38,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { checkSchoolFeature } from "../../../middleware/features";
 import { TransportLockedPreview } from "./TransportLockedPreview";
 import { PrintableRouteSheet } from "./PrintableRouteSheet";
+import { TransportPageHeader } from "./TransportPageHeader";
 
 export function RouteBuilderPage() {
   const navigate = useNavigate();
@@ -47,8 +48,8 @@ export function RouteBuilderPage() {
   const [routes, setRoutes] = useState<EnrichedRoute[]>([]);
   const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
   const [staff, setStaff] = useState<TransportStaff[]>([]);
-  const [feeZones, setFeeZones] = useState<TransportFeeZone[]>([]);
-  const [loading, setLoading] = useState(true);
+  const feeZonesRef = useRef<TransportFeeZone[]>([]);
+  const loadingRef = useRef(true);
 
   // Safe Back Navigation
   const handleBack = () => {
@@ -86,44 +87,17 @@ export function RouteBuilderPage() {
   const [showTimeHelper, setShowTimeHelper] = useState(false);
   const [helperIntervalMin, setHelperIntervalMin] = useState(6);
 
+  const activeRouteRef = useRef(activeRoute);
+  const searchParamsRef = useRef(searchParams);
+  const routesRef = useRef(routes);
+
   useEffect(() => {
-    if (!schoolId) return;
-    checkSchoolFeature(schoolId, "transport").then((enabled) => {
-      setHasFeature(enabled);
-      if (enabled) loadAll();
-      else setLoading(false);
-    });
-  }, [schoolId]);
+    activeRouteRef.current = activeRoute;
+    searchParamsRef.current = searchParams;
+    routesRef.current = routes;
+  });
 
-  async function loadAll() {
-    if (!schoolId) return;
-    setLoading(true);
-    const [rData, vData, sData, zData] = await Promise.all([
-      getRoutes(schoolId),
-      getVehicles(schoolId),
-      getTransportStaff(schoolId),
-      getFeeZones(schoolId),
-    ]);
-    setRoutes(rData);
-    setVehicles(vData);
-    setStaff(sData);
-    setFeeZones(zData);
-
-    if (searchParams.get("action") === "new") {
-      handleStartNewRoute();
-    } else {
-      const targetId = searchParams.get("id");
-      const targetRoute = targetId ? rData.find((r) => r.id === targetId) : null;
-      if (targetRoute) {
-        selectRouteForEditing(targetRoute);
-      } else if (rData.length > 0 && !activeRoute) {
-        selectRouteForEditing(rData[0]);
-      }
-    }
-    setLoading(false);
-  }
-
-  function selectRouteForEditing(r: EnrichedRoute) {
+  const selectRouteForEditing = useCallback((r: EnrichedRoute) => {
     setActiveRoute(r);
     setRouteName(r.name);
     setRouteCode(r.code);
@@ -136,12 +110,12 @@ export function RouteBuilderPage() {
     setStops(r.stops || []);
     setRouteError("");
     setIsPrintMode(false);
-  }
+  }, []);
 
-  function handleStartNewRoute() {
+  const handleStartNewRoute = useCallback(() => {
     setActiveRoute(null);
     setRouteName("");
-    setRouteCode(`R-${routes.length + 1}`);
+    setRouteCode(`R-${routesRef.current.length + 1}`);
     setVehicleId("");
     setDriverId("");
     setAttendantId("");
@@ -162,7 +136,47 @@ export function RouteBuilderPage() {
     ]);
     setRouteError("");
     setIsPrintMode(false);
-  }
+  }, [schoolId]);
+
+  const loadAll = useCallback(async () => {
+    if (!schoolId) return;
+    loadingRef.current = true;
+    try {
+      const [rData, vData, sData, zData] = await Promise.all([
+        getRoutes(schoolId),
+        getVehicles(schoolId),
+        getTransportStaff(schoolId),
+        getFeeZones(schoolId),
+      ]);
+      setRoutes(rData);
+      setVehicles(vData);
+      setStaff(sData);
+      feeZonesRef.current = zData;
+
+      if (searchParamsRef.current.get("action") === "new") {
+        handleStartNewRoute();
+      } else {
+        const targetId = searchParamsRef.current.get("id");
+        const targetRoute = targetId ? rData.find((r) => r.id === targetId) : null;
+        if (targetRoute) {
+          selectRouteForEditing(targetRoute);
+        } else if (rData.length > 0 && !activeRouteRef.current) {
+          selectRouteForEditing(rData[0]);
+        }
+      }
+    } finally {
+      loadingRef.current = false;
+    }
+  }, [schoolId, handleStartNewRoute, selectRouteForEditing]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    checkSchoolFeature(schoolId, "transport").then((enabled) => {
+      setHasFeature(enabled);
+      if (enabled) loadAll();
+      else loadingRef.current = false;
+    });
+  }, [schoolId, loadAll]);
 
   // ─── Stops Reordering & Time Helper ────────────────────────────────────────
 
@@ -198,7 +212,7 @@ export function RouteBuilderPage() {
       sequence: stops.length + 1,
       pickup_time: `${nextPickupHours}:${nextPickupMins}`,
       drop_time: "14:45",
-      fee_zone_id: feeZones[0]?.id || null,
+      fee_zone_id: feeZonesRef.current[0]?.id || null,
     };
 
     if (afterIndex !== undefined && afterIndex >= 0) {
@@ -327,78 +341,79 @@ export function RouteBuilderPage() {
     setRouteError("");
     setIsSaving(true);
 
-    let routeId = activeRoute?.id;
-    let unassignedFromRoutes: string[] = [];
+    try {
+      let routeId = activeRoute?.id;
+      let unassignedFromRoutes: string[] = [];
 
-    if (activeRoute) {
-      const res = await updateRoute(
-        schoolId,
-        activeRoute.id,
-        {
-          name: routeName.trim(),
-          code: routeCode.trim().toUpperCase(),
-          default_vehicle_id: vehicleId || null,
-          default_driver_id: driverId || null,
-          default_attendant_id: attendantId || null,
-          pickup_start_time: pickupStart,
-          drop_start_time: dropStart,
-          est_duration_min: durationMin,
-          status: "active",
-        },
-        { reassignResources: true }
-      );
+      if (activeRoute) {
+        const res = await updateRoute(
+          schoolId,
+          activeRoute.id,
+          {
+            name: routeName.trim(),
+            code: routeCode.trim().toUpperCase(),
+            default_vehicle_id: vehicleId || null,
+            default_driver_id: driverId || null,
+            default_attendant_id: attendantId || null,
+            pickup_start_time: pickupStart,
+            drop_start_time: dropStart,
+            est_duration_min: durationMin,
+            status: "active",
+          },
+          { reassignResources: true }
+        );
 
-      if (!res.success) {
-        setRouteError(res.error || "Failed to update route.");
-        setIsSaving(false);
+        if (!res.success) {
+          setRouteError(res.error || "Failed to update route.");
+          return;
+        }
+        unassignedFromRoutes = res.unassignedFromRoutes || [];
+      } else {
+        const res = await createRoute(
+          schoolId,
+          {
+            name: routeName.trim(),
+            code: routeCode.trim().toUpperCase(),
+            default_vehicle_id: vehicleId || null,
+            default_driver_id: driverId || null,
+            default_attendant_id: attendantId || null,
+            pickup_start_time: pickupStart,
+            drop_start_time: dropStart,
+            est_duration_min: durationMin,
+            status: "active",
+          },
+          { reassignResources: true }
+        );
+
+        if (!res.success || !res.route) {
+          setRouteError(res.error || "Failed to create route.");
+          return;
+        }
+        routeId = res.route.id;
+        unassignedFromRoutes = res.unassignedFromRoutes || [];
+      }
+
+      // Save Stops
+      const stopsRes = await saveRouteStops(schoolId, routeId!, stops);
+
+      if (!stopsRes.success) {
+        setRouteError(stopsRes.error || "Failed to save route stops.");
         return;
       }
-      unassignedFromRoutes = res.unassignedFromRoutes || [];
-    } else {
-      const res = await createRoute(
-        schoolId,
-        {
-          name: routeName.trim(),
-          code: routeCode.trim().toUpperCase(),
-          default_vehicle_id: vehicleId || null,
-          default_driver_id: driverId || null,
-          default_attendant_id: attendantId || null,
-          pickup_start_time: pickupStart,
-          drop_start_time: dropStart,
-          est_duration_min: durationMin,
-          status: "active",
-        },
-        { reassignResources: true }
-      );
 
-      if (!res.success || !res.route) {
-        setRouteError(res.error || "Failed to create route.");
-        setIsSaving(false);
-        return;
+      let successMsg = `Route ${routeCode.trim().toUpperCase()} and ${stops.length} stop(s) saved successfully.`;
+      if (unassignedFromRoutes.length > 0) {
+        successMsg += ` Reassigned resources from Route ${unassignedFromRoutes.join(", ")}.`;
       }
-      routeId = res.route.id;
-      unassignedFromRoutes = res.unassignedFromRoutes || [];
+
+      setToast({
+        type: "success",
+        message: successMsg,
+      });
+      await loadAll();
+    } finally {
+      setIsSaving(false);
     }
-
-    // Save Stops
-    const stopsRes = await saveRouteStops(schoolId, routeId!, stops);
-    setIsSaving(false);
-
-    if (!stopsRes.success) {
-      setRouteError(stopsRes.error || "Failed to save route stops.");
-      return;
-    }
-
-    let successMsg = `Route ${routeCode.trim().toUpperCase()} and ${stops.length} stop(s) saved successfully.`;
-    if (unassignedFromRoutes.length > 0) {
-      successMsg += ` Reassigned resources from Route ${unassignedFromRoutes.join(", ")}.`;
-    }
-
-    setToast({
-      type: "success",
-      message: successMsg,
-    });
-    await loadAll();
   }
 
   async function handleDeleteRoute() {
@@ -458,7 +473,7 @@ export function RouteBuilderPage() {
       {/* Toast Alert */}
       {toast && (
         <div
-          className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+          className={`p-3.5 rounded-xl border flex items-center justify-between transition-colors ${
             toast.type === "success"
               ? "bg-green-50 border-green-200 text-green-800"
               : "bg-red-50 border-red-200 text-red-800"
@@ -472,7 +487,7 @@ export function RouteBuilderPage() {
             )}
             <span>{toast.message}</span>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={() => setToast(null)}
             className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
           >
@@ -483,27 +498,11 @@ export function RouteBuilderPage() {
 
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
-            title="Return to Transport Dashboard"
-          >
-            <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
-            <span>Back to Transport</span>
-          </button>
-
-          <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
-
-          <div>
-            <h1 className="text-2xl font-black text-[#141A2E] tracking-tight">
-              Route Builder & Stops
-            </h1>
-            <p className="text-xs text-[#5B6478]">
-              Configure stop timeline sequences, automated schedules, and bus seat allocations
-            </p>
-          </div>
-        </div>
+        <TransportPageHeader
+          onBack={handleBack}
+          title="Route Builder & Stops"
+          description="Configure stop timeline sequences, automated schedules, and bus seat allocations"
+        />
         <div className="flex items-center gap-2">
           {activeRoute && (
             <button
@@ -532,7 +531,7 @@ export function RouteBuilderPage() {
             <button
               key={r.id}
               onClick={() => selectRouteForEditing(r)}
-              className={`px-4 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 shrink-0 transition-all cursor-pointer ${
+              className={`px-4 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 shrink-0 transition-colors cursor-pointer ${
                 isSelected
                   ? "bg-[#2158E0] text-white border-[#2158E0] shadow-sm"
                   : "bg-white text-[#141A2E] border-[#E6EAF3] hover:bg-gray-50"
@@ -586,8 +585,8 @@ export function RouteBuilderPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Route Code</label>
-                <input
+                <label htmlFor="routebuilderpage-route-code" className="block text-[#5B6478] mb-1 font-semibold">Route Code</label>
+                <input id="routebuilderpage-route-code"
                   type="text"
                   placeholder="e.g. R-1"
                   value={routeCode}
@@ -597,8 +596,8 @@ export function RouteBuilderPage() {
                 />
               </div>
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Route Name</label>
-                <input
+                <label htmlFor="routebuilderpage-route-name" className="block text-[#5B6478] mb-1 font-semibold">Route Name</label>
+                <input id="routebuilderpage-route-name"
                   type="text"
                   placeholder="e.g. Gomti Nagar Route"
                   value={routeName}
@@ -611,14 +610,14 @@ export function RouteBuilderPage() {
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-[#5B6478] font-semibold">Default Vehicle</label>
+                <label htmlFor="routebuilderpage-default-vehicle" className="text-[#5B6478] font-semibold">Default Vehicle</label>
                 {otherVehicleRoute && (
                   <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200">
                     Reassigning from Route {otherVehicleRoute.code}
                   </span>
                 )}
               </div>
-              <select
+              <select id="routebuilderpage-default-vehicle" aria-label="Select vehicle"
                 value={vehicleId}
                 onChange={(e) => handleVehicleChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -648,14 +647,14 @@ export function RouteBuilderPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[#5B6478] font-semibold">Driver</label>
+                  <label htmlFor="routebuilderpage-driver" className="text-[#5B6478] font-semibold">Driver</label>
                   {otherDriverRoute && (
                     <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200">
                       Reassigning from {otherDriverRoute.code}
                     </span>
                   )}
                 </div>
-                <select
+                <select id="routebuilderpage-driver" aria-label="Select driver"
                   value={driverId}
                   onChange={(e) => handleDriverChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -685,14 +684,14 @@ export function RouteBuilderPage() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[#5B6478] font-semibold">Conductor / Attendant</label>
+                  <label htmlFor="routebuilderpage-conductor-attendant" className="text-[#5B6478] font-semibold">Conductor / Attendant</label>
                   {otherAttendantRoute && (
                     <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200">
                       Reassigning from {otherAttendantRoute.code}
                     </span>
                   )}
                 </div>
-                <select
+                <select id="routebuilderpage-conductor-attendant" aria-label="Select attendant"
                   value={attendantId}
                   onChange={(e) => handleAttendantChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-[#E6EAF3] bg-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -724,8 +723,8 @@ export function RouteBuilderPage() {
 
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Pickup Start</label>
-                <input
+                <label htmlFor="routebuilderpage-pickup-start" className="block text-[#5B6478] mb-1 font-semibold">Pickup Start</label>
+                <input id="routebuilderpage-pickup-start" aria-label="Pickup Start"
                   type="time"
                   value={pickupStart}
                   onChange={(e) => setPickupStart(e.target.value)}
@@ -734,8 +733,8 @@ export function RouteBuilderPage() {
                 />
               </div>
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Drop Start</label>
-                <input
+                <label htmlFor="routebuilderpage-drop-start" className="block text-[#5B6478] mb-1 font-semibold">Drop Start</label>
+                <input id="routebuilderpage-drop-start" aria-label="Drop Start"
                   type="time"
                   value={dropStart}
                   onChange={(e) => setDropStart(e.target.value)}
@@ -744,15 +743,15 @@ export function RouteBuilderPage() {
                 />
               </div>
               <div>
-                <label className="block text-[#5B6478] mb-1 font-semibold">Duration (min)</label>
-                <input
+                <label htmlFor="routebuilderpage-duration-min" className="block text-[#5B6478] mb-1 font-semibold">Duration (min)</label>
+                <input id="routebuilderpage-duration-min" aria-label="Duration (min)"
                   type="number"
                   min="15"
                   max="180"
                   value={Number.isNaN(durationMin) ? "" : (durationMin ?? "")}
                   onChange={(e) => {
-                    const parsed = parseInt(e.target.value, 10);
-                    setDurationMin(isNaN(parsed) ? ("" as any) : parsed);
+                    const parsed = e.currentTarget.valueAsNumber;
+                    setDurationMin(Number.isFinite(parsed) ? Math.trunc(parsed) : ("" as any));
                   }}
                   className="w-full px-2 py-2 rounded-lg border border-[#E6EAF3] font-bold text-xs focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                   required
@@ -778,7 +777,7 @@ export function RouteBuilderPage() {
               </div>
               <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div
-                  className={`h-full transition-all ${
+                  className={`h-full transition-colors ${
                     isOverCapacity ? "bg-red-600" : "bg-[#2158E0]"
                   }`}
                   style={{ width: `${Math.min((seatsUsed / (capacity || 1)) * 100, 100)}%` }}
@@ -859,15 +858,15 @@ export function RouteBuilderPage() {
                   Calculates all sequential pickup times based on the first stop pickup time ({pickupStart}) and average minutes between stops:
                 </p>
                 <div className="flex items-center gap-3">
-                  <label className="font-semibold text-blue-900">Minutes between stops:</label>
-                  <input
+                  <label htmlFor="routebuilderpage-minutes-between-stops" className="font-semibold text-blue-900">Minutes between stops:</label>
+                  <input id="routebuilderpage-minutes-between-stops" aria-label="Minutes between stops:"
                     type="number"
                     min="1"
                     max="30"
                     value={Number.isNaN(helperIntervalMin) ? "" : (helperIntervalMin ?? "")}
                     onChange={(e) => {
-                      const parsed = parseInt(e.target.value, 10);
-                      setHelperIntervalMin(isNaN(parsed) ? ("" as any) : parsed);
+                      const parsed = e.currentTarget.valueAsNumber;
+                      setHelperIntervalMin(Number.isFinite(parsed) ? Math.trunc(parsed) : ("" as any));
                     }}
                     className="w-20 px-2 py-1 rounded border border-blue-300 bg-white font-bold"
                   />
@@ -885,8 +884,8 @@ export function RouteBuilderPage() {
             <div className="space-y-3">
               {stops.map((st, idx) => (
                 <div
-                  key={st.id || idx}
-                  className="p-3.5 rounded-xl border border-[#E6EAF3] bg-white hover:border-[#CBD5E1] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                  key={st.id || `${st.name}-${st.pickup_time || "stop"}`}
+                  className="p-3.5 rounded-xl border border-[#E6EAF3] bg-white hover:border-[#CBD5E1] transition-colors shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
                     {/* Move controls & Sequence number */}
@@ -920,10 +919,10 @@ export function RouteBuilderPage() {
                     {/* Inputs */}
                     <div className="flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                       <div className="sm:col-span-4">
-                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                        <label htmlFor={`stop-name-${idx}`} className="block text-[10px] text-[#5B6478] font-bold mb-1">
                           Stop Name
                         </label>
-                        <input
+                        <input id={`stop-name-${idx}`}
                           type="text"
                           placeholder="e.g. Aliganj Chauraha"
                           value={st.name}
@@ -937,10 +936,10 @@ export function RouteBuilderPage() {
                         />
                       </div>
                       <div className="sm:col-span-4">
-                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                        <label htmlFor={`stop-landmark-${idx}`} className="block text-[10px] text-[#5B6478] font-bold mb-1">
                           Landmark (Optional)
                         </label>
-                        <input
+                        <input id={`stop-landmark-${idx}`}
                           type="text"
                           placeholder="e.g. Near Metro Station"
                           value={st.landmark || ""}
@@ -953,10 +952,10 @@ export function RouteBuilderPage() {
                         />
                       </div>
                       <div className="sm:col-span-2">
-                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                        <label htmlFor={`stop-pickup-${idx}`} className="block text-[10px] text-[#5B6478] font-bold mb-1">
                           Pickup Time
                         </label>
-                        <input
+                        <input id={`stop-pickup-${idx}`} aria-label="Pickup Time"
                           type="time"
                           value={st.pickup_time}
                           onChange={(e) => {
@@ -969,10 +968,10 @@ export function RouteBuilderPage() {
                         />
                       </div>
                       <div className="sm:col-span-2">
-                        <label className="block text-[10px] text-[#5B6478] font-bold mb-1">
+                        <label htmlFor={`stop-drop-${idx}`} className="block text-[10px] text-[#5B6478] font-bold mb-1">
                           Drop Time
                         </label>
-                        <input
+                        <input id={`stop-drop-${idx}`} aria-label="Drop Time"
                           type="time"
                           value={st.drop_time}
                           onChange={(e) => {
@@ -1006,7 +1005,7 @@ export function RouteBuilderPage() {
             <button
               type="button"
               onClick={() => handleAddStop()}
-              className="w-full py-2.5 rounded-xl border border-dashed border-[#2158E0]/40 hover:border-[#2158E0] bg-blue-50/30 hover:bg-blue-50/60 text-[#2158E0] font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              className="w-full py-2.5 rounded-xl border border-dashed border-[#2158E0]/40 hover:border-[#2158E0] bg-blue-50/30 hover:bg-blue-50/60 text-[#2158E0] font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Add Next Stop

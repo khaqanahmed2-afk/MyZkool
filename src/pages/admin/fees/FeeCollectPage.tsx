@@ -142,7 +142,12 @@ export default function FeeCollectPage() {
   const [yearId, setYearId] = useState("");
   const [settings, setSettings] = useState<any>(null);
 
-  const idempKeyRef = useRef(crypto.randomUUID());
+  const idempKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (idempKeyRef.current === null) {
+      idempKeyRef.current = crypto.randomUUID();
+    }
+  }, []);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // ── Online/offline detection ───────────────────────────────────────────────
@@ -202,19 +207,20 @@ export default function FeeCollectPage() {
     try {
       const { siblings: sibList } = await getStudentSiblings(schoolId, s.id);
       if (sibList && sibList.length > 0) {
-        const sibItems: SiblingItem[] = [];
-        for (const sib of sibList) {
-          const { dues: sDues } = await getStudentDues(schoolId, sib.sibling_id, yearId);
-          const sPending = sDues.filter(due => due.status === "pending" || due.status === "partial");
-          sibItems.push({
-            id: sib.sibling_id,
-            name: `${sib.sibling_first_name} ${sib.sibling_last_name}`.trim(),
-            admission_no: sib.sibling_admission_no,
-            dues: sPending,
-            selectedDueIds: new Set(sPending.map(x => x.id)),
-            includedInPayment: false,
-          });
-        }
+        const sibItems: SiblingItem[] = await Promise.all(
+          sibList.map(async (sib) => {
+            const { dues: sDues } = await getStudentDues(schoolId, sib.sibling_id, yearId);
+            const sPending = sDues.filter(due => due.status === "pending" || due.status === "partial");
+            return {
+              id: sib.sibling_id,
+              name: `${sib.sibling_first_name} ${sib.sibling_last_name}`.trim(),
+              admission_no: sib.sibling_admission_no,
+              dues: sPending,
+              selectedDueIds: new Set(sPending.map(x => x.id)),
+              includedInPayment: false,
+            };
+          })
+        );
         setSiblings(sibItems);
       } else {
         setSiblings([]);
@@ -282,8 +288,13 @@ export default function FeeCollectPage() {
 
   // Auto-fill payment amount when selecting dues if payment amount is currently empty
   useEffect(() => {
-    if (totalSelectedPaise > 0 && payments.length === 1 && payments[0].amount === "") {
-      setPayments([{ ...payments[0], amount: (totalSelectedPaise / 100).toString() }]);
+    if (totalSelectedPaise > 0) {
+      setPayments((prev) => {
+        if (prev.length === 1 && prev[0].amount === "") {
+          return [{ ...prev[0], amount: (totalSelectedPaise / 100).toString() }];
+        }
+        return prev;
+      });
     }
   }, [totalSelectedPaise]);
 
@@ -358,85 +369,8 @@ export default function FeeCollectPage() {
     setShowConcessionModal(false);
   };
 
-  // ── Collect Action (B7.2, B7.4) ───────────────────────────────────────────
-  const handleCollect = useCallback(async () => {
-    if (!canCollect || !student || !schoolId || !yearId) return;
-    setCollecting(true);
-    setError("");
-
-    try {
-      const isFamilyPayment = includedSiblings.length > 0;
-      const paymentGroupId = isFamilyPayment ? crypto.randomUUID() : undefined;
-
-      // 1. Collect for primary student
-      const primaryPaymentAmt = isFamilyPayment ? primarySelectedPaise : totalPaymentPaise;
-      const primaryLines: CollectPaymentLine[] = payments
-        .filter(p => paise(p.amount) > 0)
-        .map(p => ({
-          mode: p.mode,
-          amount_paise: isFamilyPayment
-            ? Math.round((paise(p.amount) * primarySelectedPaise) / totalPaymentPaise)
-            : paise(p.amount),
-          reference_no: p.reference || undefined,
-        }));
-
-      const primaryResult = await collectFees(schoolId, {
-        student_id: student.id,
-        academic_year_id: yearId,
-        selected_due_ids: [...selectedIds],
-        payments: primaryLines,
-        remarks: remarks + (appliedConcessions ? ` [Concession: ${appliedConcessions.basis} - ${appliedConcessions.reason}]` : ""),
-        payment_group_id: paymentGroupId,
-      }, idempKeyRef.current, user?.id);
-
-      const createdReceiptNos = [primaryResult.receipt_no];
-
-      // 2. Collect for each included sibling (B7.4)
-      for (const sib of includedSiblings) {
-        const sibDueIds = [...sib.selectedDueIds];
-        const sibAmt = sib.dues.filter(d => sib.selectedDueIds.has(d.id)).reduce((s, d) => s + d.balance_paise, 0);
-        if (sibAmt <= 0) continue;
-
-        const sibLines: CollectPaymentLine[] = [{
-          mode: payments[0]?.mode || "cash",
-          amount_paise: sibAmt,
-          reference_no: payments[0]?.reference || undefined,
-        }];
-
-        const sibRes = await collectFees(schoolId, {
-          student_id: sib.id,
-          academic_year_id: yearId,
-          selected_due_ids: sibDueIds,
-          payments: sibLines,
-          remarks: `Family payment (Linked with ${student.admission_no})`,
-          payment_group_id: paymentGroupId,
-        }, crypto.randomUUID(), user?.id);
-
-        createdReceiptNos.push(sibRes.receipt_no);
-      }
-
-      setSuccess({
-        receipt_no: primaryResult.receipt_no,
-        total_paise: primaryResult.total_paise,
-        advance_paise: primaryResult.advance_paise,
-        receipt_id: primaryResult.receipt_id,
-        family_receipt_nos: isFamilyPayment ? createdReceiptNos : undefined,
-      });
-
-      if (settings?.auto_print_receipt) {
-        setTimeout(() => triggerPrint(primaryResult.receipt_no), 500);
-      }
-    } catch (e: any) {
-      setError(e.message?.includes("network") || e.message?.includes("fetch")
-        ? "We could not confirm this payment. Check receipts before trying again."
-        : e.message);
-    } finally {
-      setCollecting(false);
-    }
-  }, [canCollect, student, schoolId, yearId, payments, selectedIds, remarks, settings, user, includedSiblings, primarySelectedPaise, totalPaymentPaise, appliedConcessions]);
-
   // ── Print helper ──────────────────────────────────────────────────────────
-  const triggerPrint = (receiptNo?: string) => {
+  const triggerPrint = useCallback((receiptNo?: string) => {
     if (!student) return;
     const dummyReceipt: FeeReceipt = {
       id: success?.receipt_id || crypto.randomUUID(),
@@ -509,7 +443,84 @@ export default function FeeCollectPage() {
     win.document.close();
     win.focus();
     win.print();
-  };
+  }, [student, success, schoolId, yearId, totalPaymentPaise, user, remarks, selectedDues, payments, primarySelectedPaise, settings?.receipt_paper]);
+
+  // ── Collect Action (B7.2, B7.4) ───────────────────────────────────────────
+  const handleCollect = useCallback(async () => {
+    if (!canCollect || !student || !schoolId || !yearId) return;
+    setCollecting(true);
+    setError("");
+
+    try {
+      const isFamilyPayment = includedSiblings.length > 0;
+      const paymentGroupId = isFamilyPayment ? crypto.randomUUID() : undefined;
+
+      // 1. Collect for primary student
+      const primaryPaymentAmt = isFamilyPayment ? primarySelectedPaise : totalPaymentPaise;
+      const primaryLines: CollectPaymentLine[] = payments
+        .filter(p => paise(p.amount) > 0)
+        .map(p => ({
+          mode: p.mode,
+          amount_paise: isFamilyPayment
+            ? Math.round((paise(p.amount) * primarySelectedPaise) / totalPaymentPaise)
+            : paise(p.amount),
+          reference_no: p.reference || undefined,
+        }));
+
+      const primaryResult = await collectFees(schoolId, {
+        student_id: student.id,
+        academic_year_id: yearId,
+        selected_due_ids: [...selectedIds],
+        payments: primaryLines,
+        remarks: remarks + (appliedConcessions ? ` [Concession: ${appliedConcessions.basis} - ${appliedConcessions.reason}]` : ""),
+        payment_group_id: paymentGroupId,
+      }, idempKeyRef.current!, user?.id);
+
+      const createdReceiptNos = [primaryResult.receipt_no];
+
+      // 2. Collect for each included sibling (B7.4)
+      for await (const sib of includedSiblings) {
+        const sibDueIds = [...sib.selectedDueIds];
+        const sibAmt = sib.dues.filter(d => sib.selectedDueIds.has(d.id)).reduce((s, d) => s + d.balance_paise, 0);
+        if (sibAmt <= 0) continue;
+
+        const sibLines: CollectPaymentLine[] = [{
+          mode: payments[0]?.mode || "cash",
+          amount_paise: sibAmt,
+          reference_no: payments[0]?.reference || undefined,
+        }];
+
+        const sibRes = await collectFees(schoolId, {
+          student_id: sib.id,
+          academic_year_id: yearId,
+          selected_due_ids: sibDueIds,
+          payments: sibLines,
+          remarks: `Family payment (Linked with ${student.admission_no})`,
+          payment_group_id: paymentGroupId,
+        }, crypto.randomUUID(), user?.id);
+
+        createdReceiptNos.push(sibRes.receipt_no);
+      }
+
+      setSuccess({
+        receipt_no: primaryResult.receipt_no,
+        total_paise: primaryResult.total_paise,
+        advance_paise: primaryResult.advance_paise,
+        receipt_id: primaryResult.receipt_id,
+        family_receipt_nos: isFamilyPayment ? createdReceiptNos : undefined,
+      });
+
+      if (settings?.auto_print_receipt) {
+        setTimeout(() => triggerPrint(primaryResult.receipt_no), 500);
+      }
+    } catch (e: any) {
+      setError(e.message?.includes("network") || e.message?.includes("fetch")
+        ? "We could not confirm this payment. Check receipts before trying again."
+        : e.message);
+    } finally {
+      setCollecting(false);
+    }
+  }, [canCollect, student, schoolId, yearId, payments, selectedIds, remarks, settings, user, includedSiblings, primarySelectedPaise, totalPaymentPaise, appliedConcessions, triggerPrint]);
 
   // ── Keyboard Map (B5.3) ───────────────────────────────────────────────────
   useEffect(() => {
@@ -565,7 +576,7 @@ export default function FeeCollectPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [results, resultIdx, student, dues, success, handleCollect, selectStudent, showConcessionModal]);
+  }, [results, resultIdx, student, dues, success, handleCollect, selectStudent, showConcessionModal, triggerPrint]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetToSearch() {
@@ -633,9 +644,8 @@ export default function FeeCollectPage() {
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 relative z-20">
         <div className="max-w-2xl relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
+          <input aria-label="Search student to collect fee"
             ref={searchRef}
-            autoFocus
             type="text"
             placeholder="Search by name, admission number or phone…"
             className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:border-[#2158E0]"
@@ -754,7 +764,7 @@ export default function FeeCollectPage() {
                     <div className="text-xs text-slate-500">{student.admission_no}</div>
                   </div>
                 </div>
-                <button type="button" onClick={resetToSearch} className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer">
+                <button aria-label="Close" type="button" onClick={resetToSearch} className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer">
                   <X className="w-4 h-4 text-slate-500" />
                 </button>
               </div>
@@ -888,7 +898,7 @@ export default function FeeCollectPage() {
                       return (
                         <div
                           key={sib.id}
-                          className={`border rounded-xl p-4 transition-all ${
+                          className={`border rounded-xl p-4 transition-colors ${
                             sib.includedInPayment ? "border-emerald-500 bg-emerald-50/20" : "border-slate-200 bg-white"
                           }`}
                         >
@@ -913,22 +923,21 @@ export default function FeeCollectPage() {
                           {sib.dues.length > 0 && (
                             <div className="space-y-1.5 pt-2 border-t border-slate-100">
                               {sib.dues.map(d => (
-                                <div
+                                <label
                                   key={d.id}
-                                  onClick={() => toggleSiblingDue(sib.id, d.id)}
                                   className="flex items-center justify-between text-xs p-1.5 rounded-md hover:bg-slate-50 cursor-pointer"
                                 >
                                   <div className="flex items-center gap-2">
                                     <input
                                       type="checkbox"
                                       checked={sib.selectedDueIds.has(d.id)}
-                                      onChange={() => {}}
-                                      className="rounded text-emerald-600"
+                                      onChange={() => toggleSiblingDue(sib.id, d.id)}
+                                      className="rounded text-emerald-600 cursor-pointer"
                                     />
                                     <span className="text-slate-700">{d.description || "Due"}</span>
                                   </div>
                                   <span className="font-semibold tabular-nums">₹{formatRupees(d.balance_paise)}</span>
-                                </div>
+                                </label>
                               ))}
                               <div className="flex justify-between text-xs font-bold pt-1.5 border-t border-slate-100">
                                 <span>Total for {sib.name}:</span>
@@ -1016,8 +1025,8 @@ export default function FeeCollectPage() {
                     <div className="p-3 space-y-2">
                       <div className="flex gap-2">
                         <div className="flex-1">
-                          <label className="text-xs text-slate-500">Amount (₹)</label>
-                          <input
+                          <label htmlFor={`fee-amount-${p.id}`} className="text-xs text-slate-500">Amount (₹)</label>
+                          <input id={`fee-amount-${p.id}`}
                             type="number"
                             min="0"
                             step="0.01"
@@ -1028,7 +1037,7 @@ export default function FeeCollectPage() {
                           />
                         </div>
                         {payments.length > 1 && (
-                          <button type="button" onClick={() => removePaymentRow(p.id)} className="self-end p-2 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer">
+                          <button aria-label="Delete" type="button" onClick={() => removePaymentRow(p.id)} className="self-end p-2 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer">
                             <Minus className="w-4 h-4" />
                           </button>
                         )}
@@ -1038,8 +1047,8 @@ export default function FeeCollectPage() {
                       {p.mode === "cash" && (
                         <div className="flex gap-2">
                           <div className="flex-1">
-                            <label className="text-xs text-slate-500">Received (₹)</label>
-                            <input
+                            <label htmlFor={`fee-received-${p.id}`} className="text-xs text-slate-500">Received (₹)</label>
+                            <input id={`fee-received-${p.id}`}
                               type="number"
                               min="0"
                               placeholder="0.00"
@@ -1049,7 +1058,7 @@ export default function FeeCollectPage() {
                             />
                           </div>
                           <div className="flex-1">
-                            <label className="text-xs text-slate-500">Change</label>
+                            <span className="text-xs text-slate-500">Change</span>
                             <div className={`mt-0.5 px-3 py-1.5 text-sm border rounded-lg font-semibold tabular-nums ${
                               changePaise > 0 ? "border-green-200 bg-green-50 text-green-700" : "border-slate-200 bg-slate-50 text-slate-400"
                             }`}>
@@ -1062,10 +1071,10 @@ export default function FeeCollectPage() {
                       {/* Reference field */}
                       {["upi", "cheque", "bank_transfer"].includes(p.mode) && (
                         <div>
-                          <label className="text-xs text-slate-500">
+                          <label htmlFor={`fee-reference-${p.id}`} className="text-xs text-slate-500">
                             {p.mode === "upi" ? "UPI reference (optional)" : p.mode === "cheque" ? "Cheque number" : "Reference"}
                           </label>
-                          <input
+                          <input id={`fee-reference-${p.id}`} aria-label="Input value"
                             type="text"
                             className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                             value={p.reference}
@@ -1088,8 +1097,8 @@ export default function FeeCollectPage() {
 
                 {/* Remarks */}
                 <div>
-                  <label className="text-xs text-slate-500">Remarks (optional)</label>
-                  <input
+                  <label htmlFor="feecollectpage-remarks-optional" className="text-xs text-slate-500">Remarks (optional)</label>
+                  <input id="feecollectpage-remarks-optional"
                     type="text"
                     className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
                     value={remarks}
@@ -1122,7 +1131,7 @@ export default function FeeCollectPage() {
                   type="button"
                   onClick={handleCollect}
                   disabled={!canCollect}
-                  className={`w-full py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer ${
+                  className={`w-full py-3 rounded-xl font-semibold text-sm transition cursor-pointer ${
                     canCollect
                       ? "bg-[#2158E0] text-white hover:bg-[#2158E0]/90 active:scale-[.98]"
                       : "bg-slate-100 text-slate-400 cursor-not-allowed"
@@ -1152,15 +1161,15 @@ export default function FeeCollectPage() {
                 <Shield className="w-5 h-5 text-amber-600" />
                 <h3 className="font-bold text-slate-900 text-base">Add Counter Concession</h3>
               </div>
-              <button type="button" onClick={() => setShowConcessionModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+              <button aria-label="Close" type="button" onClick={() => setShowConcessionModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Reason / Basis</label>
-                <select
+                <label htmlFor="feecollectpage-reason-basis" className="block text-xs font-semibold text-slate-700 mb-1">Reason / Basis</label>
+                <select id="feecollectpage-reason-basis" aria-label="Reason / Basis"
                   value={concessionBasis}
                   onChange={e => setConcessionBasis(e.target.value as any)}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -1174,8 +1183,8 @@ export default function FeeCollectPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Type</label>
-                  <select
+                  <label htmlFor="feecollectpage-type" className="block text-xs font-semibold text-slate-700 mb-1">Type</label>
+                  <select id="feecollectpage-type" aria-label="Type"
                     value={concessionType}
                     onChange={e => setConcessionType(e.target.value as any)}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
@@ -1185,10 +1194,10 @@ export default function FeeCollectPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="feecollectpage-value-concessiontype-percent" className="block text-xs font-semibold text-slate-700 mb-1">
                     Value {concessionType === "percent" ? "(%)" : "(₹)"}
                   </label>
-                  <input
+                  <input id="feecollectpage-value-concessiontype-percent"
                     type="number"
                     value={typeof concessionVal === "number" && Number.isNaN(concessionVal) ? "" : (concessionVal ?? "")}
                     onChange={e => setConcessionVal(e.target.value)}
@@ -1199,8 +1208,8 @@ export default function FeeCollectPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Reason (Required)</label>
-                <input
+                <label htmlFor="feecollectpage-reason-required" className="block text-xs font-semibold text-slate-700 mb-1">Reason (Required)</label>
+                <input id="feecollectpage-reason-required"
                   type="text"
                   value={concessionReason}
                   onChange={e => setConcessionReason(e.target.value)}
@@ -1219,7 +1228,7 @@ export default function FeeCollectPage() {
                   <p className="text-[11px] text-amber-700">
                     Enter Owner PIN on the spot to override and approve immediately.
                   </p>
-                  <input
+                  <input aria-label="Owner PIN"
                     type="password"
                     maxLength={6}
                     value={ownerPin}

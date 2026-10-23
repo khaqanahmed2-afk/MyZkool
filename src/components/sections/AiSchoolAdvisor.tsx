@@ -34,7 +34,7 @@ export const AiSchoolAdvisor: React.FC = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [requestCount, setRequestCount] = useState(0);
+  const requestCountRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -59,7 +59,7 @@ export const AiSchoolAdvisor: React.FC = () => {
     const message = textToSend || inputMessage;
     if (!message.trim() || isSending) return;
 
-    if (requestCount >= 15) {
+    if (requestCountRef.current >= 15) {
       setMessages((prev) => [
         ...prev,
         {
@@ -74,7 +74,7 @@ export const AiSchoolAdvisor: React.FC = () => {
     setMessages(newHistory);
     setInputMessage("");
     setIsSending(true);
-    setRequestCount((c) => c + 1);
+    requestCountRef.current += 1;
 
     try {
       const res = await fetch("/api/chat", {
@@ -85,6 +85,10 @@ export const AiSchoolAdvisor: React.FC = () => {
           message,
         }),
       });
+
+      if (!res.ok) {
+        throw new Error(`Chat request failed: ${res.status}`);
+      }
 
       const data = await res.json();
       const reply = data.text || data.fallbackText || "MyZkool makes school management simple with direct WhatsApp notifications for attendance and fee receipts.";
@@ -120,6 +124,9 @@ export const AiSchoolAdvisor: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
+      if (!res.ok) {
+        throw new Error(`TTS request failed: ${res.status}`);
+      }
       const data = await res.json();
       if (data.audioBase64) {
         const audioSrc = `data:audio/mp3;base64,${data.audioBase64}`;
@@ -171,6 +178,10 @@ export const AiSchoolAdvisor: React.FC = () => {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`Analyze image request failed: ${res.status}`);
+      }
+
       const data = await res.json();
       setAnalysisResult(data.analysis || "Document processed successfully. Ready for MyZkool ERP automated mapping.");
     } catch {
@@ -187,7 +198,7 @@ export const AiSchoolAdvisor: React.FC = () => {
         <button
           onClick={() => setIsOpen(true)}
           id="advisor-launcher-btn"
-          className="group flex items-center gap-2.5 px-4 sm:px-5 py-3.5 rounded-full bg-[#141A2E] hover:bg-[#2158E0] text-white shadow-xl shadow-[#141A2E]/20 hover:shadow-[#2158E0]/30 transition-all duration-300 cursor-pointer active:scale-95"
+          className="group flex items-center gap-2.5 px-4 sm:px-5 py-3.5 rounded-full bg-[#141A2E] hover:bg-[#2158E0] text-white shadow-xl shadow-[#141A2E]/20 hover:shadow-[#2158E0]/30 transition duration-300 cursor-pointer active:scale-95"
         >
           <div className="w-8 h-8 rounded-full bg-[#2158E0] group-hover:bg-white text-white group-hover:text-[#2158E0] flex items-center justify-center transition-colors">
             <Sparkles className="w-4 h-4" />
@@ -268,9 +279,9 @@ export const AiSchoolAdvisor: React.FC = () => {
             <div className="flex-1 flex flex-col overflow-hidden bg-[#FAFCFF]">
               {/* Messages scroll area */}
               <div className="flex-1 p-3.5 overflow-y-auto space-y-3">
-                {messages.map((m, idx) => (
+                {messages.map((m) => (
                   <div
-                    key={idx}
+                    key={m.id || `${m.role}-${m.content.slice(0, 20)}`}
                     className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
                   >
                     <div
@@ -346,14 +357,14 @@ export const AiSchoolAdvisor: React.FC = () => {
                 }}
                 className="p-3 bg-white border-t border-[#E6EAF3] flex items-center gap-2"
               >
-                <input
+                <input aria-label="Ask a question"
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   placeholder="Ask about website, fees, ERP or boards..."
                   className="flex-1 px-3.5 py-2 text-xs rounded-full border border-[#E6EAF3] focus:border-[#2158E0] outline-none"
                 />
-                <button
+                <button aria-label="Action"
                   type="submit"
                   disabled={!inputMessage.trim() || isSending}
                   className="w-8 h-8 rounded-full bg-[#2158E0] text-white flex items-center justify-center hover:bg-[#1a4ec4] transition-colors disabled:opacity-40 cursor-pointer"
@@ -390,7 +401,7 @@ export const AiSchoolAdvisor: React.FC = () => {
                 />
 
                 {!uploadedImage ? (
-                  <div
+                  <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                     onClick={() => fileInputRef.current?.click()}
                     className="border-2 border-dashed border-[#CBD5E1] hover:border-[#2158E0] p-6 rounded-2xl text-center cursor-pointer bg-[#F8FAFC] transition-colors"
                   >
@@ -410,7 +421,7 @@ export const AiSchoolAdvisor: React.FC = () => {
                         alt="Uploaded document"
                         className="w-full h-36 object-cover"
                       />
-                      <button
+                      <button aria-label="Action"
                         onClick={() => {
                           setUploadedImage(null);
                           setAnalysisResult(null);

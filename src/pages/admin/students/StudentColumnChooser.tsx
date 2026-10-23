@@ -34,7 +34,7 @@ const AVAILABLE_COLUMNS: { key: keyof ColumnVisibility; label: string; defaultVa
   { key: "sr_no", label: "SR Number", defaultVal: false },
 ];
 
-export const DEFAULT_COLUMN_VISIBILITY: ColumnVisibility = {
+const DEFAULT_COLUMN_VISIBILITY: ColumnVisibility = {
   roll_no: false,
   parent_phone: true,
   gender: false,

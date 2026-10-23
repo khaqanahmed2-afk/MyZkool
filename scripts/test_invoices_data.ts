@@ -1,8 +1,12 @@
 import dotenv from 'dotenv';
-dotenv.config();
-import { getSchoolInvoices } from '../src/services/invoiceService';
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 
 async function test() {
+  const { getSchoolInvoices } = await import('../src/services/invoiceService');
   const schoolId = 'b70261ef-37f1-46c8-a148-2c496a9d33a8';
   console.log("Fetching school invoices for school:", schoolId);
   const res = await getSchoolInvoices(schoolId, {

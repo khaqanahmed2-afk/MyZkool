@@ -21,12 +21,12 @@ export const HowItWorks: React.FC = () => {
 
         {/* 4-Step Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {HOW_IT_WORKS_STEPS.map((step, idx) => {
+          {HOW_IT_WORKS_STEPS.map((step) => {
             const Icon = step.icon;
             return (
               <div
-                key={idx}
-                className="bg-white rounded-2xl border border-[#E6EAF3] p-6 shadow-sm hover:shadow-md hover:border-[#2158E0]/40 transition-all flex flex-col justify-between relative group"
+                key={step.number || step.tag}
+                className="bg-white rounded-2xl border border-[#E6EAF3] p-6 shadow-sm hover:shadow-md hover:border-[#2158E0]/40 transition flex flex-col justify-between relative group"
               >
                 <div>
                   <div className="flex items-center justify-between mb-5">
@@ -38,7 +38,7 @@ export const HowItWorks: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="w-12 h-12 rounded-xl bg-[#F8FAFC] border border-[#E6EAF3] flex items-center justify-center text-[#2158E0] mb-4 group-hover:scale-105 group-hover:bg-blue-50 transition-all">
+                  <div className="w-12 h-12 rounded-xl bg-[#F8FAFC] border border-[#E6EAF3] flex items-center justify-center text-[#2158E0] mb-4 group-hover:scale-105 group-hover:bg-blue-50 transition">
                     <Icon className="w-6 h-6" />
                   </div>
 

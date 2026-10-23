@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "react-router-dom";
 import {
   requestParentPayOTP,
@@ -23,6 +23,7 @@ import {
   Languages,
   Check,
 } from "lucide-react";
+import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 type Lang = "en" | "hi";
 
@@ -90,6 +91,12 @@ const I18N = {
 };
 
 export default function ParentPayPage() {
+  usePageMetadata({
+    title: "Pay School Fees Online — Secure Parent Portal",
+    description: "Official online school fee payment portal with instant receipts and WhatsApp confirmation.",
+    noindex: true,
+  });
+
   const { token } = useParams<{ token: string }>();
 
   const [lang, setLang] = useState<Lang>("en");
@@ -106,7 +113,7 @@ export default function ParentPayPage() {
   const [resendCooldown, setResendCooldown] = useState<number>(60);
 
   // Session & Context State
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const sessionTokenRef = useRef<string | null>(null);
   const [context, setContext] = useState<ParentPayContext | null>(null);
   const [selectedDueIds, setSelectedDueIds] = useState<string[]>([]);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
@@ -170,7 +177,7 @@ export default function ParentPayPage() {
     try {
       const res = await verifyParentPayOTP(token, otpInput.trim());
       if (res.success && res.session_token) {
-        setSessionToken(res.session_token);
+        sessionTokenRef.current = res.session_token;
 
         // Load dues context
         const ctxRes = await getParentPayContext(res.session_token);
@@ -215,9 +222,11 @@ export default function ParentPayPage() {
   // Toggle all dues for a student
   const handleToggleStudentDues = (studentDues: { due_id: string }[]) => {
     const ids = studentDues.map((d) => d.due_id);
-    const allSelected = ids.every((id) => selectedDueIds.includes(id));
+    const idSet = new Set(ids);
+    const selectedSet = new Set(selectedDueIds);
+    const allSelected = ids.every((id) => selectedSet.has(id));
     if (allSelected) {
-      setSelectedDueIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setSelectedDueIds((prev) => prev.filter((id) => !idSet.has(id)));
     } else {
       setSelectedDueIds((prev) => Array.from(new Set([...prev, ...ids])));
     }
@@ -227,10 +236,11 @@ export default function ParentPayPage() {
   const computedTotals = useMemo(() => {
     if (!context) return { subtotalPaise: 0, convenienceFeePaise: 0, totalPaise: 0 };
 
+    const selectedSet = new Set(selectedDueIds);
     let subtotal = 0;
     for (const st of context.students) {
       for (const d of st.dues) {
-        if (selectedDueIds.includes(d.due_id)) {
+        if (selectedSet.has(d.due_id)) {
           subtotal += d.balance_paise;
         }
       }
@@ -250,14 +260,14 @@ export default function ParentPayPage() {
 
   // 3. Initiate Checkout via Razorpay Standard Web Checkout
   const handleCheckout = async () => {
-    if (!sessionToken || selectedDueIds.length === 0 || !context) return;
+    if (!sessionTokenRef.current || selectedDueIds.length === 0 || !context) return;
 
     setIsCheckingOut(true);
     setCheckoutError(null);
 
     try {
       // 1. Create online order on server (server recomputes amounts from DB)
-      const orderRes = await createOnlinePaymentOrder(sessionToken, selectedDueIds);
+      const orderRes = await createOnlinePaymentOrder(sessionTokenRef.current, selectedDueIds);
 
       if (!orderRes.success || !orderRes.order) {
         setCheckoutError(orderRes.error || "Order creation failed.");
@@ -321,6 +331,8 @@ export default function ParentPayPage() {
     }
   };
 
+  const selectedDueIdSet = useMemo(() => new Set(selectedDueIds), [selectedDueIds]);
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#141A2E] flex flex-col font-sans">
       {/* Top Header */}
@@ -377,7 +389,7 @@ export default function ParentPayPage() {
                   value={otpInput}
                   onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
                   placeholder={t.otpPlaceholder}
-                  className="w-full text-center text-2xl font-mono tracking-widest py-3 px-4 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white focus:border-[#2158E0] focus:ring-2 focus:ring-[#2158E0]/15 focus:outline-hidden transition-all"
+                  className="w-full text-center text-2xl font-mono tracking-widest py-3 px-4 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white focus:border-[#2158E0] focus:ring-2 focus:ring-[#2158E0]/15 focus:outline-hidden transition-colors"
                   autoFocus
                   required
                 />
@@ -416,9 +428,12 @@ export default function ParentPayPage() {
                     onClick={async () => {
                       if (!token) return;
                       setOtpLoading(true);
-                      await requestParentPayOTP(token);
-                      setResendCooldown(60);
-                      setOtpLoading(false);
+                      try {
+                        await requestParentPayOTP(token);
+                        setResendCooldown(60);
+                      } finally {
+                        setOtpLoading(false);
+                      }
                     }}
                     className="text-xs font-semibold text-[#2158E0] hover:underline"
                   >
@@ -452,7 +467,7 @@ export default function ParentPayPage() {
             {context.students.map((student) => {
               const isExpanded = expandedStudentId === student.student_id;
               const studentDueIds = student.dues.map((d) => d.due_id);
-              const selectedCount = studentDueIds.filter((id) => selectedDueIds.includes(id)).length;
+              const selectedCount = studentDueIds.filter((id) => selectedDueIdSet.has(id)).length;
 
               return (
                 <div
@@ -460,7 +475,7 @@ export default function ParentPayPage() {
                   className="bg-white rounded-2xl border border-[#E6EAF3] shadow-xs overflow-hidden"
                 >
                   {/* Student Header Accordion */}
-                  <div
+                  <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                     onClick={() => setExpandedStudentId(isExpanded ? null : student.student_id)}
                     className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/70 transition-colors"
                   >
@@ -510,13 +525,12 @@ export default function ParentPayPage() {
                       </div>
 
                       {student.dues.map((due) => {
-                        const isSelected = selectedDueIds.includes(due.due_id);
+                        const isSelected = selectedDueIdSet.has(due.due_id);
 
                         return (
-                          <div
+                          <label
                             key={due.due_id}
-                            onClick={() => handleToggleDue(due.due_id)}
-                            className={`p-3 rounded-xl border flex items-start justify-between gap-3 cursor-pointer transition-all ${
+                            className={`p-3 rounded-xl border flex items-start justify-between gap-3 cursor-pointer transition-colors ${
                               isSelected
                                 ? "bg-blue-50/40 border-[#2158E0]/40"
                                 : "bg-white border-[#E6EAF3] hover:border-slate-300"
@@ -526,8 +540,8 @@ export default function ParentPayPage() {
                               <input
                                 type="checkbox"
                                 checked={isSelected}
-                                onChange={() => {}} // Handled by container
-                                className="w-4 h-4 mt-0.5 rounded text-[#2158E0] border-[#CBD5E1] focus:ring-[#2158E0]/20 pointer-events-none"
+                                onChange={() => handleToggleDue(due.due_id)}
+                                className="w-4 h-4 mt-0.5 rounded text-[#2158E0] border-[#CBD5E1] focus:ring-[#2158E0]/20 cursor-pointer"
                               />
                               <div>
                                 <span className="block text-xs font-semibold text-[#141A2E]">
@@ -554,7 +568,7 @@ export default function ParentPayPage() {
                             <span className="text-xs font-bold text-[#141A2E] shrink-0">
                               ₹{(due.balance_paise / 100).toLocaleString("en-IN")}
                             </span>
-                          </div>
+                          </label>
                         );
                       })}
                     </div>
@@ -584,7 +598,7 @@ export default function ParentPayPage() {
                   id="parent-pay-btn"
                   onClick={handleCheckout}
                   disabled={isCheckingOut || selectedDueIds.length === 0}
-                  className="w-full py-3.5 px-4 rounded-xl text-xs font-bold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3.5 px-4 rounded-xl text-xs font-bold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors flex items-center justify-center gap-2"
                 >
                   {isCheckingOut ? (
                     <>

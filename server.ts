@@ -270,6 +270,11 @@ app.post("/api/analyze-image", async (req: Request, res: Response) => {
   }
 });
 
+// Catch-all 404 for unmatched API routes
+app.all("/api/*", (_req: Request, res: Response) => {
+  res.status(404).json({ error: "API endpoint not found." });
+});
+
 // Standard API Error Handling Middleware
 app.use(apiErrorHandler);
 

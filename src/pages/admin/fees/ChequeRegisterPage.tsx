@@ -6,7 +6,7 @@
  * Actions: Deposit, Clear, Mark Bounced (modal asking for bounce charge and reason, triggering bounce flow).
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Search, CheckSquare, AlertTriangle, CheckCircle, Clock,
@@ -38,7 +38,7 @@ export default function ChequeRegisterPage() {
   const [bouncing, setBouncing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const loadCheques = async () => {
+  const loadCheques = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
@@ -47,11 +47,11 @@ export default function ChequeRegisterPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId]);
 
   useEffect(() => {
     loadCheques();
-  }, [schoolId]);
+  }, [loadCheques]);
 
   const filtered = cheques.filter(c => {
     if (c.status !== activeTab) return false;
@@ -153,7 +153,7 @@ export default function ChequeRegisterPage() {
       <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
+          <input aria-label="Search cheques"
             type="text"
             placeholder="Search by cheque no, bank, student, receipt..."
             value={searchQuery}
@@ -264,7 +264,7 @@ export default function ChequeRegisterPage() {
                 <AlertTriangle className="w-5 h-5 text-red-600" />
                 <h3 className="font-bold text-slate-900 text-base">Mark Cheque Bounced</h3>
               </div>
-              <button type="button" onClick={() => setShowBounceModal(false)} className="p-1 text-slate-400">
+              <button aria-label="Close" type="button" onClick={() => setShowBounceModal(false)} className="p-1 text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -279,8 +279,8 @@ export default function ChequeRegisterPage() {
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Reason for Bounce</label>
-                <input
+                <label htmlFor="chequeregisterpage-reason-for-bounce" className="block text-xs font-semibold text-slate-700 mb-1">Reason for Bounce</label>
+                <input id="chequeregisterpage-reason-for-bounce"
                   type="text"
                   placeholder="e.g. Insufficient funds / Signature mismatch"
                   value={bounceReason}
@@ -290,10 +290,10 @@ export default function ChequeRegisterPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="chequeregisterpage-add-bounce-charge-to-student-d" className="block text-xs font-semibold text-slate-700 mb-1">
                   Add Bounce Charge to Student Dues (₹)
                 </label>
-                <input
+                <input id="chequeregisterpage-add-bounce-charge-to-student-d"
                   type="number"
                   placeholder="500"
                   value={typeof bounceChargeRs === "number" && Number.isNaN(bounceChargeRs) ? "" : (bounceChargeRs ?? "")}

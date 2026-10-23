@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Plus,
   Loader2,
@@ -26,6 +26,10 @@ import {
   Info,
   RotateCcw,
   AlertTriangle,
+  Clock,
+  Sparkles,
+  DollarSign,
+  Eye,
 } from "lucide-react";
 import {
   getFeeStructures,
@@ -35,6 +39,7 @@ import {
   activateStructure,
   deactivateFeeStructure,
   archiveFeeStructure,
+  supersedeFeeStructure,
   checkStructureOverlaps,
   getStructureConfigItems,
   deleteFeeStructure,
@@ -49,11 +54,15 @@ import { listAssignments } from "../../../services/transportAssignmentService";
 import { getRoutes } from "../../../services/transportCoreService";
 import {
   calculateFeeStructureFinancials,
+  calculateAnnualMultiplier,
   generateInstallmentSchedule,
+  calculateMidYearAdmissionFee,
+  calculateConcessionImpact,
   type ComponentCalculationInput,
   type StudentTransportInfo,
   type GeneratedInstallment,
   type FeeStructureCalculationResult,
+  type MidYearProrationResult,
 } from "../../../services/feeCalculationService";
 import type {
   FeeStructure,
@@ -99,13 +108,13 @@ export default function FeeStructuresPage() {
   // Core Data
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [selectedYear, setSelectedYear] = useState<AcademicYear | null>(null);
-  const [yearId, setYearId] = useState<string>("");
+  const yearIdRef = useRef<string>("");
   const [academicYearWarning, setAcademicYearWarning] = useState<string | null>(null);
 
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [structures, setStructures] = useState<DisplayFeeStructure[]>([]);
   const [heads, setHeads] = useState<FeeHead[]>([]);
-  const [routes, setRoutes] = useState<any[]>([]);
+  const routesRef = useRef<any[]>([]);
 
   // Hub UI state
   const [loading, setLoading] = useState(true);
@@ -127,7 +136,7 @@ export default function FeeStructuresPage() {
 
   // Step 1: Basic Information
   const [step1Name, setStep1Name] = useState("");
-  const [step1NameManuallyEdited, setStep1NameManuallyEdited] = useState(false);
+  const step1NameManuallyEditedRef = useRef(false);
   const [step1YearId, setStep1YearId] = useState("");
   const [step1ClassId, setStep1ClassId] = useState("");
   const [step1SectionId, setStep1SectionId] = useState(""); // "" = All Sections
@@ -148,7 +157,20 @@ export default function FeeStructuresPage() {
   // Step 4: Preview & Student details
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewCalculation, setPreviewCalculation] = useState<FeeStructureCalculationResult | null>(null);
-  const [previewStudents, setPreviewStudents] = useState<StudentTransportInfo[]>([]);
+  const previewStudentsRef = useRef<StudentTransportInfo[]>([]);
+
+  // Step 4 Simulator state (Mid-Year Proration & Concession Impact)
+  const [simAdmissionOption, setSimAdmissionOption] = useState<"full" | "term2" | "term3" | "term4">("full");
+  const [simConcessionOption, setSimConcessionOption] = useState<"none" | "sibling_25" | "rte_100" | "staff_50">("none");
+
+  // Detail Modal state for inspecting any saved structure
+  const [detailModalStructure, setDetailModalStructure] = useState<DisplayFeeStructure | null>(null);
+  const [detailModalCalculation, setDetailModalCalculation] = useState<FeeStructureCalculationResult | null>(null);
+  const [loadingDetailModal, setLoadingDetailModal] = useState(false);
+  const [detailModalTab, setDetailModalTab] = useState<"components" | "installments" | "students" | "simulator">("components");
+  const [detailSimDate, setDetailSimDate] = useState("2026-10-01");
+  const [detailSimConcessionType, setDetailSimConcessionType] = useState<"percentage" | "flat" | "full_waiver">("percentage");
+  const [detailSimConcessionValue, setDetailSimConcessionValue] = useState<number>(25);
 
   // Modals & sub-dialogs
   const [isAddHeadModalOpen, setIsAddHeadModalOpen] = useState(false);
@@ -201,7 +223,7 @@ export default function FeeStructuresPage() {
         );
       } else {
         setSelectedYear(activeAY);
-        setYearId(activeAY.id);
+        yearIdRef.current = activeAY.id;
         setAcademicYearFilter(activeAY.id);
       }
 
@@ -218,7 +240,7 @@ export default function FeeStructuresPage() {
       // 5. Load Routes for transport info
       try {
         const loadedRoutes = await getRoutes(activeSchoolId);
-        setRoutes(loadedRoutes || []);
+        routesRef.current = loadedRoutes || [];
       } catch (e) {
         console.warn("Routes load note:", e);
       }
@@ -259,16 +281,14 @@ export default function FeeStructuresPage() {
             item
           );
 
-          // Calculate annual fee total from saved config items
+          // Calculate accurate annualized academic fee total from saved config items
           let annualTotal = 0;
           try {
             const { items: configItems } = await getStructureConfigItems(activeSchoolId, item.id);
             for (const ci of configItems) {
               const base = ci.base_amount_rupees || 0;
-              if (ci.frequency === "monthly") annualTotal += base * 12;
-              else if (ci.frequency === "quarterly") annualTotal += base * 4;
-              else if (ci.frequency === "half_yearly") annualTotal += base * 2;
-              else annualTotal += base;
+              const mult = calculateAnnualMultiplier(ci.frequency);
+              annualTotal += base * mult;
             }
           } catch {
             annualTotal = 0;
@@ -347,6 +367,7 @@ export default function FeeStructuresPage() {
 
   const activeCount = useMemo(() => yearFilteredStructures.filter((s) => s.status === "active").length, [yearFilteredStructures]);
   const draftCount = useMemo(() => yearFilteredStructures.filter((s) => s.status === "draft").length, [yearFilteredStructures]);
+  const supersededCount = useMemo(() => yearFilteredStructures.filter((s) => s.status === "superseded").length, [yearFilteredStructures]);
   const archivedCount = useMemo(() => yearFilteredStructures.filter((s) => s.status === "archived").length, [yearFilteredStructures]);
   const classesCoveredCount = useMemo(() => {
     const classSet = new Set(
@@ -377,11 +398,11 @@ export default function FeeStructuresPage() {
 
   function handleOpenCreateWizard() {
     setEditingStructureId(null);
-    setStep1NameManuallyEdited(false);
+    step1NameManuallyEditedRef.current = false;
 
     // Default to current academic year
     const targetYear = selectedYear || (academicYears.length > 0 ? academicYears[0] : null);
-    const targetYearId = targetYear?.id || yearId || "";
+    const targetYearId = targetYear?.id || yearIdRef.current || "";
     setStep1YearId(targetYearId);
 
     // Default dates from academic year
@@ -472,7 +493,7 @@ export default function FeeStructuresPage() {
   async function handleOpenEditWizard(structure: DisplayFeeStructure) {
     setEditingStructureId(structure.id);
     setStep1Name(structure.name);
-    setStep1NameManuallyEdited(true);
+    step1NameManuallyEditedRef.current = true;
     setStep1YearId(structure.academic_year_id);
 
     const targetYear = academicYears.find((y) => y.id === structure.academic_year_id) || selectedYear;
@@ -548,7 +569,7 @@ export default function FeeStructuresPage() {
     setStep1SectionId(""); // Reset to All Sections
 
     // Auto-suggest structure name only when creating a new structure and user has not typed a custom name
-    if (!editingStructureId && !step1NameManuallyEdited) {
+    if (!editingStructureId && !step1NameManuallyEditedRef.current) {
       const cls = classes.find((c) => c.id === newClassId);
       const ay = academicYears.find((y) => y.id === step1YearId) || selectedYear;
       if (cls && ay) {
@@ -564,7 +585,7 @@ export default function FeeStructuresPage() {
     if (ay) {
       setStep1EffectiveFrom(ay.start_date || `${ay.start_year}-04-01`);
       setStep1EffectiveTo(ay.end_date || `${ay.end_year}-03-31`);
-      if (!editingStructureId && !step1NameManuallyEdited && step1ClassId) {
+      if (!editingStructureId && !step1NameManuallyEditedRef.current && step1ClassId) {
         const cls = classes.find((c) => c.id === step1ClassId);
         if (cls) {
           setStep1Name(`${cls.name} Fee ${ay.label || `${ay.start_year}-${ay.end_year}`}`);
@@ -642,20 +663,33 @@ export default function FeeStructuresPage() {
           .eq("class_id", step1ClassId)
           .eq("status", "active");
 
+        if (step1YearId) {
+          q = q.eq("academic_year_id", step1YearId);
+        }
+
         if (step1SectionId) {
           q = q.eq("section_id", step1SectionId);
         }
 
         const { data: enrData } = await q;
         if (enrData && enrData.length > 0) {
-          loadedStudents = enrData.map((e: any) => ({
-            id: e.student?.id || e.student_id,
-            first_name: e.student?.first_name || "Student",
-            last_name: e.student?.last_name || "",
-            admission_no: e.student?.admission_no || "-",
-            class_id: e.class_id,
-            section_id: e.section_id,
-          }));
+          const seen = new Set<string>();
+          loadedStudents = [];
+          for (const e of enrData) {
+            const studentObj: any = Array.isArray(e.student) ? e.student[0] : e.student;
+            const sid = studentObj?.id || e.student_id;
+            if (sid && !seen.has(sid)) {
+              seen.add(sid);
+              loadedStudents.push({
+                id: sid,
+                first_name: studentObj?.first_name || "Student",
+                last_name: studentObj?.last_name || "",
+                admission_no: studentObj?.admission_no || "-",
+                class_id: e.class_id,
+                section_id: e.section_id,
+              });
+            }
+          }
         }
       } catch (e) {
         console.warn("Direct student enrollment query note in wizard:", e);
@@ -672,11 +706,13 @@ export default function FeeStructuresPage() {
       loadedStudents = stuRes?.data || [];
     }
 
-    // 2. Fetch real active transport assignments for this school
+    // 2. Fetch real active transport assignments for this school & academic year
     let assignments: any[] = [];
     try {
       const { items } = await listAssignments(activeSchoolId);
-      assignments = (items || []).filter((a) => a.status === "active");
+      assignments = (items || []).filter(
+        (a) => a.status === "active" && (!a.academic_year_id || a.academic_year_id === step1YearId)
+      );
     } catch (e) {
       console.warn("Transport assignments fetch note:", e);
     }
@@ -688,7 +724,7 @@ export default function FeeStructuresPage() {
       const monthly_fee_paise = has_transport ? Number(assignment.monthly_fee_paise || 0) : 0;
 
       // Find route name if available
-      const matchedRoute = routes.find((r) => r.id === assignment?.route_id);
+      const matchedRoute = routesRef.current.find((r) => r.id === assignment?.route_id);
 
       return {
         student_id: st.id,
@@ -708,7 +744,7 @@ export default function FeeStructuresPage() {
       };
     });
 
-    setPreviewStudents(mappedStudentTransport);
+    previewStudentsRef.current = mappedStudentTransport;
 
     // 4. Run centralized calculation engine
     const compInputs: ComponentCalculationInput[] = feeComponents.map((c) => ({
@@ -1046,7 +1082,7 @@ export default function FeeStructuresPage() {
         const assignment = activeAssignments.find((a) => a.student_id === st.id);
         const has_transport = !!assignment;
         const monthly_fee_paise = has_transport ? Number(assignment.monthly_fee_paise || 0) : 0;
-        const matchedRoute = routes.find((r) => r.id === assignment?.route_id);
+        const matchedRoute = routesRef.current.find((r) => r.id === assignment?.route_id);
 
         return {
           student_id: st.id,
@@ -1070,6 +1106,135 @@ export default function FeeStructuresPage() {
       });
     } catch (err: any) {
       alert(`Could not load enrolled students: ${err.message}`);
+    }
+  }
+
+  // Open rich structure detail modal with live financial calculations, components & installment breakdown
+  async function handleOpenDetailModal(structure: DisplayFeeStructure) {
+    setDetailModalStructure(structure);
+    setLoadingDetailModal(true);
+    setDetailModalTab("components");
+    try {
+      const ay = academicYears.find((y) => y.id === structure.academic_year_id) || selectedYear;
+      if (!ay) return;
+
+      const { items: configItems } = await getStructureConfigItems(activeSchoolId, structure.id);
+
+      const targetClassId = structure.class_id || (structure.class_ids && structure.class_ids[0]);
+      let loadedStudents: any[] = [];
+
+      if (isSupabaseConfigured && targetClassId) {
+        try {
+          let q = supabase
+            .from("student_enrollments")
+            .select(`
+              student_id,
+              class_id,
+              section_id,
+              student:students!student_enrollments_student_id_fkey (
+                id, first_name, last_name, admission_no, status
+              )
+            `)
+            .eq("school_id", activeSchoolId)
+            .eq("class_id", targetClassId)
+            .eq("academic_year_id", structure.academic_year_id || ay.id)
+            .eq("status", "active");
+
+          if (structure.section_ids && structure.section_ids.length > 0) {
+            q = q.in("section_id", structure.section_ids);
+          }
+
+          const { data: enrData } = await q;
+          if (enrData && enrData.length > 0) {
+            const seen = new Set<string>();
+            loadedStudents = [];
+            for (const e of enrData) {
+              const studentObj: any = Array.isArray(e.student) ? e.student[0] : e.student;
+              const sid = studentObj?.id || e.student_id;
+              if (sid && !seen.has(sid)) {
+                seen.add(sid);
+                loadedStudents.push({
+                  id: sid,
+                  first_name: studentObj?.first_name || "Student",
+                  last_name: studentObj?.last_name || "",
+                  admission_no: studentObj?.admission_no || "-",
+                  class_id: e.class_id,
+                  section_id: e.section_id,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Detail modal student query note:", e);
+        }
+      }
+
+      if (loadedStudents.length === 0) {
+        const { response: stuRes } = await listStudents(activeSchoolId, {
+          class_id: targetClassId || undefined,
+          section_id: structure.section_ids && structure.section_ids.length === 1 ? structure.section_ids[0] : undefined,
+          status: "enrolled",
+          limit: 200,
+        });
+        loadedStudents = stuRes?.data || [];
+      }
+
+      let assignments: any[] = [];
+      try {
+        const { items } = await listAssignments(activeSchoolId);
+        assignments = (items || []).filter(
+          (a) => a.status === "active" && (!a.academic_year_id || a.academic_year_id === (structure.academic_year_id || ay.id))
+        );
+      } catch (e) {
+        console.warn("Transport assignments load note:", e);
+      }
+
+      const mappedStudents: StudentTransportInfo[] = loadedStudents.map((st) => {
+        const assignment = assignments.find((a) => a.student_id === st.id);
+        const has_transport = !!assignment && assignment.status === "active";
+        const monthly_fee_paise = has_transport ? Number(assignment.monthly_fee_paise || 0) : 0;
+        const matchedRoute = routesRef.current.find((r) => r.id === assignment?.route_id);
+
+        return {
+          student_id: st.id,
+          first_name: st.first_name,
+          last_name: st.last_name,
+          admission_no: st.admission_no || "-",
+          class_id: st.class_id,
+          section_id: st.section_id,
+          has_transport,
+          assignment_id: assignment?.id || null,
+          route_id: assignment?.route_id || null,
+          route_name: matchedRoute?.name || (assignment?.route_id ? `Route ${assignment.route_id.slice(0, 4)}` : undefined),
+          monthly_fee_paise,
+          status: assignment?.status || "inactive",
+        };
+      });
+
+      const compInputs: ComponentCalculationInput[] = (configItems || []).map((ci) => {
+        const matchedHead = heads.find((h) => h.id === ci.fee_head_id);
+        return {
+          fee_head_id: ci.fee_head_id,
+          name: matchedHead ? matchedHead.name : "Fee Component",
+          frequency: ci.frequency,
+          amount_rupees: ci.base_amount_rupees || 0,
+          is_mandatory: ci.is_mandatory ?? true,
+        };
+      });
+
+      const cycle = (structure.metadata as any)?.billingCycle || "quarterly";
+      const calcResult = calculateFeeStructureFinancials({
+        academicYear: ay,
+        billingCycle: cycle,
+        components: compInputs,
+        students: mappedStudents,
+      });
+
+      setDetailModalCalculation(calcResult);
+    } catch (err: any) {
+      alert(`Could not load structure details: ${err.message}`);
+    } finally {
+      setLoadingDetailModal(false);
     }
   }
 
@@ -1137,6 +1302,7 @@ export default function FeeStructuresPage() {
   }, [academicYears, step1YearId, selectedYear]);
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6 pb-12">
@@ -1152,7 +1318,7 @@ export default function FeeStructuresPage() {
           <button
             onClick={handleOpenCreateWizard}
             disabled={academicYears.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#2158E0] hover:bg-[#1b48b8] disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-semibold shadow-xs transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#2158E0] hover:bg-[#1b48b8] disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-semibold shadow-xs transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Create Structure</span>
@@ -1178,7 +1344,7 @@ export default function FeeStructuresPage() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span className="font-semibold">{successBanner}</span>
           </div>
-          <button onClick={() => setSuccessBanner(null)} className="p-1 hover:text-emerald-900 cursor-pointer">
+          <button aria-label="Close" onClick={() => setSuccessBanner(null)} className="p-1 hover:text-emerald-900 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1191,7 +1357,7 @@ export default function FeeStructuresPage() {
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
             <span className="font-semibold">{deleteError}</span>
           </div>
-          <button onClick={() => setDeleteError(null)} className="p-1 hover:text-red-900 cursor-pointer">
+          <button aria-label="Close" onClick={() => setDeleteError(null)} className="p-1 hover:text-red-900 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1205,54 +1371,66 @@ export default function FeeStructuresPage() {
       )}
 
       {/* ─── 2. Summary Cards ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         {/* Card 1: Active Structures */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-4 hover:border-gray-300 transition-colors">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100/60 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-6 h-6" />
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 hover:border-gray-300 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100/60 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-2xl font-bold text-[#141A2E] leading-none">{activeCount}</div>
-            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Active Structures</div>
-            <div className="text-[11px] text-[#5B6478] mt-0.5">
-              {selectedYear ? `for ${selectedYear.label || `${selectedYear.start_year} – ${selectedYear.end_year}`}` : "Configured"}
+            <div className="text-xl font-bold text-[#141A2E] leading-none">{activeCount}</div>
+            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Active</div>
+            <div className="text-[11px] text-[#5B6478] mt-0.5 truncate">
+              {selectedYear ? `${selectedYear.label || `${selectedYear.start_year}–${selectedYear.end_year}`}` : "Active"}
             </div>
           </div>
         </div>
 
         {/* Card 2: Draft Structures */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-4 hover:border-gray-300 transition-colors">
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#2158E0] border border-blue-100/60 flex items-center justify-center shrink-0">
-            <Layers className="w-6 h-6" />
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 hover:border-gray-300 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-blue-50 text-[#2158E0] border border-blue-100/60 flex items-center justify-center shrink-0">
+            <Layers className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-2xl font-bold text-[#141A2E] leading-none">{draftCount}</div>
-            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Draft Structures</div>
-            <div className="text-[11px] text-[#5B6478] mt-0.5">Not yet published</div>
+            <div className="text-xl font-bold text-[#141A2E] leading-none">{draftCount}</div>
+            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Draft</div>
+            <div className="text-[11px] text-[#5B6478] mt-0.5 truncate">Unpublished</div>
           </div>
         </div>
 
-        {/* Card 3: Archived Structures */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-4 hover:border-gray-300 transition-colors">
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 border border-amber-100/60 flex items-center justify-center shrink-0">
-            <Archive className="w-6 h-6" />
+        {/* Card 3: Superseded Structures */}
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 hover:border-gray-300 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 border border-purple-100/60 flex items-center justify-center shrink-0">
+            <RotateCcw className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-2xl font-bold text-[#141A2E] leading-none">{archivedCount}</div>
-            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Archived Structures</div>
-            <div className="text-[11px] text-[#5B6478] mt-0.5">Historical records intact</div>
+            <div className="text-xl font-bold text-[#141A2E] leading-none">{supersededCount}</div>
+            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Superseded</div>
+            <div className="text-[11px] text-[#5B6478] mt-0.5 truncate">Prior revisions</div>
           </div>
         </div>
 
-        {/* Card 4: Covered Classes */}
-        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-4 hover:border-gray-300 transition-colors">
-          <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 border border-purple-100/60 flex items-center justify-center shrink-0">
-            <GraduationCap className="w-6 h-6" />
+        {/* Card 4: Archived Structures */}
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 hover:border-gray-300 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 border border-amber-100/60 flex items-center justify-center shrink-0">
+            <Archive className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-2xl font-bold text-[#141A2E] leading-none">{classesCoveredCount}</div>
-            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Active Classes Covered</div>
-            <div className="text-[11px] text-[#5B6478] mt-0.5">of {classes.length} registered classes</div>
+            <div className="text-xl font-bold text-[#141A2E] leading-none">{archivedCount}</div>
+            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Archived</div>
+            <div className="text-[11px] text-[#5B6478] mt-0.5 truncate">Inactive audit safe</div>
+          </div>
+        </div>
+
+        {/* Card 5: Covered Classes */}
+        <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 hover:border-gray-300 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100/60 flex items-center justify-center shrink-0">
+            <GraduationCap className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xl font-bold text-[#141A2E] leading-none">{classesCoveredCount}</div>
+            <div className="text-xs font-bold text-[#141A2E] mt-1.5">Classes Covered</div>
+            <div className="text-[11px] text-[#5B6478] mt-0.5 truncate">of {classes.length} registered</div>
           </div>
         </div>
       </div>
@@ -1262,7 +1440,7 @@ export default function FeeStructuresPage() {
         {/* Search */}
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
+          <input aria-label="Search fee structures"
             type="text"
             placeholder="Search by class, structure name..."
             value={searchQuery}
@@ -1279,7 +1457,7 @@ export default function FeeStructuresPage() {
               Academic Year
             </span>
             <div className="relative">
-              <select
+              <select aria-label="Select academic year"
                 value={academicYearFilter}
                 onChange={(e) => setAcademicYearFilter(e.target.value)}
                 className="appearance-none bg-white border border-[#E6EAF3] rounded-xl pl-3 pr-8 py-1.5 text-xs font-semibold text-[#141A2E] outline-none cursor-pointer hover:border-gray-300"
@@ -1301,7 +1479,7 @@ export default function FeeStructuresPage() {
               Status
             </span>
             <div className="relative">
-              <select
+              <select aria-label="Filter by status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="appearance-none bg-white border border-[#E6EAF3] rounded-xl pl-3 pr-8 py-1.5 text-xs font-semibold text-[#141A2E] outline-none cursor-pointer hover:border-gray-300"
@@ -1309,6 +1487,7 @@ export default function FeeStructuresPage() {
                 <option value="all">All</option>
                 <option value="active">Active</option>
                 <option value="draft">Draft</option>
+                <option value="superseded">Superseded</option>
                 <option value="archived">Archived</option>
               </select>
               <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1321,7 +1500,7 @@ export default function FeeStructuresPage() {
               Class
             </span>
             <div className="relative">
-              <select
+              <select aria-label="Filter by class"
                 value={classFilter}
                 onChange={(e) => setClassFilter(e.target.value)}
                 className="appearance-none bg-white border border-[#E6EAF3] rounded-xl pl-3 pr-8 py-1.5 text-xs font-semibold text-[#141A2E] outline-none cursor-pointer hover:border-gray-300"
@@ -1361,7 +1540,7 @@ export default function FeeStructuresPage() {
             <thead>
               <tr className="border-b border-[#E6EAF3] bg-[#F8FAFC] text-[11px] font-semibold text-[#5B6478] uppercase tracking-wider">
                 <th className="py-3.5 px-4 w-10">
-                  <input
+                  <input aria-label="Select all"
                     type="checkbox"
                     onChange={handleSelectAll}
                     checked={
@@ -1413,17 +1592,25 @@ export default function FeeStructuresPage() {
                 </tr>
               ) : (
                 filteredStructures.map((structure) => {
-                  const isSelected = selectedIds.includes(structure.id);
+                  const isSelected = selectedIdSet.has(structure.id);
                   return (
                     <tr
                       key={structure.id}
-                      className={`hover:bg-[#F8FAFC]/70 transition-colors ${
+                      onClick={() => handleOpenDetailModal(structure)}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleOpenDetailModal(structure);
+                        }
+                      }}
+                      className={`hover:bg-[#F8FAFC] transition-colors cursor-pointer group ${
                         isSelected ? "bg-blue-50/30" : ""
                       }`}
                     >
                       {/* Checkbox */}
-                      <td className="py-3.5 px-4">
-                        <input
+                      <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                        <input aria-label="Select item"
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelect(structure.id)}
@@ -1433,7 +1620,7 @@ export default function FeeStructuresPage() {
 
                       {/* Class / Section */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-semibold text-[#141A2E]">
+                        <div className="font-semibold text-[#141A2E] group-hover:text-[#2158E0] transition-colors">
                           {structure.classNameDisplay}
                         </div>
                         <div className="text-[11px] text-[#5B6478]">
@@ -1443,8 +1630,13 @@ export default function FeeStructuresPage() {
 
                       {/* Structure Name */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-semibold text-[#141A2E]">
-                          {structure.name}
+                        <div className="font-semibold text-[#141A2E] flex items-center gap-2">
+                          <span>{structure.name}</span>
+                          {structure.version && structure.version > 1 ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                              v{structure.version}
+                            </span>
+                          ) : null}
                         </div>
                         {structure.description && (
                           <div className="text-[11px] text-[#5B6478] truncate max-w-xs">
@@ -1464,7 +1656,7 @@ export default function FeeStructuresPage() {
                       </td>
 
                       {/* Students & Transport */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3.5 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col gap-0.5">
                           <button
                             onClick={() => handleOpenStudentsModal(structure)}
@@ -1492,6 +1684,11 @@ export default function FeeStructuresPage() {
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                             Draft
                           </span>
+                        ) : structure.status === "superseded" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                            Superseded
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
@@ -1501,8 +1698,8 @@ export default function FeeStructuresPage() {
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 whitespace-nowrap text-right relative">
-                        <button
+                      <td className="py-3.5 px-4 whitespace-nowrap text-right relative" onClick={(e) => e.stopPropagation()}>
+                        <button aria-label="Actions"
                           onClick={(e) => {
                             e.stopPropagation();
                             setActiveMenuId(activeMenuId === structure.id ? null : structure.id);
@@ -1516,8 +1713,18 @@ export default function FeeStructuresPage() {
                         {activeMenuId === structure.id && (
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute right-4 mt-1 w-44 bg-white border border-[#E6EAF3] rounded-xl shadow-lg py-1 z-30 text-left text-xs font-medium text-[#141A2E] animate-in fade-in zoom-in-95 duration-100"
+                            className="absolute right-4 mt-1 w-48 bg-white border border-[#E6EAF3] rounded-xl shadow-lg py-1 z-30 text-left text-xs font-medium text-[#141A2E] animate-in fade-in zoom-in-95 duration-100"
                           >
+                            <button
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                handleOpenDetailModal(structure);
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-blue-50/60 flex items-center gap-2 cursor-pointer font-semibold text-[#2158E0]"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-[#2158E0]" />
+                              <span>View Calculation</span>
+                            </button>
                             <button
                               onClick={() => {
                                 setActiveMenuId(null);
@@ -1598,7 +1805,7 @@ export default function FeeStructuresPage() {
       {isWizardOpen && (
         <>
           {/* Backdrop */}
-          <div
+          <div aria-hidden="true"
             className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 transition-opacity"
             onClick={() => setIsWizardOpen(false)}
           />
@@ -1610,7 +1817,7 @@ export default function FeeStructuresPage() {
               <h2 className="text-base font-bold text-[#141A2E]">
                 {editingStructureId ? "Edit Fee Structure" : "Create Fee Structure"}
               </h2>
-              <button
+              <button aria-label="Close"
                 onClick={() => setIsWizardOpen(false)}
                 className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
               >
@@ -1641,7 +1848,7 @@ export default function FeeStructuresPage() {
                         }`}
                       >
                         <div
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                             isActive
                               ? "bg-[#2158E0] text-white shadow-sm ring-4 ring-blue-100"
                               : isDone
@@ -1693,15 +1900,15 @@ export default function FeeStructuresPage() {
                     {/* Structure Name & Academic Year */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                        <label htmlFor="feestructurespage-structure-name" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                           Structure Name <span className="text-red-500">*</span>
                         </label>
-                        <input
+                        <input id="feestructurespage-structure-name"
                           type="text"
                           value={step1Name}
                           onChange={(e) => {
                             setStep1Name(e.target.value);
-                            setStep1NameManuallyEdited(true);
+                            step1NameManuallyEditedRef.current = true;
                           }}
                           placeholder="e.g. Class 6 Academic Fee 2025–26"
                           className="w-full px-3.5 py-2.5 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
@@ -1709,11 +1916,11 @@ export default function FeeStructuresPage() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                        <label htmlFor="feestructurespage-academic-year" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                           Academic Year <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
-                          <select
+                          <select id="feestructurespage-academic-year" aria-label="Academic Year"
                             value={step1YearId}
                             onChange={(e) => handleYearChange(e.target.value)}
                             className="w-full appearance-none px-3.5 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:border-[#2158E0] outline-none cursor-pointer"
@@ -1732,11 +1939,11 @@ export default function FeeStructuresPage() {
                     {/* Class & Section */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                        <label htmlFor="feestructurespage-class" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                           Class <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
-                          <select
+                          <select id="feestructurespage-class" aria-label="Class"
                             value={step1ClassId}
                             onChange={(e) => handleClassChange(e.target.value)}
                             className="w-full appearance-none px-3.5 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:border-[#2158E0] outline-none cursor-pointer"
@@ -1752,11 +1959,11 @@ export default function FeeStructuresPage() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                        <label htmlFor="feestructurespage-section-scope" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                           Section Scope
                         </label>
                         <div className="relative">
-                          <select
+                          <select id="feestructurespage-section-scope" aria-label="Section Scope"
                             value={step1SectionId}
                             onChange={(e) => setStep1SectionId(e.target.value)}
                             className="w-full appearance-none px-3.5 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:border-[#2158E0] outline-none cursor-pointer"
@@ -1776,10 +1983,10 @@ export default function FeeStructuresPage() {
                     {/* Effective Dates */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                        <label htmlFor="feestructurespage-effective-from" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                           Effective From <span className="text-red-500">*</span>
                         </label>
-                        <input
+                        <input id="feestructurespage-effective-from" aria-label="Effective From"
                           type="date"
                           value={step1EffectiveFrom}
                           onChange={(e) => setStep1EffectiveFrom(e.target.value)}
@@ -1788,10 +1995,10 @@ export default function FeeStructuresPage() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                        <label htmlFor="feestructurespage-effective-to" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                           Effective To <span className="text-red-500">*</span>
                         </label>
-                        <input
+                        <input id="feestructurespage-effective-to" aria-label="Effective To"
                           type="date"
                           value={step1EffectiveTo}
                           onChange={(e) => setStep1EffectiveTo(e.target.value)}
@@ -1802,10 +2009,10 @@ export default function FeeStructuresPage() {
 
                     {/* Description */}
                     <div>
-                      <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                      <label htmlFor="feestructurespage-description-optional" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                         Description (Optional)
                       </label>
-                      <textarea
+                      <textarea id="feestructurespage-description-optional"
                         rows={3}
                         value={step1Description}
                         onChange={(e) => setStep1Description(e.target.value)}
@@ -1876,7 +2083,7 @@ export default function FeeStructuresPage() {
                               {comp.isSystemManaged ? (
                                 <span className="capitalize text-[#141A2E]">Monthly</span>
                               ) : (
-                                <select
+                                <select aria-label="Select option"
                                   value={comp.frequency}
                                   onChange={(e) =>
                                     handleUpdateComponentFrequency(comp.id, e.target.value as any)
@@ -1898,12 +2105,17 @@ export default function FeeStructuresPage() {
                                   Auto (Per Stop)
                                 </span>
                               ) : (
-                                <input
+                                <input aria-label="Input value"
                                   type="number"
                                   min={0}
                                   value={comp.amountRupees}
                                   onChange={(e) =>
-                                    handleUpdateComponentAmount(comp.id, Number(e.target.value))
+                                    handleUpdateComponentAmount(
+                                      comp.id,
+                                      Number.isFinite(e.currentTarget.valueAsNumber)
+                                        ? e.currentTarget.valueAsNumber
+                                        : 0
+                                    )
                                   }
                                   className="w-24 px-2.5 py-1 border border-[#E6EAF3] rounded-lg text-xs font-bold text-[#141A2E] focus:border-[#2158E0] outline-none"
                                 />
@@ -1976,9 +2188,9 @@ export default function FeeStructuresPage() {
 
                   {/* Billing Cycle Selector */}
                   <div className="space-y-2">
-                    <label className="block text-xs font-semibold text-[#141A2E]">
+                    <span className="block text-xs font-semibold text-[#141A2E]">
                       Billing Cycle
-                    </label>
+                    </span>
                     <div className="flex flex-wrap items-center gap-2">
                       {(["monthly", "quarterly", "half_yearly", "annual"] as const).map((cycle) => {
                         const isSelected = billingCycle === cycle;
@@ -1994,7 +2206,7 @@ export default function FeeStructuresPage() {
                             key={cycle}
                             type="button"
                             onClick={() => setBillingCycle(cycle)}
-                            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                               isSelected
                                 ? "bg-[#2158E0] text-white shadow-xs"
                                 : "bg-white border border-[#E6EAF3] text-[#5B6478] hover:border-gray-300"
@@ -2011,9 +2223,9 @@ export default function FeeStructuresPage() {
                   <div className="space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
                       <div>
-                        <label className="block text-xs font-semibold text-[#141A2E]">
+                        <span className="block text-xs font-semibold text-[#141A2E]">
                           Installment Schedule Preview
-                        </label>
+                        </span>
                         <p className="text-[11px] text-[#5B6478]">
                           {billingCycle === "quarterly" && "4 quarterly installments covering all academic and term fee heads."}
                           {billingCycle === "monthly" && "12 monthly installments with recurring tuition and term additions."}
@@ -2118,23 +2330,23 @@ export default function FeeStructuresPage() {
                         </p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input
+                        <input aria-label="Select item"
                           type="checkbox"
                           checked={enableLateFee}
                           onChange={(e) => setEnableLateFee(e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#2158E0]"></div>
+                        <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-[#2158E0]"></div>
                       </label>
                     </div>
 
                     {enableLateFee && (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#E6EAF3]">
                         <div>
-                          <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                          <label htmlFor="feestructurespage-late-fee-type" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                             Late Fee Type
                           </label>
-                          <select
+                          <select id="feestructurespage-late-fee-type" aria-label="Late Fee Type"
                             value={lateFeeType}
                             onChange={(e) => setLateFeeType(e.target.value as any)}
                             className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] bg-white outline-none cursor-pointer"
@@ -2146,27 +2358,39 @@ export default function FeeStructuresPage() {
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                          <label htmlFor="feestructurespage-late-fee-amount" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                             Late Fee Amount
                           </label>
-                          <input
+                          <input id="feestructurespage-late-fee-amount" aria-label="Late Fee Amount"
                             type="number"
                             min={0}
                             value={lateFeeAmount}
-                            onChange={(e) => setLateFeeAmount(Number(e.target.value))}
+                            onChange={(e) =>
+                              setLateFeeAmount(
+                                Number.isFinite(e.currentTarget.valueAsNumber)
+                                  ? e.currentTarget.valueAsNumber
+                                  : 0
+                              )
+                            }
                             className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] outline-none"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                          <label htmlFor="feestructurespage-grace-period-days" className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                             Grace Period (Days)
                           </label>
-                          <input
+                          <input id="feestructurespage-grace-period-days" aria-label="Grace Period (Days)"
                             type="number"
                             min={0}
                             value={gracePeriodDays}
-                            onChange={(e) => setGracePeriodDays(Number(e.target.value))}
+                            onChange={(e) =>
+                              setGracePeriodDays(
+                                Number.isFinite(e.currentTarget.valueAsNumber)
+                                  ? e.currentTarget.valueAsNumber
+                                  : 0
+                              )
+                            }
                             className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] outline-none"
                           />
                         </div>
@@ -2254,48 +2478,65 @@ export default function FeeStructuresPage() {
                             <span className="text-xs font-bold text-[#141A2E]">
                               Calculation Preview (Per Student)
                             </span>
+                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-full">
+                              Annualized Model
+                            </span>
                           </div>
                           <div className="space-y-2 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-[#5B6478]">
-                                Monthly Recurring ({previewCalculation.recurring_components_label})
-                              </span>
-                              <span className="font-semibold text-[#141A2E]">
-                                {fmtRupees(previewCalculation.monthly_recurring_rupees)} / mo
-                              </span>
-                            </div>
-                            {previewCalculation.quarterly_annual_rupees ? (
+                            {previewCalculation.one_time_rupees > 0 && (
                               <div className="flex justify-between">
-                                <span className="text-[#5B6478]">Quarterly Fee Components</span>
+                                <span className="text-[#5B6478]">One-Time Admission / Entry Fees</span>
                                 <span className="font-semibold text-[#141A2E]">
-                                  {fmtRupees(previewCalculation.quarterly_annual_rupees)}
+                                  {fmtRupees(previewCalculation.one_time_rupees)}
                                 </span>
                               </div>
-                            ) : null}
-                            <div className="flex justify-between">
-                              <span className="text-[#5B6478]">Annual One-Time Fees</span>
-                              <span className="font-semibold text-[#141A2E]">
-                                {fmtRupees(previewCalculation.annual_onetime_rupees)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-[#5B6478]">Half-Yearly / Exam Fees</span>
-                              <span className="font-semibold text-[#141A2E]">
-                                {fmtRupees(previewCalculation.half_yearly_annual_rupees)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center text-amber-900">
+                            )}
+                            {previewCalculation.yearly_rupees > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-[#5B6478]">Yearly Academic / Dev Charges</span>
+                                <span className="font-semibold text-[#141A2E]">
+                                  {fmtRupees(previewCalculation.yearly_rupees)}
+                                </span>
+                              </div>
+                            )}
+                            {previewCalculation.monthly_annual_rupees > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-[#5B6478]">
+                                  Monthly Recurring ({previewCalculation.recurring_components_label})
+                                </span>
+                                <span className="font-semibold text-[#141A2E]">
+                                  {fmtRupees(previewCalculation.monthly_annual_rupees)} ({fmtRupees(previewCalculation.monthly_recurring_rupees)}/mo)
+                                </span>
+                              </div>
+                            )}
+                            {previewCalculation.quarterly_annual_rupees > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-[#5B6478]">Quarterly Exam / Term Fees</span>
+                                <span className="font-semibold text-[#141A2E]">
+                                  {fmtRupees(previewCalculation.quarterly_annual_rupees)} ({fmtRupees(Math.round(previewCalculation.quarterly_annual_rupees / 4))}/qtr)
+                                </span>
+                              </div>
+                            )}
+                            {previewCalculation.half_yearly_annual_rupees > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-[#5B6478]">Half-Yearly Components</span>
+                                <span className="font-semibold text-[#141A2E]">
+                                  {fmtRupees(previewCalculation.half_yearly_annual_rupees)}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center text-amber-900 pt-1 border-t border-blue-200/40">
                               <span className="flex items-center gap-1 font-semibold">
-                                <Truck className="w-3.5 h-3.5 text-amber-600" /> Transport Fee:
+                                <Truck className="w-3.5 h-3.5 text-amber-600" /> Transport (Separated):
                               </span>
-                              <span className="text-xs font-bold">
-                                Only {previewCalculation.transport_riders_count} of {previewCalculation.total_enrolled_students} students charged
+                              <span className="text-xs font-bold text-amber-800">
+                                {previewCalculation.transport_riders_count} riders charged ({previewCalculation.non_transport_students_count} non-riders pay ₹0)
                               </span>
                             </div>
 
                             <div className="pt-2 border-t border-blue-200/60 flex items-center justify-between">
                               <span className="text-xs font-bold text-[#141A2E]">
-                                Base Academic Total (Without Transport)
+                                Base Academic Total (Per Student)
                               </span>
                               <span className="text-base font-bold text-[#2158E0]">
                                 {fmtRupees(previewCalculation.base_annual_per_student_rupees)}
@@ -2362,7 +2603,7 @@ export default function FeeStructuresPage() {
                                   structureName: step1Name,
                                   className: wizardSelectedClass?.name || "Class",
                                   sectionName: step1SectionId ? "Specific Section" : "All Sections",
-                                  students: previewStudents,
+                                  students: previewStudentsRef.current,
                                 });
                               }}
                               className="px-3 py-1 border border-[#E6EAF3] hover:bg-gray-50 rounded-xl text-xs font-semibold text-[#141A2E] transition-colors cursor-pointer"
@@ -2450,7 +2691,7 @@ export default function FeeStructuresPage() {
           <div className="bg-white rounded-2xl shadow-xl border border-[#E6EAF3] w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-[#E6EAF3] pb-3">
               <h3 className="text-sm font-bold text-[#141A2E]">Add Fee Component</h3>
-              <button
+              <button aria-label="Close"
                 onClick={() => setIsAddHeadModalOpen(false)}
                 className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
@@ -2461,10 +2702,10 @@ export default function FeeStructuresPage() {
             <div className="space-y-3.5">
               {/* Select Existing Fee Head */}
               <div>
-                <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                <label htmlFor="feestructurespage-choose-existing-fee-head" className="block text-xs font-semibold text-[#141A2E] mb-1">
                   Choose Existing Fee Head
                 </label>
-                <select
+                <select id="feestructurespage-choose-existing-fee-head" aria-label="Choose Existing Fee Head"
                   value={selectedExistingHeadId}
                   onChange={(e) => {
                     setSelectedExistingHeadId(e.target.value);
@@ -2486,10 +2727,10 @@ export default function FeeStructuresPage() {
               {!selectedExistingHeadId && (
                 <>
                   <div>
-                    <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                    <label htmlFor="feestructurespage-new-fee-head-name" className="block text-xs font-semibold text-[#141A2E] mb-1">
                       New Fee Head Name
                     </label>
-                    <input
+                    <input id="feestructurespage-new-fee-head-name"
                       type="text"
                       placeholder="e.g. Science Lab Fee, Sports Fee"
                       value={newHeadName}
@@ -2499,8 +2740,8 @@ export default function FeeStructuresPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#141A2E] mb-1">Category</label>
-                    <select
+                    <label htmlFor="feestructurespage-category" className="block text-xs font-semibold text-[#141A2E] mb-1">Category</label>
+                    <select id="feestructurespage-category" aria-label="Category"
                       value={newHeadCategory}
                       onChange={(e) => setNewHeadCategory(e.target.value as any)}
                       className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] bg-white outline-none cursor-pointer"
@@ -2516,10 +2757,10 @@ export default function FeeStructuresPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                  <label htmlFor="feestructurespage-frequency" className="block text-xs font-semibold text-[#141A2E] mb-1">
                     Frequency
                   </label>
-                  <select
+                  <select id="feestructurespage-frequency" aria-label="Frequency"
                     value={newHeadFrequency}
                     onChange={(e) => setNewHeadFrequency(e.target.value as any)}
                     className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] bg-white outline-none cursor-pointer"
@@ -2533,14 +2774,20 @@ export default function FeeStructuresPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                  <label htmlFor="feestructurespage-amount" className="block text-xs font-semibold text-[#141A2E] mb-1">
                     Amount (₹)
                   </label>
-                  <input
+                  <input id="feestructurespage-amount" aria-label="Amount (₹)"
                     type="number"
                     min={0}
                     value={newHeadAmount}
-                    onChange={(e) => setNewHeadAmount(Number(e.target.value))}
+                    onChange={(e) =>
+                      setNewHeadAmount(
+                        Number.isFinite(e.currentTarget.valueAsNumber)
+                          ? e.currentTarget.valueAsNumber
+                          : 0
+                      )
+                    }
                     className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] outline-none"
                   />
                 </div>
@@ -2580,7 +2827,7 @@ export default function FeeStructuresPage() {
                   Transport charges apply strictly to students with active bus assignments.
                 </p>
               </div>
-              <button
+              <button aria-label="Close"
                 onClick={() => setViewStudentsModalStructure(null)}
                 className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
               >
@@ -2639,6 +2886,541 @@ export default function FeeStructuresPage() {
               <button
                 onClick={() => setViewStudentsModalStructure(null)}
                 className="px-4 py-2 bg-[#2158E0] text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── STRUCTURE DETAIL & CALCULATION PREVIEW MODAL ────────────────────── */}
+      {detailModalStructure && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-[#E6EAF3] w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-[#E6EAF3] bg-[#F8FAFC]/50 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2158E0] border border-blue-100 flex items-center justify-center shrink-0">
+                  <ClipboardList className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-[#141A2E]">
+                      {detailModalStructure.name}
+                    </h2>
+                    {detailModalStructure.version && detailModalStructure.version > 1 ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-gray-100 text-gray-700 border border-gray-200">
+                        v{detailModalStructure.version}
+                      </span>
+                    ) : null}
+                    {detailModalStructure.status === "active" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                        Active
+                      </span>
+                    ) : detailModalStructure.status === "draft" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        <span className="w-1 h-1 rounded-full bg-amber-500" />
+                        Draft
+                      </span>
+                    ) : detailModalStructure.status === "superseded" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                        <span className="w-1 h-1 rounded-full bg-purple-500" />
+                        Superseded
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                        <span className="w-1 h-1 rounded-full bg-gray-400" />
+                        Archived
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#5B6478] mt-0.5">
+                    {detailModalStructure.classNameDisplay} &bull; {detailModalStructure.sectionDisplay || "All Sections"} &bull;{" "}
+                    {academicYears.find((y) => y.id === detailModalStructure.academic_year_id)?.label || "Active Academic Year"}
+                  </p>
+                </div>
+              </div>
+              <button aria-label="Close"
+                onClick={() => setDetailModalStructure(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {loadingDetailModal ? (
+                <div className="py-20 text-center text-[#5B6478]">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#2158E0] mx-auto mb-3" />
+                  <p className="text-xs">Computing live financial calculations and student transport eligibility...</p>
+                </div>
+              ) : detailModalCalculation ? (
+                <>
+                  {/* KPI Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    {/* Academic Base */}
+                    <div className="p-3.5 bg-blue-50/50 border border-blue-200/60 rounded-xl space-y-1">
+                      <div className="text-[11px] font-semibold text-blue-800 uppercase tracking-wider">
+                        Academic Base / Student
+                      </div>
+                      <div className="text-xl font-bold text-[#2158E0]">
+                        {fmtRupees(detailModalCalculation.base_annual_per_student_rupees)}
+                      </div>
+                      <div className="text-[10px] text-[#5B6478]">
+                        One-Time: {fmtRupees(detailModalCalculation.one_time_rupees)} | Recurring: {fmtRupees(detailModalCalculation.base_annual_per_student_rupees - detailModalCalculation.one_time_rupees)}
+                      </div>
+                    </div>
+
+                    {/* Enrolled Students */}
+                    <div className="p-3.5 bg-gray-50 border border-[#E6EAF3] rounded-xl space-y-1">
+                      <div className="text-[11px] font-semibold text-[#5B6478] uppercase tracking-wider">
+                        Class Enrollment
+                      </div>
+                      <div className="text-xl font-bold text-[#141A2E]">
+                        {detailModalCalculation.total_enrolled_students} Students
+                      </div>
+                      <div className="text-[10px] text-[#5B6478]">
+                        Class Academic Demand: {fmtRupees(detailModalCalculation.class_base_annual_rupees)}
+                      </div>
+                    </div>
+
+                    {/* Transport Riders (Separated) */}
+                    <div className="p-3.5 bg-amber-50/50 border border-amber-200/60 rounded-xl space-y-1">
+                      <div className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                        <Truck className="w-3.5 h-3.5 text-amber-600" /> Transport (Separated)
+                      </div>
+                      <div className="text-xl font-bold text-amber-900">
+                        {fmtRupees(detailModalCalculation.class_transport_annual_rupees)}
+                      </div>
+                      <div className="text-[10px] text-amber-700">
+                        {detailModalCalculation.transport_riders_count} Riders ({detailModalCalculation.non_transport_students_count} Non-Riders pay ₹0)
+                      </div>
+                    </div>
+
+                    {/* Class Grand Total */}
+                    <div className="p-3.5 bg-emerald-50/50 border border-emerald-200/60 rounded-xl space-y-1">
+                      <div className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider">
+                        Grand Annual Demand
+                      </div>
+                      <div className="text-xl font-bold text-emerald-700">
+                        {fmtRupees(detailModalCalculation.class_grand_total_annual_rupees)}
+                      </div>
+                      <div className="text-[10px] text-emerald-600">
+                        Academic Demand + Active Transport
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tabs Header */}
+                  <div className="border-b border-[#E6EAF3] flex items-center gap-2">
+                    <button
+                      onClick={() => setDetailModalTab("components")}
+                      className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        detailModalTab === "components"
+                          ? "border-[#2158E0] text-[#2158E0]"
+                          : "border-transparent text-[#5B6478] hover:text-[#141A2E]"
+                      }`}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>Fee Components ({detailModalCalculation.component_breakdowns.length})</span>
+                    </button>
+                    <button
+                      onClick={() => setDetailModalTab("installments")}
+                      className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        detailModalTab === "installments"
+                          ? "border-[#2158E0] text-[#2158E0]"
+                          : "border-transparent text-[#5B6478] hover:text-[#141A2E]"
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Installments Schedule ({detailModalCalculation.installments.length})</span>
+                    </button>
+                    <button
+                      onClick={() => setDetailModalTab("students")}
+                      className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        detailModalTab === "students"
+                          ? "border-[#2158E0] text-[#2158E0]"
+                          : "border-transparent text-[#5B6478] hover:text-[#141A2E]"
+                      }`}
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Student & Transport ({detailModalCalculation.students_summary.length})</span>
+                    </button>
+                    <button
+                      onClick={() => setDetailModalTab("simulator")}
+                      className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        detailModalTab === "simulator"
+                          ? "border-[#2158E0] text-[#2158E0]"
+                          : "border-transparent text-[#5B6478] hover:text-[#141A2E]"
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Policy Simulator</span>
+                    </button>
+                  </div>
+
+                  {/* TAB 1: FEE COMPONENTS */}
+                  {detailModalTab === "components" && (
+                    <div className="space-y-3">
+                      <div className="border border-[#E6EAF3] rounded-xl overflow-hidden">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-[#F8FAFC] border-b border-[#E6EAF3] text-[11px] font-semibold text-[#5B6478] uppercase">
+                            <tr>
+                              <th className="py-2.5 px-3.5">Component</th>
+                              <th className="py-2.5 px-3">Frequency</th>
+                              <th className="py-2.5 px-3 text-center">Multiplier</th>
+                              <th className="py-2.5 px-3 text-right">Base Amount</th>
+                              <th className="py-2.5 px-3 text-right">Annual Total / Student</th>
+                              <th className="py-2.5 px-3 text-center">Type</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E6EAF3]">
+                            {detailModalCalculation.component_breakdowns.map((cb) => (
+                              <tr key={cb.fee_head_id} className="hover:bg-[#F8FAFC]/50">
+                                <td className="py-2.5 px-3.5 font-semibold text-[#141A2E]">
+                                  {cb.name}
+                                </td>
+                                <td className="py-2.5 px-3 text-[#5B6478] capitalize">
+                                  {cb.frequency.replace(/_/g, " ")}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-medium text-[#141A2E]">
+                                  {cb.annual_multiplier}&times;
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-[#5B6478]">
+                                  {fmtRupees(cb.amount_rupees)}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-bold text-[#141A2E]">
+                                  {fmtRupees(cb.annual_amount_rupees)}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  {cb.is_one_time ? (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                      One-Time
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                                      Recurring
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-[#F8FAFC] border-t border-[#E6EAF3] text-xs font-bold text-[#141A2E]">
+                            <tr>
+                              <td colSpan={4} className="py-3 px-3.5 text-right">
+                                Total Academic Base Fee (Per Student):
+                              </td>
+                              <td className="py-3 px-3 text-right text-base text-[#2158E0]">
+                                {fmtRupees(detailModalCalculation.base_annual_per_student_rupees)}
+                              </td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                      <div className="p-3 bg-amber-50/60 border border-amber-200/70 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                        <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-semibold">Transport Policy: </span>
+                          Transport fees are strictly separated from base academic fees. They are resolved dynamically per stop and billed only to eligible students with active transport assignments.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: INSTALLMENTS SCHEDULE */}
+                  {detailModalTab === "installments" && (
+                    <div className="space-y-3">
+                      <div className="border border-[#E6EAF3] rounded-xl overflow-hidden">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-[#F8FAFC] border-b border-[#E6EAF3] text-[11px] font-semibold text-[#5B6478] uppercase">
+                            <tr>
+                              <th className="py-2.5 px-3 text-center w-12">#</th>
+                              <th className="py-2.5 px-3.5">Installment Period</th>
+                              <th className="py-2.5 px-3">Period Window</th>
+                              <th className="py-2.5 px-3">Due Date</th>
+                              <th className="py-2.5 px-3.5 text-right">Base Amount</th>
+                              <th className="py-2.5 px-3">Components Included</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E6EAF3]">
+                            {detailModalCalculation.installments.map((inst) => (
+                              <tr key={inst.installment_number} className="hover:bg-[#F8FAFC]/50">
+                                <td className="py-2.5 px-3 text-center font-mono font-semibold text-gray-500">
+                                  {inst.installment_number}
+                                </td>
+                                <td className="py-2.5 px-3.5 font-semibold text-[#141A2E]">
+                                  {inst.label}
+                                </td>
+                                <td className="py-2.5 px-3 text-[11px] font-mono text-[#5B6478]">
+                                  {inst.period_start} &rarr; {inst.period_end}
+                                </td>
+                                <td className="py-2.5 px-3 text-[#5B6478] whitespace-nowrap">
+                                  {inst.due_date}
+                                </td>
+                                <td className="py-2.5 px-3.5 text-right font-bold text-[#141A2E]">
+                                  {fmtRupees(inst.base_amount_rupees)}
+                                </td>
+                                <td className="py-2.5 px-3 text-[11px] text-[#5B6478]">
+                                  {inst.included_components.join(", ")}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-[#F8FAFC] border-t border-[#E6EAF3] text-xs font-bold text-[#141A2E]">
+                            <tr>
+                              <td colSpan={4} className="py-3 px-3.5 text-right">
+                                Sum of Installments:
+                              </td>
+                              <td className="py-3 px-3.5 text-right text-base text-[#2158E0]">
+                                {fmtRupees(
+                                  Math.round(
+                                    detailModalCalculation.installments.reduce(
+                                      (acc, i) => acc + i.base_amount_paise,
+                                      0
+                                    ) / 100
+                                  )
+                                )}
+                              </td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: STUDENT & TRANSPORT COVERAGE */}
+                  {detailModalTab === "students" && (
+                    <div className="space-y-3">
+                      <div className="border border-[#E6EAF3] rounded-xl overflow-hidden max-h-96 overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-[#F8FAFC] border-b border-[#E6EAF3] text-[11px] font-semibold text-[#5B6478] uppercase sticky top-0">
+                            <tr>
+                              <th className="py-2.5 px-3">Adm No.</th>
+                              <th className="py-2.5 px-3.5">Student Name</th>
+                              <th className="py-2.5 px-3">Transport Status</th>
+                              <th className="py-2.5 px-3 text-right">Transport (Mo)</th>
+                              <th className="py-2.5 px-3 text-right">Academic Base</th>
+                              <th className="py-2.5 px-3 text-right">Transport Annual</th>
+                              <th className="py-2.5 px-3.5 text-right">Total Annual Fee</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E6EAF3]">
+                            {detailModalCalculation.students_summary.map((st) => (
+                              <tr key={st.student_id} className="hover:bg-[#F8FAFC]/50">
+                                <td className="py-2.5 px-3 font-mono text-gray-500">
+                                  {st.admission_no}
+                                </td>
+                                <td className="py-2.5 px-3.5 font-semibold text-[#141A2E]">
+                                  {st.first_name} {st.last_name}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  {st.has_transport ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                      <Truck className="w-3 h-3 text-amber-600" />
+                                      {st.route_name || "Assigned Bus"}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] text-gray-400">Non-Rider (₹0)</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-medium text-[#141A2E]">
+                                  {st.has_transport
+                                    ? fmtRupees(Math.round(st.monthly_transport_paise / 100))
+                                    : "₹0"}
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-[#5B6478]">
+                                  {fmtRupees(st.base_fee_rupees)}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-medium text-amber-800">
+                                  {fmtRupees(st.transport_fee_rupees)}
+                                </td>
+                                <td className="py-2.5 px-3.5 text-right font-bold text-[#141A2E]">
+                                  {fmtRupees(st.total_fee_rupees)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 4: POLICY SIMULATOR */}
+                  {detailModalTab === "simulator" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {/* Mid-Year Admission Simulator */}
+                      <div className="p-4 border border-[#E6EAF3] rounded-2xl bg-white space-y-4 shadow-2xs">
+                        <div className="border-b border-[#E6EAF3] pb-2.5 flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-blue-600" />
+                          <h4 className="text-xs font-bold text-[#141A2E]">
+                            Mid-Year Admission Proration Simulator
+                          </h4>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label htmlFor="feestructurespage-select-admission-date" className="block text-xs font-semibold text-[#5B6478] mb-1">
+                              Select Admission Date
+                            </label>
+                            <input id="feestructurespage-select-admission-date" aria-label="Select Admission Date"
+                              type="date"
+                              value={detailSimDate}
+                              onChange={(e) => setDetailSimDate(e.target.value)}
+                              className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl outline-none text-xs text-[#141A2E] focus:border-[#2158E0]"
+                            />
+                          </div>
+
+                          {(() => {
+                            const ay = academicYears.find((y) => y.id === detailModalStructure.academic_year_id) || selectedYear;
+                            if (!ay) return null;
+                            const compInputs: ComponentCalculationInput[] = detailModalCalculation.component_breakdowns.map((cb) => ({
+                              fee_head_id: cb.fee_head_id,
+                              name: cb.name,
+                              frequency: cb.frequency,
+                              amount_rupees: cb.amount_rupees,
+                              is_mandatory: cb.is_mandatory,
+                            }));
+                            const cycle = (detailModalStructure.metadata as any)?.billingCycle || "quarterly";
+                            const simResult = calculateMidYearAdmissionFee(compInputs, ay, detailSimDate, cycle);
+
+                            return (
+                              <div className="p-3 bg-blue-50/50 border border-blue-200/70 rounded-xl space-y-2 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-[#5B6478]">Months Remaining in AY:</span>
+                                  <span className="font-semibold text-[#141A2E]">{simResult.months_remaining} of {simResult.total_months} months</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-[#5B6478]">Payable Installments:</span>
+                                  <span className="font-semibold text-[#141A2E]">{simResult.prorated_installments.length} installments</span>
+                                </div>
+                                <div className="flex justify-between pt-1 border-t border-blue-200/50 font-bold">
+                                  <span className="text-[#141A2E]">Prorated Student Base:</span>
+                                  <span className="text-[#2158E0] text-sm">{fmtRupees(simResult.total_prorated_rupees)}</span>
+                                </div>
+                                <div className="text-[10px] text-[#5B6478]">
+                                  (Full session base: {fmtRupees(simResult.total_original_rupees)})
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Concession Simulator */}
+                      <div className="p-4 border border-[#E6EAF3] rounded-2xl bg-white space-y-4 shadow-2xs">
+                        <div className="border-b border-[#E6EAF3] pb-2.5 flex items-center gap-2">
+                          <DollarSign className="w-4 h-4 text-emerald-600" />
+                          <h4 className="text-xs font-bold text-[#141A2E]">
+                            Concession & Scholarship Impact Simulator
+                          </h4>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label htmlFor="feestructurespage-concession-type" className="block text-xs font-semibold text-[#5B6478] mb-1">
+                                Concession Type
+                              </label>
+                              <select id="feestructurespage-concession-type" aria-label="Concession Type"
+                                value={detailSimConcessionType}
+                                onChange={(e) => setDetailSimConcessionType(e.target.value as any)}
+                                className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl outline-none text-xs text-[#141A2E] bg-white cursor-pointer"
+                              >
+                                <option value="percentage">Percentage (%)</option>
+                                <option value="flat">Flat Amount (₹)</option>
+                                <option value="full_waiver">100% Full Waiver (RTE)</option>
+                              </select>
+                            </div>
+                            {detailSimConcessionType !== "full_waiver" && (
+                              <div>
+                                <label htmlFor="feestructurespage-detailsimconcessiontype-percen" className="block text-xs font-semibold text-[#5B6478] mb-1">
+                                  {detailSimConcessionType === "percentage" ? "Discount Percentage (%)" : "Flat Amount (₹)"}
+                                </label>
+                                <input id="feestructurespage-detailsimconcessiontype-percen" aria-label="Input value"
+                                  type="number"
+                                  min={0}
+                                  max={detailSimConcessionType === "percentage" ? 100 : undefined}
+                                  value={detailSimConcessionValue}
+                                  onChange={(e) =>
+                                    setDetailSimConcessionValue(
+                                      Number.isFinite(e.currentTarget.valueAsNumber)
+                                        ? e.currentTarget.valueAsNumber
+                                        : 0
+                                    )
+                                  }
+                                  className="w-full px-3 py-2 border border-[#E6EAF3] rounded-xl outline-none text-xs text-[#141A2E]"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {(() => {
+                            const concResult = calculateConcessionImpact(
+                              detailModalCalculation.base_annual_per_student_paise,
+                              detailSimConcessionType,
+                              detailSimConcessionType === "percentage"
+                                ? detailSimConcessionValue
+                                : detailSimConcessionValue * 100
+                            );
+
+                            return (
+                              <div className="p-3 bg-emerald-50/50 border border-emerald-200/70 rounded-xl space-y-2 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-[#5B6478]">Gross Academic Fee:</span>
+                                  <span className="font-semibold text-[#141A2E]">{fmtRupees(concResult.original_amount_rupees)}</span>
+                                </div>
+                                <div className="flex justify-between text-emerald-800">
+                                  <span className="font-medium">Concession Deduction:</span>
+                                  <span className="font-bold">- {fmtRupees(concResult.concession_amount_rupees)}</span>
+                                </div>
+                                <div className="flex justify-between pt-1 border-t border-emerald-200/50 font-bold">
+                                  <span className="text-[#141A2E]">Net Payable Fee / Student:</span>
+                                  <span className="text-emerald-700 text-sm">{fmtRupees(concResult.net_amount_rupees)}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-[#E6EAF3] bg-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const st = detailModalStructure;
+                    setDetailModalStructure(null);
+                    handleOpenEditWizard(st);
+                  }}
+                  className="px-4 py-2 border border-[#E6EAF3] hover:bg-gray-50 rounded-xl text-xs font-semibold text-[#141A2E] flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Edit Structure</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const st = detailModalStructure;
+                    setDetailModalStructure(null);
+                    handleDuplicate(st);
+                  }}
+                  className="px-4 py-2 border border-[#E6EAF3] hover:bg-gray-50 rounded-xl text-xs font-semibold text-[#141A2E] flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Duplicate</span>
+                </button>
+              </div>
+              <button
+                onClick={() => setDetailModalStructure(null)}
+                className="px-5 py-2 bg-[#141A2E] hover:bg-gray-800 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-xs"
               >
                 Close
               </button>

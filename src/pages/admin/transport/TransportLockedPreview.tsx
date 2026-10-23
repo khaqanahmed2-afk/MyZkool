@@ -31,7 +31,7 @@ export function TransportLockedPreview() {
           <div className="pt-2 flex flex-wrap items-center gap-4">
             <Link
               to="/onboarding/subscription"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-sm shadow-md transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-sm shadow-md transition-colors"
             >
               Upgrade to Pro Plan
               <ArrowRight className="w-4 h-4" />

@@ -7,7 +7,7 @@
  * Commits renewals and triggers FeeService.createTransportDues for new year.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CalendarSync,
@@ -36,7 +36,7 @@ export const YearRenewalPage: React.FC = () => {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [oldYearId, setOldYearId] = useState<string>("");
   const [newYearId, setNewYearId] = useState<string>("");
-  const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(() => new Date().toISOString().split("T")[0]);
 
   const handleBack = () => {
     if (window.history.state && window.history.state.idx > 0) {
@@ -86,7 +86,7 @@ export const YearRenewalPage: React.FC = () => {
     });
   }, [schoolId]);
 
-  const loadPreview = async () => {
+  const loadPreview = useCallback(async () => {
     if (!schoolId || !oldYearId || !newYearId) {
       setLoading(false);
       return;
@@ -106,12 +106,12 @@ export const YearRenewalPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, oldYearId, newYearId]);
 
   useEffect(() => {
     if (!schoolId || !oldYearId || !newYearId) return;
     loadPreview();
-  }, [schoolId, oldYearId, newYearId]);
+  }, [schoolId, oldYearId, newYearId, loadPreview]);
 
   const filteredItems = items.filter((item) => {
     const matchesSearch =
@@ -195,7 +195,7 @@ export const YearRenewalPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
             title="Return to Transport Dashboard"
           >
             <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
@@ -218,7 +218,7 @@ export const YearRenewalPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-slate-500 font-medium">From:</span>
-            <select
+            <select aria-label="Select academic year"
               value={oldYearId}
               onChange={(e) => setOldYearId(e.target.value)}
               className="font-semibold text-slate-800 bg-white px-2 py-1 rounded-lg border border-[#E6EAF3] focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -235,7 +235,7 @@ export const YearRenewalPage: React.FC = () => {
             </select>
             <span className="text-slate-400">→</span>
             <span className="text-slate-500 font-medium">To:</span>
-            <select
+            <select aria-label="Select academic year"
               value={newYearId}
               onChange={(e) => setNewYearId(e.target.value)}
               className="font-semibold text-slate-800 bg-white px-2 py-1 rounded-lg border border-[#E6EAF3] focus:outline-none focus:ring-1 focus:ring-[#2158E0]"
@@ -253,7 +253,7 @@ export const YearRenewalPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-slate-500 font-medium">Effective:</span>
-            <input
+            <input aria-label="Effective date"
               type="date"
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
@@ -287,7 +287,7 @@ export const YearRenewalPage: React.FC = () => {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-72">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
+              <input aria-label="Search renewal riders and routes"
                 type="text"
                 placeholder="Search riders, routes, or stops..."
                 value={searchQuery}
@@ -372,7 +372,7 @@ export const YearRenewalPage: React.FC = () => {
             <thead>
               <tr className="bg-slate-50 border-b border-[#E6EAF3] text-slate-500 font-semibold text-[11px] uppercase tracking-wider">
                 <th className="py-3 px-4 w-10">
-                  <button
+                  <button aria-label="Select all"
                     type="button"
                     onClick={toggleSelectAll}
                     className="flex items-center cursor-pointer text-slate-500 hover:text-slate-700"
@@ -409,8 +409,15 @@ export const YearRenewalPage: React.FC = () => {
                   return (
                     <tr
                       key={item.student_id}
+                      tabIndex={isEligible ? 0 : -1}
                       onClick={() => {
                         if (isEligible) toggleSelect(item.student_id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          if (isEligible) toggleSelect(item.student_id);
+                        }
                       }}
                       className={`hover:bg-slate-50/70 transition-colors ${
                         !isEligible
@@ -422,7 +429,7 @@ export const YearRenewalPage: React.FC = () => {
                     >
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         {isEligible ? (
-                          <button
+                          <button aria-label="Select student"
                             type="button"
                             onClick={() => toggleSelect(item.student_id)}
                             className="cursor-pointer text-slate-600"

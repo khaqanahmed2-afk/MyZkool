@@ -9,6 +9,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { getTransportSettings } from "./transportCoreService";
 import type {
   FeeHead, FeeHeadInput,
   FeeTerm, FeeTermInput,
@@ -97,13 +98,15 @@ export function getTermBillingMonths(
   allTermsCount = 12,
   termIndex = 0
 ): { year: number; month: number }[] {
+  const maxMonths = allTermsCount > 0 ? Math.ceil(billingMonths.length / allTermsCount) : 1;
+
   if (term.period_start && term.period_end) {
     const [psY, psM, psD] = term.period_start.split("-").map(Number);
     const [peY, peM, peD] = term.period_end.split("-").map(Number);
     const tStart = new Date(psY, psM - 1, psD);
     const tEnd = new Date(peY, peM - 1, peD);
 
-    const result: { year: number; month: number }[] = [];
+    const candidates: { year: number; month: number; overlapDays: number }[] = [];
     for (const m of billingMonths) {
       const year = m < 4 ? academicYearStartYear + 1 : academicYearStartYear;
       const mStart = new Date(year, m - 1, 1);
@@ -115,11 +118,17 @@ export function getTermBillingMonths(
       if (overlapEnd >= overlapStart) {
         const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         if (overlapDays >= 15) {
-          result.push({ year, month: m });
+          candidates.push({ year, month: m, overlapDays });
         }
       }
     }
-    if (result.length > 0) return result;
+
+    if (candidates.length > 0) {
+      // Sort by greatest overlap first to resolve boundary overlaps
+      candidates.sort((a, b) => b.overlapDays - a.overlapDays);
+      // Strictly enforce that a single term cannot bill more than maxMonths
+      return candidates.slice(0, maxMonths).map((c) => ({ year: c.year, month: c.month }));
+    }
   }
 
   if (allTermsCount > 0) {
@@ -270,16 +279,17 @@ export async function reorderFeeHeads(
 ): Promise<{ error?: string }> {
   if (isSupabaseConfigured) {
     try {
-      for (let i = 0; i < orderedIds.length; i++) {
+      for await (const [i, id] of orderedIds.entries()) {
         await supabase.from("fee_heads").update({ display_order: i * 10, updated_at: now() })
-          .eq("id", orderedIds[i]).eq("school_id", schoolId);
+          .eq("id", id).eq("school_id", schoolId);
       }
       return {};
     } catch (e: any) { return { error: e.message }; }
   }
   const heads = lsGet<FeeHead>(FEE_HEADS_KEY(schoolId));
+  const headMap = new Map<string, FeeHead>(heads.map(x => [x.id, x]));
   for (let i = 0; i < orderedIds.length; i++) {
-    const h = heads.find(x => x.id === orderedIds[i]);
+    const h = headMap.get(orderedIds[i]);
     if (h) { h.display_order = i * 10; h.updated_at = now(); }
   }
   lsSet(FEE_HEADS_KEY(schoolId), heads);
@@ -295,8 +305,7 @@ export async function addSuggestedHeads(
   const toAdd = SUGGESTED.filter(s => codes.includes(s.code) && !existingCodes.has(s.code));
   const maxOrder = existing.reduce((m, h) => Math.max(m, h.display_order), 0);
   const added: FeeHead[] = [];
-  for (let i = 0; i < toAdd.length; i++) {
-    const s = toAdd[i];
+  for await (const [i, s] of toAdd.entries()) {
     const r = await createFeeHead(schoolId, { ...s, display_order: maxOrder + (i + 1) * 10 });
     if (r.head) added.push(r.head);
   }
@@ -306,8 +315,7 @@ export async function addSuggestedHeads(
 export async function ensureSystemHeads(schoolId: string): Promise<void> {
   const { heads: existing } = await getFeeHeads(schoolId, true);
   const existingCodes = new Set(existing.map(h => h.code));
-  for (let i = 0; i < SYSTEM.length; i++) {
-    const s = SYSTEM[i];
+  for await (const [i, s] of SYSTEM.entries()) {
     if (!existingCodes.has(s.code)) {
       const head: FeeHead = {
         id: uuid(), school_id: schoolId,
@@ -368,7 +376,7 @@ export async function getFeeTerms(
               terms = parsed;
               break;
             }
-          } catch {}
+          } catch { }
         }
       }
     }
@@ -887,8 +895,8 @@ export async function getStructureStudentCounts(
     structure.class_ids && structure.class_ids.length > 0
       ? structure.class_ids
       : structure.class_id
-      ? [structure.class_id]
-      : [];
+        ? [structure.class_id]
+        : [];
   const targetSectionIds = structure.section_ids || [];
 
   if (isSupabaseConfigured) {
@@ -924,12 +932,18 @@ export async function getStructureStudentCounts(
 
         let transportCount = 0;
         if (studentIds.length > 0) {
-          const { data: transData, error: transErr } = await supabase
+          let transQ = supabase
             .from("transport_assignments")
             .select("student_id")
             .eq("school_id", schoolId)
             .eq("status", "active")
             .in("student_id", studentIds);
+
+          if (academicYearId) {
+            transQ = transQ.eq("academic_year_id", academicYearId);
+          }
+
+          const { data: transData, error: transErr } = await transQ;
 
           if (!transErr && transData) {
             const transSet = new Set(transData.map((t) => t.student_id));
@@ -947,20 +961,23 @@ export async function getStructureStudentCounts(
   // Fallback to local storage cache
   try {
     const rawEnr = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
+    const targetClassIdSet = new Set(targetClassIds);
+    const targetSectionIdSet = new Set(targetSectionIds);
     const filtered = (rawEnr || []).filter((e: any) => {
       if (academicYearId && e.academic_year_id && e.academic_year_id !== academicYearId) return false;
       if (e.status && e.status !== "active" && e.status !== "enrolled") return false;
-      if (targetClassIds.length > 0 && !targetClassIds.includes(e.class_id)) return false;
-      if (targetSectionIds.length > 0 && !targetSectionIds.includes(e.section_id)) return false;
+      if (targetClassIdSet.size > 0 && !targetClassIdSet.has(e.class_id)) return false;
+      if (targetSectionIdSet.size > 0 && !targetSectionIdSet.has(e.section_id)) return false;
       return true;
     });
 
     const studentIds = Array.from(new Set(filtered.map((e: any) => e.student_id).filter(Boolean))) as string[];
+    const studentIdSet = new Set(studentIds);
     const enrolledCount = studentIds.length;
 
     const rawTrans = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
     const activeTrans = (rawTrans || []).filter(
-      (t: any) => t.status === "active" && studentIds.includes(t.student_id)
+      (t: any) => t.status === "active" && studentIdSet.has(t.student_id)
     );
     const transportCount = new Set(activeTrans.map((t: any) => t.student_id)).size;
 
@@ -1126,8 +1143,8 @@ export async function assignFeeStructureToEligibleStudents(
       structure.class_ids && structure.class_ids.length > 0
         ? structure.class_ids
         : structure.class_id
-        ? [structure.class_id]
-        : [];
+          ? [structure.class_id]
+          : [];
     const targetSectionIds = structure.section_ids || [];
 
     // Resolve eligible student enrollments
@@ -1165,19 +1182,21 @@ export async function assignFeeStructureToEligibleStudents(
 
     if (eligibleStudents.length === 0) {
       const localEnrollments = lsGet<any>(`myzkool_student_enrollments_${schoolId}`);
+      const targetClassIdSet = new Set(targetClassIds);
+      const targetSectionIdSet = new Set(targetSectionIds);
       eligibleStudents = localEnrollments
         .filter((e: any) => {
           if (e.school_id && e.school_id !== schoolId) return false;
           if (yearId && e.academic_year_id !== yearId) return false;
           if (e.status && e.status !== "active") return false;
-          if (structure?.target_type === "specific_classes" && targetClassIds.length > 0) {
-            return targetClassIds.includes(e.class_id);
+          if (structure?.target_type === "specific_classes" && targetClassIdSet.size > 0) {
+            return targetClassIdSet.has(e.class_id);
           }
-          if (structure?.target_type === "specific_sections" && targetSectionIds.length > 0) {
-            return targetSectionIds.includes(e.section_id);
+          if (structure?.target_type === "specific_sections" && targetSectionIdSet.size > 0) {
+            return targetSectionIdSet.has(e.section_id);
           }
-          if (targetClassIds.length > 0) {
-            return targetClassIds.includes(e.class_id);
+          if (targetClassIdSet.size > 0) {
+            return targetClassIdSet.has(e.class_id);
           }
           return true;
         })
@@ -1194,6 +1213,7 @@ export async function assignFeeStructureToEligibleStudents(
     }
 
     const studentIds = Array.from(new Set(eligibleStudents.map((s) => s.id)));
+    const studentIdSet = new Set(studentIds);
 
     // Fetch transport assignments
     const activeTransportMap = new Map<string, { id: string; monthly_fee_paise: number; effective_from: string; effective_to?: string | null }>();
@@ -1220,7 +1240,7 @@ export async function assignFeeStructureToEligibleStudents(
     } else {
       const localTrans = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
       localTrans
-        .filter((tr: any) => tr.status === "active" && studentIds.includes(tr.student_id) && tr.monthly_fee_paise > 0)
+        .filter((tr: any) => tr.status === "active" && studentIdSet.has(tr.student_id) && tr.monthly_fee_paise > 0)
         .forEach((tr: any) => {
           activeTransportMap.set(tr.student_id, {
             id: tr.id,
@@ -1236,10 +1256,25 @@ export async function assignFeeStructureToEligibleStudents(
     const transportHead = allHeads.find(
       (h) => h.code === "transport_fee" || (h.kind === "recurring" && /transport/i.test(h.name))
     );
+    const feeHeadMap = new Map<string, FeeHead>(allHeads.map((h) => [h.id, h]));
 
     // Fetch terms for this academic year
     const { terms: allTerms } = await getFeeTerms(schoolId, yearId);
     const sortedTerms = [...allTerms].sort((a, b) => a.sort_order - b.sort_order);
+    const termMap = new Map<string, FeeTerm>(sortedTerms.map((t) => [t.id, t]));
+
+    let ayStartYear = 2026;
+    if (sortedTerms.length > 0 && sortedTerms[0].period_start) {
+      ayStartYear = Number(sortedTerms[0].period_start.split("-")[0]);
+    } else if (sortedTerms.length > 0 && sortedTerms[0].due_date) {
+      const dY = Number(sortedTerms[0].due_date.split("-")[0]);
+      const dM = Number(sortedTerms[0].due_date.split("-")[1]);
+      ayStartYear = dM < 4 ? dY - 1 : dY;
+    }
+
+    const transSettings = await getTransportSettings(schoolId);
+    const transBillingMonths = transSettings.billing_months || [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+    const transPartialRule = transSettings.partial_month_rule || "full_month";
 
     // Fetch structure items
     const { items: structItems, terms: structItemTerms } = await getStructureGrid(schoolId, structureId);
@@ -1289,7 +1324,7 @@ export async function assignFeeStructureToEligibleStudents(
         const oldAssigns = existingAssigns.filter(
           (a) => a.student_id === student.id && a.academic_year_id === yearId && a.structure_id !== structureId && a.status === "active"
         );
-        for (const oldA of oldAssigns) {
+        for await (const oldA of oldAssigns) {
           oldA.status = "replaced";
           if (isSupabaseConfigured) {
             await supabase.from("student_fee_assignments").update({ status: "replaced", updated_at: now() }).eq("id", oldA.id);
@@ -1314,12 +1349,12 @@ export async function assignFeeStructureToEligibleStudents(
       // 2. Base Dues
       for (const item of structItems) {
         if (transportHead && item.fee_head_id === transportHead.id) continue;
-        const head = allHeads.find((h) => h.id === item.fee_head_id);
+        const head = feeHeadMap.get(item.fee_head_id);
         const itemTerms = structItemTerms.filter((it) => it.item_id === item.id);
 
         if (itemTerms.length > 0) {
           for (const it of itemTerms) {
-            const term = sortedTerms.find((t) => t.id === it.term_id);
+            const term = termMap.get(it.term_id);
             if (!term || it.amount_paise <= 0) continue;
 
             const existingDue = existingDues.find(
@@ -1418,17 +1453,23 @@ export async function assignFeeStructureToEligibleStudents(
       const transInfo = activeTransportMap.get(student.id);
       if (transInfo && transportHead) {
         transportRidersCount++;
-        const effDate = new Date(transInfo.effective_from);
-        const effYear = effDate.getFullYear();
-        const startMonth = effDate.getMonth() + 1;
-        const startYear = effYear;
+        const [effY, effM, effD] = String(transInfo.effective_from).split("-").map(Number);
+        let startYear = effY;
+        let startMonth = effM;
+        if (transPartialRule === "from_next_month" && effD > 1) {
+          startMonth += 1;
+          if (startMonth > 12) {
+            startMonth = 1;
+            startYear += 1;
+          }
+        }
 
         let endYear: number | null = null;
         let endMonth: number | null = null;
         if (transInfo.effective_to) {
-          const toDate = new Date(transInfo.effective_to);
-          endYear = toDate.getFullYear();
-          endMonth = toDate.getMonth() + 1;
+          const [toY, toM] = String(transInfo.effective_to).split("-").map(Number);
+          endYear = toY;
+          endMonth = toM;
         }
 
         for (let tIdx = 0; tIdx < sortedTerms.length; tIdx++) {
@@ -1445,8 +1486,8 @@ export async function assignFeeStructureToEligibleStudents(
           if (!existingTransDue) {
             const termBillingMonths = getTermBillingMonths(
               term,
-              effYear,
-              [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
+              ayStartYear,
+              transBillingMonths,
               sortedTerms.length,
               tIdx
             );
@@ -1610,8 +1651,9 @@ export async function checkStructureOverlaps(
       }
     } else if (targetType === "specific_classes") {
       const sClassIds = s.class_ids || (s.class_id ? [s.class_id] : []);
+      const sClassIdSet = new Set(sClassIds);
       for (const cid of targetIds) {
-        if (sClassIds.includes(cid)) {
+        if (sClassIdSet.has(cid)) {
           conflicts.push({
             structureName: s.name,
             targetId: cid,
@@ -1620,8 +1662,9 @@ export async function checkStructureOverlaps(
       }
     } else if (targetType === "specific_sections") {
       const sSectionIds = s.section_ids || [];
+      const sSectionIdSet = new Set(sSectionIds);
       for (const sid of targetIds) {
-        if (sSectionIds.includes(sid)) {
+        if (sSectionIdSet.has(sid)) {
           conflicts.push({
             structureName: s.name,
             targetId: sid,
@@ -1630,8 +1673,9 @@ export async function checkStructureOverlaps(
       }
     } else if (targetType === "specific_students") {
       const sStudentIds = s.student_ids || [];
+      const sStudentIdSet = new Set(sStudentIds);
       for (const stid of targetIds) {
-        if (sStudentIds.includes(stid)) {
+        if (sStudentIdSet.has(stid)) {
           conflicts.push({
             structureName: s.name,
             targetId: stid,
@@ -1698,11 +1742,41 @@ export async function saveCompleteFeeStructure(
     student_ids: input.student_ids ?? (existing?.student_ids ?? []),
     description: input.description ?? (existing?.description ?? ""),
     applies_to: (input.target_type || existing?.target_type) === "specific_students" ? "new_admission" : "all",
-    version: existing ? existing.version : 1,
+    version: existing ? (existing.version || 1) + 1 : 1,
     metadata: input.metadata ? { ...(existing?.metadata || {}), ...input.metadata } : (existing?.metadata ?? {}),
     created_at: existing ? existing.created_at : now(),
     updated_at: now(),
   };
+
+  // If publishing this structure as active, supersede any conflicting active structures for the same class and academic year
+  if (structure.status === "active" && primaryClassId && effectiveYearId) {
+    if (isSupabaseConfigured) {
+      try {
+        await supabase
+          .from("fee_structures")
+          .update({ status: "superseded", updated_at: now() })
+          .eq("school_id", schoolId)
+          .eq("academic_year_id", effectiveYearId)
+          .eq("class_id", primaryClassId)
+          .eq("status", "active")
+          .neq("id", structureId);
+      } catch (supErr: any) {
+        console.warn("Auto-supersede conflicting active structures note:", supErr.message);
+      }
+    }
+    const currentAll = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
+    lsSet(
+      FEE_STRUCTURES_KEY(schoolId),
+      currentAll.map(s =>
+        s.id !== structureId &&
+        s.academic_year_id === effectiveYearId &&
+        s.class_id === primaryClassId &&
+        s.status === "active"
+          ? { ...s, status: "superseded" as const, updated_at: now() }
+          : s
+      )
+    );
+  }
 
   // Upsert structure
   if (isSupabaseConfigured) {
@@ -1733,13 +1807,14 @@ export async function saveCompleteFeeStructure(
   if (input.items && Array.isArray(input.items)) {
     const existingItems = lsGet<FeeStructureItem>(FEE_STRUCTURE_ITEMS_KEY(schoolId)).filter(i => i.structure_id === structureId);
     const existingItemIds = new Set(existingItems.map(i => i.id));
+    const existingItemsByFeeHead = new Map<string, FeeStructureItem>(existingItems.map(i => [i.fee_head_id, i]));
 
     // Save new items
     const savedItems: FeeStructureItem[] = [];
     const savedItemTerms: FeeStructureItemTerm[] = [];
 
-    for (const itemInput of input.items) {
-      const existingItem = existingItems.find(i => i.fee_head_id === itemInput.fee_head_id);
+    for await (const itemInput of input.items) {
+      const existingItem = existingItemsByFeeHead.get(itemInput.fee_head_id);
       const itemId = existingItem ? existingItem.id : uuid();
 
       const itemRow: FeeStructureItem = {
@@ -1770,7 +1845,7 @@ export async function saveCompleteFeeStructure(
       }
 
       // Term amounts
-      for (const [termId, amountRupees] of Object.entries(itemInput.term_amounts || {})) {
+      for await (const [termId, amountRupees] of Object.entries(itemInput.term_amounts || {})) {
         const termAmountRow: FeeStructureItemTerm = {
           item_id: itemId,
           term_id: termId,
@@ -1882,14 +1957,14 @@ export async function deleteFeeStructure(
       // Safe deletion in Supabase (cascades or delete explicitly)
       await supabase.from("fee_structure_sections").delete().eq("school_id", schoolId).eq("fee_structure_id", structureId);
       await supabase.from("fee_structure_classes").delete().eq("school_id", schoolId).eq("fee_structure_id", structureId);
-      
+
       const { data: itemRows } = await supabase.from("fee_structure_items").select("id").eq("structure_id", structureId);
       if (itemRows && itemRows.length > 0) {
         const itemIds = itemRows.map(i => i.id);
         await supabase.from("fee_structure_item_terms").delete().in("item_id", itemIds);
       }
       await supabase.from("fee_structure_items").delete().eq("structure_id", structureId);
-      
+
       const { error: delErr } = await supabase.from("fee_structures").delete().eq("id", structureId).eq("school_id", schoolId);
       if (delErr) throw delErr;
     } catch (e: any) {
@@ -1999,7 +2074,7 @@ export async function duplicateFeeStructure(
   const newItems: FeeStructureItem[] = [];
   const newTerms: FeeStructureItemTerm[] = [];
 
-  for (const item of items) {
+  for await (const item of items) {
     const newItemId = uuid();
     const clonedItem: FeeStructureItem = {
       ...item,
@@ -2070,6 +2145,22 @@ export async function archiveFeeStructure(
   }
   const all = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
   lsSet(FEE_STRUCTURES_KEY(schoolId), all.map(s => s.id === structureId ? { ...s, status: "archived" as const, updated_at: now() } : s));
+  return { success: true };
+}
+
+export async function supersedeFeeStructure(
+  schoolId: string,
+  structureId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from("fee_structures").update({ status: "superseded", updated_at: now() }).eq("id", structureId);
+    } catch (e: any) {
+      console.warn("supersedeFeeStructure Supabase note:", e.message);
+    }
+  }
+  const all = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
+  lsSet(FEE_STRUCTURES_KEY(schoolId), all.map(s => s.id === structureId ? { ...s, status: "superseded" as const, updated_at: now() } : s));
   return { success: true };
 }
 
@@ -2144,7 +2235,7 @@ export async function updateStructureGrid(
         item = data as FeeStructureItem;
       }
       // Upsert term amounts
-      for (const t of terms) {
+      for await (const t of terms) {
         await supabase.from("fee_structure_item_terms").upsert({
           item_id: item.id, term_id: t.term_id, amount_paise: t.amount_paise
         }, { onConflict: "item_id,term_id" });
@@ -2213,21 +2304,24 @@ export async function activateStructure(
     if ((s.target_type === "specific_classes" || !s.target_type) && (x.target_type === "specific_classes" || !x.target_type)) {
       const sClasses = s.class_ids || (s.class_id ? [s.class_id] : []);
       const xClasses = x.class_ids || (x.class_id ? [x.class_id] : []);
-      return sClasses.some(c => xClasses.includes(c));
+      const xClassesSet = new Set(xClasses);
+      return sClasses.some(c => xClassesSet.has(c));
     }
 
     // Check section overlaps
     if (s.target_type === "specific_sections" && x.target_type === "specific_sections") {
       const sSections = s.section_ids || [];
       const xSections = x.section_ids || [];
-      return sSections.some(sec => xSections.includes(sec));
+      const xSectionsSet = new Set(xSections);
+      return sSections.some(sec => xSectionsSet.has(sec));
     }
 
     // Check student overrides
     if (s.target_type === "specific_students" && x.target_type === "specific_students") {
       const sStudents = s.student_ids || [];
       const xStudents = x.student_ids || [];
-      return sStudents.some(stu => xStudents.includes(stu));
+      const xStudentsSet = new Set(xStudents);
+      return sStudents.some(stu => xStudentsSet.has(stu));
     }
 
     return false;
@@ -2235,7 +2329,7 @@ export async function activateStructure(
 
   if (isSupabaseConfigured) {
     try {
-      for (const a of toArchive) {
+      for await (const a of toArchive) {
         await supabase.from("fee_structures").update({ status: "archived", updated_at: now() }).eq("id", a.id);
       }
       const newVersion = (s.version || 1) + (toArchive.length > 0 ? 1 : 0);
@@ -2279,7 +2373,7 @@ export async function copyStructureToClasses(
   if (!src) return { created: [], error: "Source structure not found" };
 
   const created: string[] = [];
-  for (const classId of targetClassIds) {
+  for await (const classId of targetClassIds) {
     const { structure } = await createFeeStructure(schoolId, {
       class_id: classId,
       name: `${src.name} (copy)`,
@@ -2289,7 +2383,7 @@ export async function copyStructureToClasses(
     if (!structure) continue;
 
     const multiplier = 1 + pctAdjust / 100;
-    for (const item of items) {
+    for await (const item of items) {
       const itemTerms = terms.filter(t => t.item_id === item.id);
       await updateStructureGrid(schoolId, {
         structure_id: structure.id,
@@ -2465,7 +2559,7 @@ export async function getFeeSettings(schoolId: string): Promise<{ settings: FeeS
     try {
       const { data } = await supabase.from("fee_settings").select("*").eq("school_id", schoolId).maybeSingle();
       if (data) return { settings: data as FeeSettings };
-    } catch {}
+    } catch { }
   }
   const stored = lsGetObj<FeeSettings | null>(FEE_SETTINGS_KEY(schoolId), null);
   if (stored) return { settings: stored };

@@ -47,19 +47,25 @@ export default function DuesGenerationPage() {
     if (!school?.id || !yearId) return;
     setLoading(true);
     setError(null);
-    const { preview: p, error: e } = await previewDuesGeneration(school.id, yearId);
-    if (e) setError(e); else setPreview(p);
-    setLoading(false);
+    try {
+      const { preview: p, error: e } = await previewDuesGeneration(school.id, yearId);
+      if (e) setError(e); else setPreview(p);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleGenerate() {
     if (!school?.id || !yearId) return;
     setGenerating(true);
     setError(null);
-    const { result: r, error: e } = await generateDues(school.id, yearId, undefined, profile?.id);
-    if (e) setError(e); else setResult(r);
-    setGenerating(false);
-    setPreview(null);
+    try {
+      const { result: r, error: e } = await generateDues(school.id, yearId, undefined, profile?.id);
+      if (e) setError(e); else setResult(r);
+      setPreview(null);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function handleAddManualDue() {
@@ -67,13 +73,16 @@ export default function DuesGenerationPage() {
       setManualError("Student ID and fee head are required."); return;
     }
     setManualSaving(true);
-    const { error: e } = await addManualDue(school.id, manualStudentId, yearId, manualForm, profile?.id);
-    if (e) { setManualError(e); } else {
-      setManualDrawer(false);
-      setManualStudentId("");
-      setManualError(null);
+    try {
+      const { error: e } = await addManualDue(school.id, manualStudentId, yearId, manualForm, profile?.id);
+      if (e) { setManualError(e); } else {
+        setManualDrawer(false);
+        setManualStudentId("");
+        setManualError(null);
+      }
+    } finally {
+      setManualSaving(false);
     }
-    setManualSaving(false);
   }
 
   return (
@@ -187,7 +196,7 @@ export default function DuesGenerationPage() {
       {/* Manual due drawer */}
       {manualDrawer && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/40" onClick={() => setManualDrawer(false)} />
+          <div aria-hidden="true" className="flex-1 bg-black/40" onClick={() => setManualDrawer(false)} />
           <div className="w-96 bg-white h-full shadow-xl flex flex-col">
             <div className="px-6 py-4 border-b border-[#E6EAF3]">
               <h2 className="text-base font-bold text-[#141A2E]">Add Manual Due</h2>
@@ -196,31 +205,31 @@ export default function DuesGenerationPage() {
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               {manualError && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm">{manualError}</div>}
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Student ID *</label>
-                <input className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="duesgenerationpage-student-id" className="block text-xs font-medium text-[#141A2E] mb-1">Student ID *</label>
+                <input id="duesgenerationpage-student-id" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={manualStudentId} onChange={e => setManualStudentId(e.target.value)} placeholder="Student UUID" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Fee Head *</label>
-                <select className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="duesgenerationpage-fee-head" className="block text-xs font-medium text-[#141A2E] mb-1">Fee Head *</label>
+                <select id="duesgenerationpage-fee-head" aria-label="Fee Head" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={manualForm.fee_head_id} onChange={e => setManualForm(f => ({ ...f, fee_head_id: e.target.value }))}>
                   {feeHeads.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Amount (₹) *</label>
-                <input type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="duesgenerationpage-amount" className="block text-xs font-medium text-[#141A2E] mb-1">Amount (₹) *</label>
+                <input id="duesgenerationpage-amount" aria-label="Amount (₹)" type="number" min={0} className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={Number.isFinite(manualForm.gross_paise) && manualForm.gross_paise > 0 ? manualForm.gross_paise / 100 : ""}
                   onChange={e => setManualForm(f => ({ ...f, gross_paise: (parseFloat(e.target.value) || 0) * 100 }))} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Due Date *</label>
-                <input type="date" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="duesgenerationpage-due-date" className="block text-xs font-medium text-[#141A2E] mb-1">Due Date *</label>
+                <input id="duesgenerationpage-due-date" aria-label="Due Date" type="date" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={manualForm.due_date} onChange={e => setManualForm(f => ({ ...f, due_date: e.target.value }))} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#141A2E] mb-1">Description</label>
-                <input className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
+                <label htmlFor="duesgenerationpage-description" className="block text-xs font-medium text-[#141A2E] mb-1">Description</label>
+                <input id="duesgenerationpage-description" className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                   value={manualForm.description ?? ""} onChange={e => setManualForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Library fine" />
               </div>
             </div>

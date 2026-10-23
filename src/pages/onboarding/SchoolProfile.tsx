@@ -214,7 +214,7 @@ export default function SchoolProfile() {
   });
 
   // Tracking existing school if resuming
-  const [existingSchoolId, setExistingSchoolId] = useState<string | null>(null);
+  const existingSchoolIdRef = useRef<string | null>(null);
   const [existingOnboardingStep, setExistingOnboardingStep] = useState<number>(1);
   const [isSubdomainManuallyEdited, setIsSubdomainManuallyEdited] = useState(false);
 
@@ -258,7 +258,7 @@ export default function SchoolProfile() {
         const { school } = await getSchoolForCurrentUser(user.id, profile?.school_id);
 
         if (isMounted && school) {
-          setExistingSchoolId(school.id);
+          existingSchoolIdRef.current = school.id;
           setExistingOnboardingStep(school.onboarding_step || 1);
           setIsSubdomainManuallyEdited(true);
 
@@ -287,8 +287,8 @@ export default function SchoolProfile() {
           }
         } else if (isMounted) {
           // If fresh user, default official email to their authenticated account email
-          if (user.email && !formData.official_email) {
-            setFormData((prev) => ({ ...prev, official_email: user.email || "" }));
+          if (user.email) {
+            setFormData((prev) => (prev.official_email ? prev : { ...prev, official_email: user.email || "" }));
           }
         }
       } catch (err) {
@@ -374,12 +374,16 @@ export default function SchoolProfile() {
   // 3. Handle School Name changes (auto-suggest subdomain if not manually edited)
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newName = e.target.value;
+    let suggested: string | undefined;
+    if (!isSubdomainManuallyEdited) {
+      suggested = normalizeSubdomain(newName);
+      triggerSubdomainCheck(suggested, existingSchoolId);
+    }
+
     setFormData((prev) => {
       const nextState = { ...prev, name: newName };
-      if (!isSubdomainManuallyEdited) {
-        const suggested = normalizeSubdomain(newName);
+      if (!isSubdomainManuallyEdited && suggested !== undefined) {
         nextState.subdomain = suggested;
-        triggerSubdomainCheck(suggested, existingSchoolId);
       }
       return nextState;
     });
@@ -536,7 +540,7 @@ export default function SchoolProfile() {
         userId: user.id,
         userEmail: user.email || "",
         profileInput: formData,
-        existingSchoolId,
+        existingSchoolId: existingSchoolIdRef.current,
       });
 
       if (!result.success || !result.school) {

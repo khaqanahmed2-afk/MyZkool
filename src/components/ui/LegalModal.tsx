@@ -32,11 +32,21 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={(el) => {
+        if (el && !el.open) {
+          el.showModal();
+          el.onclick = (e) => {
+            if (e.target === el) onClose();
+          };
+        }
+      }}
+      className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-black/60 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
       aria-labelledby="legal-modal-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
     >
       <div 
         className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-[#E6EAF3] overflow-hidden relative max-h-[88vh] flex flex-col"
@@ -265,7 +275,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, initialDoc = "pr
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };
 

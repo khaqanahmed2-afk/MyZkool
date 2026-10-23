@@ -69,7 +69,7 @@ export function InvoiceDetailModal({
             >
               <Printer className="w-3.5 h-3.5" /> Print
             </button>
-            <button
+            <button aria-label="Close"
               type="button"
               onClick={onClose}
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700"
@@ -117,8 +117,8 @@ export function InvoiceDetailModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E6EAF3]">
-                  {invoice.line_items.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50">
+                  {invoice.line_items.map((item) => (
+                    <tr key={item.due_id || item.fee_head_id || item.fee_head_name} className="hover:bg-slate-50/50">
                       <td className="py-2.5 px-3">
                         <p className="font-semibold text-[#141A2E]">{item.fee_head_name}</p>
                         {item.description && <p className="text-[10px] text-gray-400">{item.description}</p>}
@@ -152,8 +152,8 @@ export function InvoiceDetailModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E6EAF3]">
-                    {invoice.payments.map((p, idx) => (
-                      <tr key={idx}>
+                    {invoice.payments.map((p) => (
+                      <tr key={p.receipt_id || p.receipt_no}>
                         <td className="py-2 px-3 font-semibold text-blue-600">{p.receipt_no}</td>
                         <td className="py-2 px-3 text-gray-600">{p.receipt_date}</td>
                         <td className="py-2 px-3 capitalize text-gray-600">{p.payment_mode}</td>

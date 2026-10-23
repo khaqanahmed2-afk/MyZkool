@@ -12,6 +12,15 @@ export type ReceiptStatus = "active" | "cancelled" | "bounced";
 export type ReceiptSource = "counter" | "online" | "import";
 export type ChequeStatus = "received" | "deposited" | "cleared" | "bounced";
 
+export type PaymentLifecycleStatus =
+  | "pending"      // Initiated, cheque deposited, or gateway authorized
+  | "successful"   // Realized, verified active collection (also "received")
+  | "failed"       // Bounced cheque, gateway failed, expired
+  | "cancelled"    // Voided / cancelled receipt
+  | "refunded"     // Disbursed refund paid out
+  | "reversed";    // Reversal entry / returned funds / chargeback
+
+
 // ─── Database rows ────────────────────────────────────────────────────────────
 
 export interface FeeReceipt {
@@ -60,6 +69,7 @@ export interface FeePayment {
   cheque_status: ChequeStatus | null;
   gateway_order_id: string | null;
   gateway_payment_id: string | null;
+  status?: PaymentLifecycleStatus;
   created_at: string;
 }
 

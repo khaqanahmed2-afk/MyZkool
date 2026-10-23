@@ -42,47 +42,59 @@ export default function ApprovalsPage() {
   const load = useCallback(async () => {
     if (!school?.id) return;
     setLoading(true);
-    const { requests: r } = filter === "pending"
-      ? await getPendingApprovals(school.id)
-      : await getAllApprovals(school.id);
-    setRequests(r);
-    setLoading(false);
+    try {
+      const { requests: r } = filter === "pending"
+        ? await getPendingApprovals(school.id)
+        : await getAllApprovals(school.id);
+      setRequests(r);
+    } finally {
+      setLoading(false);
+    }
   }, [school?.id, filter]);
 
   useEffect(() => { load(); }, [load]);
 
   async function handleApprove(id: string) {
     setActionLoading(id);
-    const { error: e } = await approveRequest(school.id, id, profile?.id, note || undefined);
-    if (e) setError(e); else await load();
-    setActionLoading(null);
-    setActionId(null);
-    setNote("");
+    try {
+      const { error: e } = await approveRequest(school.id, id, profile?.id, note || undefined);
+      if (e) setError(e); else await load();
+      setActionId(null);
+      setNote("");
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function handleReject(id: string) {
     if (!note.trim()) { setError("A note is required to reject."); return; }
     setActionLoading(id);
-    const { error: e } = await rejectRequest(school.id, id, profile?.id, note);
-    if (e) setError(e); else await load();
-    setActionLoading(null);
-    setActionId(null);
-    setNote("");
+    try {
+      const { error: e } = await rejectRequest(school.id, id, profile?.id, note);
+      if (e) setError(e); else await load();
+      setActionId(null);
+      setNote("");
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function handlePinApprove() {
     if (!pinModal.requestId) return;
     setActionLoading(pinModal.requestId);
-    const { ok, locked, error: e } = await approveByOwnerPin(school.id, pinModal.requestId, pin, profile?.id);
-    if (!ok) {
-      setPinError(e ?? "Invalid PIN");
-      if (locked) { setPinModal({ open: false, requestId: null }); setPin(""); }
-    } else {
-      setPinModal({ open: false, requestId: null });
-      setPin(""); setPinError(null);
-      await load();
+    try {
+      const { ok, locked, error: e } = await approveByOwnerPin(school.id, pinModal.requestId, pin, profile?.id);
+      if (!ok) {
+        setPinError(e ?? "Invalid PIN");
+        if (locked) { setPinModal({ open: false, requestId: null }); setPin(""); }
+      } else {
+        setPinModal({ open: false, requestId: null });
+        setPin(""); setPinError(null);
+        await load();
+      }
+    } finally {
+      setActionLoading(null);
     }
-    setActionLoading(null);
   }
 
   const pendingCount = requests.filter(r => r.status === "pending").length;
@@ -108,7 +120,7 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm flex gap-2"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{error}<button onClick={() => setError(null)} className="ml-auto text-red-400">×</button></div>}
+      {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm flex gap-2"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{error}<button aria-label="Close" onClick={() => setError(null)} className="ml-auto text-red-400">×</button></div>}
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-[#5B6478]"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
@@ -154,7 +166,7 @@ export default function ApprovalsPage() {
                 <div className="mt-3 border-t border-[#E6EAF3] pt-3">
                   {actionId === req.id ? (
                     <div className="space-y-2">
-                      <input
+                      <input aria-label="Rejection note"
                         className="w-full border border-[#E6EAF3] rounded-lg px-3 py-2 text-sm focus:border-[#2158E0] outline-none"
                         placeholder="Note (required for rejection)"
                         value={note}
@@ -199,7 +211,7 @@ export default function ApprovalsPage() {
             </div>
             {pinError && <div className="mb-3 bg-red-50 border border-red-200 rounded-lg p-2 text-red-600 text-xs">{pinError}</div>}
             <p className="text-sm text-[#5B6478] mb-3">Enter the owner PIN to approve this request. Rate-limited to 5 attempts.</p>
-            <input
+            <input aria-label="Owner PIN"
               type="password"
               inputMode="numeric"
               maxLength={8}

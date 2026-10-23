@@ -82,7 +82,7 @@ export const WebsiteBuilderSidebar: React.FC<WebsiteBuilderSidebarProps> = ({
         {/* Mini progress bar */}
         <div className="w-full h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden mb-4">
           <div
-            className="h-full bg-[#2158E0] rounded-full transition-all duration-300"
+            className="h-full bg-[#2158E0] rounded-full transition-[width] duration-300"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -147,7 +147,7 @@ export const WebsiteBuilderSidebar: React.FC<WebsiteBuilderSidebarProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left cursor-pointer ${
                   isActive
                     ? "bg-[#2158E0] text-white shadow-xs"
                     : "text-[#5B6478] hover:text-[#141A2E] hover:bg-slate-50"

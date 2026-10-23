@@ -72,8 +72,14 @@ import type { SchoolClass, SchoolSection } from "../types/curriculum";
 import { encryptSensitive, decryptSensitive, hashAadhaar } from "../utils/sensitiveCrypto";
 import { cleanAadhaar, maskAadhaar } from "../utils/aadhaarValidation";
 import { feeService, createFeeService } from "./feeService";
-import { createAssignment } from "./transportAssignmentService";
-import type { ServiceType } from "../types/transport";
+import {
+  createAssignment,
+  changeAssignment,
+  stopAssignment,
+  getStudentTransportDetails,
+  getActiveAssignmentForStudent,
+} from "./transportAssignmentService";
+import type { ServiceType, EnrichedStudentTransport } from "../types/transport";
 import { checkSchoolStudentLimit } from "./studentOperationsService";
 
 // Local storage fallbacks
@@ -203,16 +209,34 @@ export function getPermissionsForRole(role?: string | null): StudentPermissionKe
   return [];
 }
 
+function getStoredPermissions(): string | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage.getItem("myzkool_user_permissions") : null;
+  } catch {
+    return null;
+  }
+}
+
+function getStoredRole(): string | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage.getItem("myzkool_user_role") : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Check if current user has a specific permission
  */
 async function hasPermission(permission: StudentPermissionKey): Promise<boolean> {
+  const storedPerms = getStoredPermissions();
+  const storedRole = getStoredRole();
+
   if (!isSupabaseConfigured) {
     // For local development, check localStorage
     try {
-      const stored = localStorage.getItem("myzkool_user_permissions");
-      if (stored !== null) {
-        const permissions = JSON.parse(stored);
+      if (storedPerms !== null) {
+        const permissions = JSON.parse(storedPerms);
         return permissions.includes(permission);
       }
       return true;
@@ -225,12 +249,10 @@ async function hasPermission(permission: StudentPermissionKey): Promise<boolean>
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       try {
-        const storedRole = localStorage.getItem("myzkool_user_role");
         if (storedRole) {
           const rolePermissions = getPermissionsForRole(storedRole);
           return rolePermissions.includes(permission);
         }
-        const storedPerms = localStorage.getItem("myzkool_user_permissions");
         if (storedPerms) {
           const permissions = JSON.parse(storedPerms);
           return permissions.includes(permission);
@@ -247,9 +269,9 @@ async function hasPermission(permission: StudentPermissionKey): Promise<boolean>
 
     if (!profile) {
       try {
-        const storedRole = localStorage.getItem("myzkool_user_role") || user.user_metadata?.role;
-        if (storedRole) {
-          const rolePermissions = getPermissionsForRole(storedRole);
+        const effectiveRole = storedRole || user.user_metadata?.role;
+        if (effectiveRole) {
+          const rolePermissions = getPermissionsForRole(effectiveRole);
           return rolePermissions.includes(permission);
         }
       } catch { }
@@ -768,12 +790,16 @@ export async function listStudents(
       const enrollmentsKey = getStudentEnrollmentsCacheKey(schoolId);
       const enrCached = localStorage.getItem(enrollmentsKey);
       const enrollments: StudentEnrollment[] = enrCached ? JSON.parse(enrCached) : [];
-      const allowedStudentIds = enrollments
-        .filter(e => teacherSectionIds ? teacherSectionIds.includes(e.section_id || "") : false)
-        .map(e => e.student_id);
-      students = students.filter(s => allowedStudentIds.includes(s.id));
+      const teacherSectionIdSet = teacherSectionIds ? new Set(teacherSectionIds) : null;
+      const allowedStudentIdSet = new Set(
+        enrollments
+          .filter(e => teacherSectionIdSet ? teacherSectionIdSet.has(e.section_id || "") : false)
+          .map(e => e.student_id)
+      );
+      students = students.filter(s => allowedStudentIdSet.has(s.id));
     } else if (userRole === "parent") {
-      students = students.filter(s => parentStudentIds ? parentStudentIds.includes(s.id) : false);
+      const parentStudentIdSet = parentStudentIds ? new Set(parentStudentIds) : null;
+      students = students.filter(s => parentStudentIdSet ? parentStudentIdSet.has(s.id) : false);
     }
 
     // Apply filters
@@ -1498,19 +1524,23 @@ export async function getStudentSiblings(schoolId: string, studentId: string): P
     const spKey = getStudentParentsCacheKey(schoolId);
     const spCached = localStorage.getItem(spKey);
     const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
-    const myParentIds = studentParents.filter(sp => sp.student_id === studentId).map(sp => sp.parent_id);
-    if (myParentIds.length === 0) return { siblings: [] };
+    const myParentIdSet = new Set(
+      studentParents.filter(sp => sp.student_id === studentId).map(sp => sp.parent_id)
+    );
+    if (myParentIdSet.size === 0) return { siblings: [] };
 
-    const siblingStudentIds = studentParents
-      .filter(sp => sp.student_id !== studentId && myParentIds.includes(sp.parent_id))
-      .map(sp => sp.student_id);
+    const siblingStudentIdSet = new Set(
+      studentParents
+        .filter(sp => sp.student_id !== studentId && myParentIdSet.has(sp.parent_id))
+        .map(sp => sp.student_id)
+    );
 
     const studentsKey = getStudentsCacheKey(schoolId);
     const studentsCached = localStorage.getItem(studentsKey);
     const students: Student[] = studentsCached ? JSON.parse(studentsCached) : [];
 
     const siblings: StudentSibling[] = students
-      .filter(s => siblingStudentIds.includes(s.id) && !s.deleted_at)
+      .filter(s => siblingStudentIdSet.has(s.id) && !s.deleted_at)
       .map(s => ({
         student_id: studentId,
         sibling_id: s.id,
@@ -2509,8 +2539,9 @@ export async function lookupParentByPhone(
 
     const listRes2 = await listStudents(schoolId, { limit: 1000 });
     const allStudents = listRes2.response?.data || [];
+    const studentMap = new Map(allStudents.map(s => [s.id, s]));
     for (const link of parentLinks) {
-      const st = allStudents.find(s => s.id === link.student_id);
+      const st = studentMap.get(link.student_id);
       if (st) {
         linkedStudents.push({
           id: st.id,
@@ -2947,7 +2978,8 @@ export async function admitStudentTransactional(
         const cacheKey = getStudentAddressesCacheKey(schoolId);
         const cached = localStorage.getItem(cacheKey);
         const list: StudentAddress[] = cached ? JSON.parse(cached) : [];
-        localStorage.setItem(cacheKey, JSON.stringify(list.filter(a => !addressIds.includes(a.id))));
+        const addressIdSet = new Set(addressIds);
+        localStorage.setItem(cacheKey, JSON.stringify(list.filter(a => !addressIdSet.has(a.id))));
       }
     });
 
@@ -3075,20 +3107,24 @@ export async function admitStudentTransactional(
         if (createdConsentIds.length) await supabase.from("communication_consents").delete().in("id", createdConsentIds);
         if (createdParentIds.length) await supabase.from("parents").delete().in("id", createdParentIds);
       } else {
+        const createdLinkIdSet = new Set(createdLinkIds);
+        const createdConsentIdSet = new Set(createdConsentIds);
+        const createdParentIdSet = new Set(createdParentIds);
+
         const spKey = getStudentParentsCacheKey(schoolId);
         const spCached = localStorage.getItem(spKey);
         const links: StudentParent[] = spCached ? JSON.parse(spCached) : [];
-        localStorage.setItem(spKey, JSON.stringify(links.filter(l => !createdLinkIds.includes(l.id))));
+        localStorage.setItem(spKey, JSON.stringify(links.filter(l => !createdLinkIdSet.has(l.id))));
 
         const cKey = getCommunicationConsentsCacheKey(schoolId);
         const cCached = localStorage.getItem(cKey);
         const consents: CommunicationConsent[] = cCached ? JSON.parse(cCached) : [];
-        localStorage.setItem(cKey, JSON.stringify(consents.filter(c => !createdConsentIds.includes(c.id))));
+        localStorage.setItem(cKey, JSON.stringify(consents.filter(c => !createdConsentIdSet.has(c.id))));
 
         const pKey = getParentsCacheKey(schoolId);
         const pCached = localStorage.getItem(pKey);
         const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
-        localStorage.setItem(pKey, JSON.stringify(parents.filter(p => !createdParentIds.includes(p.id))));
+        localStorage.setItem(pKey, JSON.stringify(parents.filter(p => !createdParentIdSet.has(p.id))));
       }
     });
 
@@ -3212,7 +3248,8 @@ export async function admitStudentTransactional(
           const cacheKey = getStudentDocumentsCacheKey(schoolId);
           const cached = localStorage.getItem(cacheKey);
           const docs: StudentDocument[] = cached ? JSON.parse(cached) : [];
-          localStorage.setItem(cacheKey, JSON.stringify(docs.filter(d => !docIds.includes(d.id))));
+          const docIdSet = new Set(docIds);
+          localStorage.setItem(cacheKey, JSON.stringify(docs.filter(d => !docIdSet.has(d.id))));
         }
       });
     }
@@ -3319,13 +3356,13 @@ export async function admitStudentTransactional(
             const duesToRemove = allDues.filter(
               (d: any) => d.student_id === studentId && d.source === "transport" && d.source_ref === transportAssignmentId
             );
-            const dueIdsToRemove = duesToRemove.map((d: any) => d.id);
-            localStorage.setItem(duesKey, JSON.stringify(allDues.filter((d: any) => !dueIdsToRemove.includes(d.id))));
+            const dueIdsToRemove = new Set(duesToRemove.map((d: any) => d.id));
+            localStorage.setItem(duesKey, JSON.stringify(allDues.filter((d: any) => !dueIdsToRemove.has(d.id))));
 
             const ledgerKey = `myzkool_fee_ledger_${schoolId}`;
             const ledgerCached = localStorage.getItem(ledgerKey);
             const allLedger: any[] = ledgerCached ? JSON.parse(ledgerCached) : [];
-            localStorage.setItem(ledgerKey, JSON.stringify(allLedger.filter((l: any) => !dueIdsToRemove.includes(l.due_id))));
+            localStorage.setItem(ledgerKey, JSON.stringify(allLedger.filter((l: any) => !dueIdsToRemove.has(l.due_id))));
 
             const assignKey = `myzkool_transport_assignments_${schoolId}`;
             const assignCached = localStorage.getItem(assignKey);
@@ -3405,13 +3442,13 @@ export async function admitStudentTransactional(
           const duesToRemove = allDues.filter(
             (d: any) => d.student_id === studentId && d.source === "structure" && d.source_ref === assignmentIdToRollback
           );
-          const dueIdsToRemove = duesToRemove.map((d: any) => d.id);
-          localStorage.setItem(duesKey, JSON.stringify(allDues.filter((d: any) => !dueIdsToRemove.includes(d.id))));
+          const dueIdsToRemove = new Set(duesToRemove.map((d: any) => d.id));
+          localStorage.setItem(duesKey, JSON.stringify(allDues.filter((d: any) => !dueIdsToRemove.has(d.id))));
 
           const ledgerKey = `myzkool_fee_ledger_${schoolId}`;
           const ledgerCached = localStorage.getItem(ledgerKey);
           const allLedger: any[] = ledgerCached ? JSON.parse(ledgerCached) : [];
-          localStorage.setItem(ledgerKey, JSON.stringify(allLedger.filter((l: any) => !dueIdsToRemove.includes(l.due_id))));
+          localStorage.setItem(ledgerKey, JSON.stringify(allLedger.filter((l: any) => !dueIdsToRemove.has(l.due_id))));
 
           const feeAssignKeys = [`myzkool_fee_assignments_${schoolId}`, `myzkool_student_fee_assignments_${schoolId}`];
           for (const aKey of feeAssignKeys) {
@@ -3562,9 +3599,9 @@ export async function admitStudentTransactional(
     return { student: studentRecord };
   } catch (err: any) {
     // Execute rollback stack in reverse order to ensure clean state
-    for (let i = rollbackStack.length - 1; i >= 0; i--) {
+    for await (const rollbackFn of [...rollbackStack].reverse()) {
       try {
-        await rollbackStack[i]();
+        await rollbackFn();
       } catch (rbErr) {
         console.error("Rollback step error:", rbErr);
       }
@@ -3573,8 +3610,857 @@ export async function admitStudentTransactional(
   }
 }
 
+/**
+ * Fetch and map complete student records into AdmissionWizardPayload for edit mode
+ */
+export async function getStudentWizardData(
+  schoolId: string,
+  studentId: string
+): Promise<{
+  payload?: AdmissionWizardPayload;
+  student?: Student;
+  existingAadhaarLast4?: string | null;
+  error?: string;
+}> {
+  if (!schoolId || !studentId) {
+    return { error: "school_id and student_id are required" };
+  }
+
+  const { profile, error: profileErr } = await getStudentProfile(schoolId, studentId);
+  if (profileErr || !profile) {
+    return { error: profileErr || "Student record not found" };
+  }
+
+  // Fetch transport details
+  let transportData: EnrichedStudentTransport | null = null;
+  try {
+    transportData = await getStudentTransportDetails(schoolId, studentId);
+  } catch (err) {
+    console.warn("Could not load transport details for wizard edit:", err);
+  }
+
+  // Fetch active fee assignment
+  let activeFeeStructureId = "";
+  try {
+    if (isSupabaseConfigured) {
+      const { data } = await supabase
+        .from("student_fee_assignments")
+        .select("structure_id")
+        .eq("school_id", schoolId)
+        .eq("student_id", studentId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (data?.structure_id) {
+        activeFeeStructureId = data.structure_id;
+      }
+    } else {
+      const cached = localStorage.getItem(`myzkool_student_fee_assignments_${schoolId}`);
+      if (cached) {
+        const assigns = JSON.parse(cached);
+        const active = assigns.find((a: any) => a.student_id === studentId && a.status === "active");
+        if (active?.structure_id) {
+          activeFeeStructureId = active.structure_id;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load fee assignment for wizard edit:", err);
+  }
+
+  // Map parents
+  const father = profile.parents.find(p => p.relation === "father");
+  const mother = profile.parents.find(p => p.relation === "mother");
+  const guardian = profile.parents.find(p => p.relation === "guardian");
+
+  const mapParent = <R extends "father" | "mother" | "guardian">(
+    p: typeof father | undefined,
+    relation: R
+  ): (ParentInput & {
+    relation: R;
+    is_primary_contact?: boolean;
+    is_fee_payer?: boolean;
+    is_emergency_contact?: boolean;
+    can_pickup?: boolean;
+    lives_with?: boolean;
+    whatsapp_consent?: boolean;
+  }) | undefined => {
+    if (!p) return undefined;
+    return {
+      full_name: p.full_name || "",
+      phone: p.phone || "",
+      whatsapp_phone: p.whatsapp_phone || p.phone || "",
+      email: p.email || undefined,
+      occupation: p.occupation || undefined,
+      qualification: p.qualification || undefined,
+      annual_income_band: p.annual_income_band || undefined,
+      relation,
+      is_primary_contact: Boolean(p.is_primary_contact),
+      is_fee_payer: Boolean(p.is_fee_payer),
+      is_emergency_contact: Boolean(p.is_emergency_contact),
+      can_pickup: Boolean(p.can_pickup),
+      lives_with: Boolean(p.lives_with),
+      whatsapp_consent: true,
+    };
+  };
+
+  // Map addresses
+  const currentAddr = profile.addresses.find(a => a.kind === "current");
+  const permAddr = profile.addresses.find(a => a.kind === "permanent");
+
+  const currentAddressInput: StudentAddressInput = {
+    kind: "current",
+    line1: currentAddr?.line1 || "",
+    line2: currentAddr?.line2 || undefined,
+    city: currentAddr?.city || "",
+    district: currentAddr?.district || "",
+    state: currentAddr?.state || "Uttar Pradesh",
+    pin: currentAddr?.pin || "",
+  };
+
+  const sameAsCurrent = Boolean(
+    permAddr &&
+    currentAddr &&
+    permAddr.line1 === currentAddr.line1 &&
+    permAddr.pin === currentAddr.pin
+  ) || !permAddr;
+
+  const permanentAddressInput: StudentAddressInput | undefined = permAddr && !sameAsCurrent ? {
+    kind: "permanent",
+    line1: permAddr.line1 || "",
+    line2: permAddr.line2 || undefined,
+    city: permAddr.city || "",
+    district: permAddr.district || "",
+    state: permAddr.state || "Uttar Pradesh",
+    pin: permAddr.pin || "",
+  } : undefined;
+
+  // Map active enrollment
+  const activeEnrollment = profile.enrollments.find(e => e.status === "active") || profile.enrollments[0];
+
+  // Map previous school
+  const prevSchool = profile.previous_schools?.[0];
+
+  // Map documents
+  const mappedDocuments: StudentDocumentInput[] = profile.documents.map(d => ({
+    doc_type: d.doc_type,
+    status: d.status,
+    file_name: d.file_name,
+    mime: d.mime,
+    size_bytes: d.size_bytes,
+    expected_on: d.expected_on,
+  }));
+
+  // Map transport
+  let transportPayload: { opt_in: boolean; route_id?: string; stop_id?: string; pickup?: boolean; dropoff?: boolean } = { opt_in: false, pickup: true, dropoff: true };
+  if (transportData?.assignment) {
+    const a = transportData.assignment;
+    transportPayload = {
+      opt_in: true,
+      route_id: a.route_id,
+      stop_id: a.pickup_stop_id || a.drop_stop_id || undefined,
+      pickup: a.service_type === "both" || a.service_type === "pickup_only",
+      dropoff: a.service_type === "both" || a.service_type === "drop_only",
+    };
+  }
+
+  const payload: AdmissionWizardPayload = {
+    step1_basic: {
+      first_name: profile.first_name,
+      middle_name: profile.middle_name || undefined,
+      last_name: profile.last_name,
+      dob: profile.dob,
+      gender: profile.gender,
+      nationality: profile.nationality || "Indian",
+      category: profile.category || "general",
+      blood_group: profile.blood_group || undefined,
+      religion: profile.religion || undefined,
+      mother_tongue: profile.mother_tongue || undefined,
+      photo_path: profile.photo_path || undefined,
+      sr_no: profile.sr_no || undefined,
+      apaar_id: profile.apaar_id || undefined,
+      admission_no: profile.admission_no,
+    },
+    step2_guardian: {
+      father: mapParent(father, 'father') || {
+        full_name: "",
+        phone: "",
+        relation: "father",
+        is_primary_contact: true,
+        whatsapp_consent: true,
+      },
+      mother: mapParent(mother, 'mother'),
+      guardian: mapParent(guardian, 'guardian'),
+      current_address: currentAddressInput,
+      permanent_address: permanentAddressInput,
+      same_as_current: sameAsCurrent,
+    },
+    step3_academic: {
+      academic_year_id: activeEnrollment?.academic_year_id || "ay-2026",
+      admission_date: profile.admission_date || new Date().toISOString().split("T")[0],
+      class_id: activeEnrollment?.class_id || profile.admission_class_id || "",
+      section_id: activeEnrollment?.section_id || undefined,
+      roll_no: activeEnrollment?.roll_no || undefined,
+      admission_type: (profile.admission_type as any) || "new",
+      is_rte: Boolean(profile.is_rte),
+      medium: profile.medium || "English",
+      house: profile.house || undefined,
+      previous_school: prevSchool ? {
+        school_name: prevSchool.school_name,
+        last_class: prevSchool.last_class || undefined,
+        board: prevSchool.board || undefined,
+        tc_no: prevSchool.tc_no || undefined,
+        tc_date: prevSchool.tc_date || undefined,
+      } : undefined,
+    },
+    step4_documents: mappedDocuments,
+    step5_sensitive: {},
+    step6_medical: profile.medical ? {
+      allergies: profile.medical.allergies || undefined,
+      conditions: profile.medical.conditions || undefined,
+      medications: profile.medical.medications || undefined,
+      special_needs: profile.medical.special_needs || undefined,
+      emergency_instructions: profile.medical.emergency_instructions || undefined,
+      doctor_name: profile.medical.doctor_name || undefined,
+      doctor_phone: profile.medical.doctor_phone || undefined,
+      vision_hearing_aids: profile.medical.vision_hearing_aids || undefined,
+      preferred_hospital: profile.medical.preferred_hospital || undefined,
+    } : {},
+    step7_transport: transportPayload,
+    step8_fee: {
+      fee_structure_id: activeFeeStructureId,
+      discount_concession: "none",
+    },
+  };
+
+  return {
+    payload,
+    student: profile,
+    existingAadhaarLast4: profile.aadhaar_last4 || null,
+  };
+}
+
+/**
+ * Persist updates from the 9-step Admission Wizard in edit mode.
+ * Strictly maintains existing student ID, admission number, admission date, and tenant boundaries.
+ * Does not create duplicate student or related records.
+ */
+export async function updateStudentFromWizard(
+  schoolId: string,
+  studentId: string,
+  payload: AdmissionWizardPayload,
+  actorId: string,
+  actorRole: string,
+  currentStep?: number
+): Promise<{ student?: Student; error?: string }> {
+  if (!schoolId || !studentId) {
+    return { error: "school_id and student_id are required" };
+  }
+
+  // Permission check
+  const roleLower = (actorRole || "admin").toLowerCase().trim().replace(/[\s-]+/g, "_");
+  const rolePermissions = getPermissionsForRole(roleLower);
+  const canWrite =
+    roleLower === "owner" ||
+    roleLower === "admin" ||
+    roleLower === "school_admin" ||
+    roleLower === "super_admin" ||
+    rolePermissions.includes("students.write") ||
+    (await hasPermission("students.write"));
+
+  if (!canWrite) {
+    return { error: "Insufficient permissions to update student" };
+  }
+
+  // Get current student for preservation & audit
+  const { student: currentStudent, error: studentError } = await getStudentById(schoolId, studentId);
+  if (studentError || !currentStudent) {
+    return { error: studentError || "Student not found in this school" };
+  }
+
+  const timestamp = new Date().toISOString();
+  let updatedStudent: Student = { ...currentStudent };
+
+  try {
+    // 1. Basic Info & Demographics (Step 1 or Full Save)
+    if (!currentStep || currentStep === 1 || currentStep === 9) {
+      const basicData = payload.step1_basic;
+      const studentFieldsToUpdate: Partial<Student> = {
+        first_name: basicData.first_name,
+        middle_name: basicData.middle_name || undefined,
+        last_name: basicData.last_name,
+        dob: basicData.dob,
+        gender: basicData.gender,
+        blood_group: basicData.blood_group || undefined,
+        nationality: basicData.nationality || "Indian",
+        religion: basicData.religion || undefined,
+        category: basicData.category,
+        mother_tongue: basicData.mother_tongue || undefined,
+        photo_path: basicData.photo_path || currentStudent.photo_path,
+        sr_no: basicData.sr_no || undefined,
+        apaar_id: basicData.apaar_id || undefined,
+        updated_at: timestamp,
+        updated_by: isValidUuid(actorId) ? actorId : null,
+      };
+
+      if (isSupabaseConfigured) {
+        const { error: updErr } = await supabase
+          .from("students")
+          .update(studentFieldsToUpdate)
+          .eq("id", studentId)
+          .eq("school_id", schoolId);
+        if (updErr) throw new Error(`Failed to update student basic info: ${updErr.message}`);
+      } else {
+        const cacheKey = getStudentsCacheKey(schoolId);
+        const cached = localStorage.getItem(cacheKey);
+        const students: Student[] = cached ? JSON.parse(cached) : [];
+        const idx = students.findIndex((s) => s.id === studentId);
+        if (idx !== -1) {
+          students[idx] = { ...students[idx], ...studentFieldsToUpdate };
+          localStorage.setItem(cacheKey, JSON.stringify(students));
+        }
+      }
+      updatedStudent = { ...updatedStudent, ...studentFieldsToUpdate };
+    }
+
+    // 2. Guardian & Addresses (Step 2 or Full Save)
+    if (!currentStep || currentStep === 2 || currentStep === 9) {
+      const guardianData = payload.step2_guardian;
+
+      // Addresses
+      const addrRes = await getStudentAddresses(schoolId, studentId);
+      const existingAddrs = addrRes.addresses || [];
+      const currentAddr = existingAddrs.find((a) => a.kind === "current");
+      const permAddr = existingAddrs.find((a) => a.kind === "permanent");
+
+      if (currentAddr) {
+        const upd = { ...guardianData.current_address, updated_at: timestamp };
+        if (isSupabaseConfigured) {
+          await supabase.from("student_addresses").update(upd).eq("id", currentAddr.id);
+        } else {
+          const cacheKey = getStudentAddressesCacheKey(schoolId);
+          const cached = localStorage.getItem(cacheKey);
+          const list: StudentAddress[] = cached ? JSON.parse(cached) : [];
+          const idx = list.findIndex((a) => a.id === currentAddr.id);
+          if (idx !== -1) list[idx] = { ...list[idx], ...upd };
+          localStorage.setItem(cacheKey, JSON.stringify(list));
+        }
+      } else if (guardianData.current_address?.line1) {
+        const newAddr: StudentAddress = {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: studentId,
+          kind: "current",
+          ...guardianData.current_address,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        if (isSupabaseConfigured) {
+          await supabase.from("student_addresses").insert(newAddr);
+        } else {
+          const cacheKey = getStudentAddressesCacheKey(schoolId);
+          const cached = localStorage.getItem(cacheKey);
+          const list: StudentAddress[] = cached ? JSON.parse(cached) : [];
+          list.push(newAddr);
+          localStorage.setItem(cacheKey, JSON.stringify(list));
+        }
+      }
+
+      // Permanent address handling
+      const targetPermAddr = guardianData.same_as_current
+        ? { ...guardianData.current_address, kind: "permanent" as const }
+        : guardianData.permanent_address;
+
+      if (targetPermAddr && targetPermAddr.line1) {
+        if (permAddr) {
+          const upd = { ...targetPermAddr, kind: "permanent" as const, updated_at: timestamp };
+          if (isSupabaseConfigured) {
+            await supabase.from("student_addresses").update(upd).eq("id", permAddr.id);
+          } else {
+            const cacheKey = getStudentAddressesCacheKey(schoolId);
+            const cached = localStorage.getItem(cacheKey);
+            const list: StudentAddress[] = cached ? JSON.parse(cached) : [];
+            const idx = list.findIndex((a) => a.id === permAddr.id);
+            if (idx !== -1) list[idx] = { ...list[idx], ...upd };
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        } else {
+          const newPerm: StudentAddress = {
+            id: crypto.randomUUID(),
+            school_id: schoolId,
+            student_id: studentId,
+            kind: "permanent",
+            ...targetPermAddr,
+            created_at: timestamp,
+            updated_at: timestamp,
+          };
+          if (isSupabaseConfigured) {
+            await supabase.from("student_addresses").insert(newPerm);
+          } else {
+            const cacheKey = getStudentAddressesCacheKey(schoolId);
+            const cached = localStorage.getItem(cacheKey);
+            const list: StudentAddress[] = cached ? JSON.parse(cached) : [];
+            list.push(newPerm);
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        }
+      }
+
+      // Parents & Guardians
+      const parentListRes = await getStudentParents(schoolId, studentId);
+      const existingParentLinks = parentListRes.parents || [];
+
+      const parentEntries = [
+        { key: "father", data: guardianData.father, relation: "father" as ParentRelation },
+        { key: "mother", data: guardianData.mother, relation: "mother" as ParentRelation },
+        { key: "guardian", data: guardianData.guardian, relation: "guardian" as ParentRelation },
+      ].filter((p) => p.data && p.data.phone);
+
+      for (const entry of parentEntries) {
+        const pData = entry.data!;
+        const cleanPhone = pData.phone.replace(/\D/g, "").slice(-10);
+        const existingLink = existingParentLinks.find((pl) => pl.relation === entry.relation);
+
+        if (existingLink) {
+          // Update parent info
+          const pUpd = {
+            full_name: pData.full_name,
+            phone: cleanPhone,
+            whatsapp_phone: pData.whatsapp_phone ? pData.whatsapp_phone.replace(/\D/g, "").slice(-10) : cleanPhone,
+            email: pData.email || null,
+            occupation: pData.occupation || null,
+            qualification: pData.qualification || null,
+            annual_income_band: pData.annual_income_band || null,
+            updated_at: timestamp,
+          };
+
+          if (isSupabaseConfigured) {
+            await supabase.from("parents").update(pUpd).eq("id", existingLink.id);
+            await supabase
+              .from("student_parents")
+              .update({
+                is_primary_contact: pData.is_primary_contact ?? (entry.relation === "father"),
+                is_fee_payer: pData.is_fee_payer ?? (entry.relation === "father"),
+                updated_at: timestamp,
+              })
+              .eq("student_id", studentId)
+              .eq("parent_id", existingLink.id);
+          } else {
+            const pKey = getParentsCacheKey(schoolId);
+            const pCached = localStorage.getItem(pKey);
+            const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
+            const idx = parents.findIndex((p) => p.id === existingLink.id);
+            if (idx !== -1) parents[idx] = { ...parents[idx], ...pUpd };
+            localStorage.setItem(pKey, JSON.stringify(parents));
+
+            const spKey = getStudentParentsCacheKey(schoolId);
+            const spCached = localStorage.getItem(spKey);
+            const links: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+            const lIdx = links.findIndex((l) => l.student_id === studentId && l.parent_id === existingLink.id);
+            if (lIdx !== -1) {
+              links[lIdx] = {
+                ...links[lIdx],
+                is_primary_contact: pData.is_primary_contact ?? (entry.relation === "father"),
+                is_fee_payer: pData.is_fee_payer ?? (entry.relation === "father"),
+                updated_at: timestamp,
+              };
+              localStorage.setItem(spKey, JSON.stringify(links));
+            }
+          }
+        } else {
+          // Link new parent
+          const lookup = await lookupParentByPhone(schoolId, cleanPhone);
+          let parentId: string;
+          if (lookup.found && lookup.parent) {
+            parentId = lookup.parent.id;
+          } else {
+            parentId = crypto.randomUUID();
+            const newParent: Parent = {
+              id: parentId,
+              school_id: schoolId,
+              full_name: pData.full_name,
+              phone: cleanPhone,
+              whatsapp_phone: pData.whatsapp_phone || cleanPhone,
+              email: pData.email || null,
+              occupation: pData.occupation || null,
+              qualification: pData.qualification || null,
+              annual_income_band: pData.annual_income_band || null,
+              created_at: timestamp,
+              updated_at: timestamp,
+            };
+            if (isSupabaseConfigured) {
+              await supabase.from("parents").insert(newParent);
+            } else {
+              const pKey = getParentsCacheKey(schoolId);
+              const pCached = localStorage.getItem(pKey);
+              const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
+              parents.push(newParent);
+              localStorage.setItem(pKey, JSON.stringify(parents));
+            }
+          }
+
+          const isPrimary = pData.is_primary_contact ?? (entry.relation === "father");
+          const link: StudentParent = {
+            id: crypto.randomUUID(),
+            school_id: schoolId,
+            student_id: studentId,
+            parent_id: parentId,
+            relation: entry.relation,
+            is_primary_contact: isPrimary,
+            is_fee_payer: pData.is_fee_payer ?? isPrimary,
+            is_emergency_contact: pData.is_emergency_contact ?? true,
+            can_pickup: pData.can_pickup ?? true,
+            lives_with: pData.lives_with ?? true,
+            created_at: timestamp,
+            updated_at: timestamp,
+          };
+
+          if (isSupabaseConfigured) {
+            await supabase.from("student_parents").insert(link);
+          } else {
+            const spKey = getStudentParentsCacheKey(schoolId);
+            const spCached = localStorage.getItem(spKey);
+            const links: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+            links.push(link);
+            localStorage.setItem(spKey, JSON.stringify(links));
+          }
+        }
+      }
+    }
+
+    // 3. Academic Details & Class Enrollment (Step 3 or Full Save)
+    if (!currentStep || currentStep === 3 || currentStep === 9) {
+      const acadData = payload.step3_academic;
+      const studentAcadUpdates: Partial<Student> = {
+        admission_class_id: acadData.class_id || currentStudent.admission_class_id,
+        medium: acadData.medium || currentStudent.medium,
+        house: acadData.house || undefined,
+        is_rte: Boolean(acadData.is_rte),
+        admission_type: acadData.admission_type || currentStudent.admission_type,
+        updated_at: timestamp,
+      };
+
+      if (isSupabaseConfigured) {
+        await supabase.from("students").update(studentAcadUpdates).eq("id", studentId).eq("school_id", schoolId);
+      } else {
+        const cacheKey = getStudentsCacheKey(schoolId);
+        const cached = localStorage.getItem(cacheKey);
+        const students: Student[] = cached ? JSON.parse(cached) : [];
+        const idx = students.findIndex((s) => s.id === studentId);
+        if (idx !== -1) {
+          students[idx] = { ...students[idx], ...studentAcadUpdates };
+          localStorage.setItem(cacheKey, JSON.stringify(students));
+        }
+      }
+      updatedStudent = { ...updatedStudent, ...studentAcadUpdates };
+
+      // Update active enrollment
+      const enrRes = await getStudentEnrollments(schoolId, studentId);
+      const enrollments = enrRes.enrollments || [];
+      const activeEnrollment = enrollments.find((e) => e.status === "active") || enrollments[0];
+
+      if (activeEnrollment) {
+        const enrUpd = {
+          class_id: acadData.class_id,
+          section_id: acadData.section_id || null,
+          roll_no: acadData.roll_no || null,
+          updated_at: timestamp,
+        };
+        if (isSupabaseConfigured) {
+          await supabase.from("student_enrollments").update(enrUpd).eq("id", activeEnrollment.id);
+        } else {
+          const cacheKey = getStudentEnrollmentsCacheKey(schoolId);
+          const cached = localStorage.getItem(cacheKey);
+          const list: StudentEnrollment[] = cached ? JSON.parse(cached) : [];
+          const idx = list.findIndex((e) => e.id === activeEnrollment.id);
+          if (idx !== -1) list[idx] = { ...list[idx], ...enrUpd };
+          localStorage.setItem(cacheKey, JSON.stringify(list));
+        }
+      } else if (acadData.class_id) {
+        const newEnrollment: StudentEnrollment = {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: studentId,
+          academic_year_id: acadData.academic_year_id || "ay-2026",
+          class_id: acadData.class_id,
+          section_id: acadData.section_id,
+          roll_no: acadData.roll_no,
+          status: "active",
+          enrolled_on: acadData.admission_date || timestamp.split("T")[0],
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        if (isSupabaseConfigured) {
+          await supabase.from("student_enrollments").insert(newEnrollment);
+        } else {
+          const cacheKey = getStudentEnrollmentsCacheKey(schoolId);
+          const cached = localStorage.getItem(cacheKey);
+          const list: StudentEnrollment[] = cached ? JSON.parse(cached) : [];
+          list.push(newEnrollment);
+          localStorage.setItem(cacheKey, JSON.stringify(list));
+        }
+      }
+
+      // Previous School
+      if (acadData.previous_school && acadData.previous_school.school_name) {
+        const psRes = await getStudentPreviousSchools(schoolId, studentId);
+        const existingPs = psRes.previousSchools?.[0];
+        if (existingPs) {
+          const psUpd = { ...acadData.previous_school, updated_at: timestamp };
+          if (isSupabaseConfigured) {
+            await supabase.from("student_previous_schools").update(psUpd).eq("id", existingPs.id);
+          } else {
+            const cacheKey = `myzkool_student_previous_schools_${schoolId}`;
+            const cached = localStorage.getItem(cacheKey);
+            const list = cached ? JSON.parse(cached) : [];
+            const idx = list.findIndex((x: any) => x.id === existingPs.id);
+            if (idx !== -1) list[idx] = { ...list[idx], ...psUpd };
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        } else {
+          const newPs: StudentPreviousSchool = {
+            id: crypto.randomUUID(),
+            school_id: schoolId,
+            student_id: studentId,
+            ...acadData.previous_school,
+            created_at: timestamp,
+            updated_at: timestamp,
+          };
+          if (isSupabaseConfigured) {
+            await supabase.from("student_previous_schools").insert(newPs);
+          } else {
+            const cacheKey = `myzkool_student_previous_schools_${schoolId}`;
+            const cached = localStorage.getItem(cacheKey);
+            const list = cached ? JSON.parse(cached) : [];
+            list.push(newPs);
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        }
+      }
+    }
+
+    // 4. Documents Vault (Step 4 or Full Save)
+    if (!currentStep || currentStep === 4 || currentStep === 9) {
+      const docRes = await getStudentDocuments(schoolId, studentId);
+      const existingDocs = docRes.documents || [];
+
+      for (const d of payload.step4_documents) {
+        const existing = existingDocs.find((ed) => ed.doc_type === d.doc_type);
+        if (existing) {
+          const docUpd = {
+            status: d.status || existing.status,
+            file_name: d.file_name || existing.file_name,
+            mime: d.mime || existing.mime,
+            size_bytes: d.size_bytes || existing.size_bytes,
+            expected_on: d.expected_on || existing.expected_on,
+            updated_at: timestamp,
+          };
+          if (isSupabaseConfigured) {
+            await supabase.from("student_documents").update(docUpd).eq("id", existing.id);
+          } else {
+            const cacheKey = getStudentDocumentsCacheKey(schoolId);
+            const cached = localStorage.getItem(cacheKey);
+            const list: StudentDocument[] = cached ? JSON.parse(cached) : [];
+            const idx = list.findIndex((item) => item.id === existing.id);
+            if (idx !== -1) list[idx] = { ...list[idx], ...docUpd };
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        } else {
+          const newDoc: StudentDocument = {
+            id: crypto.randomUUID(),
+            school_id: schoolId,
+            student_id: studentId,
+            doc_type: d.doc_type,
+            status: d.status || "uploaded",
+            file_name: d.file_name,
+            mime: d.mime,
+            size_bytes: d.size_bytes,
+            expected_on: d.expected_on,
+            storage_path: `documents/${schoolId}/${studentId}/${d.doc_type}.${d.file_name?.split(".").pop() || "pdf"}`,
+            uploaded_by: actorId,
+            uploaded_at: timestamp,
+            created_at: timestamp,
+            updated_at: timestamp,
+          };
+          if (isSupabaseConfigured) {
+            await supabase.from("student_documents").insert(newDoc);
+          } else {
+            const cacheKey = getStudentDocumentsCacheKey(schoolId);
+            const cached = localStorage.getItem(cacheKey);
+            const list: StudentDocument[] = cached ? JSON.parse(cached) : [];
+            list.push(newDoc);
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        }
+      }
+    }
+
+    // 5. Sensitive Identity / Aadhaar (Step 5 or Full Save)
+    if (!currentStep || currentStep === 5 || currentStep === 9) {
+      if (payload.step5_sensitive?.aadhaar_number) {
+        const clean = cleanAadhaar(payload.step5_sensitive.aadhaar_number);
+        if (clean && clean.length === 12) {
+          const last4 = clean.slice(-4);
+          const hash = hashAadhaar(clean);
+          const encRes = encryptSensitive(clean);
+
+          const sensRecord = {
+            student_id: studentId,
+            school_id: schoolId,
+            aadhaar_enc: encRes.packed,
+            aadhaar_last4: last4,
+            aadhaar_hash: hash,
+            updated_at: timestamp,
+          };
+
+          if (isSupabaseConfigured) {
+            await supabase.from("student_sensitive").upsert(sensRecord);
+            await supabase.from("students").update({ aadhaar_last4: last4, aadhaar_hash: hash }).eq("id", studentId);
+          } else {
+            const cacheKey = getStudentSensitiveCacheKey(schoolId);
+            const cached = localStorage.getItem(cacheKey);
+            const list: StudentSensitive[] = cached ? JSON.parse(cached) : [];
+            const idx = list.findIndex((s) => s.student_id === studentId);
+            if (idx !== -1) list[idx] = { ...list[idx], ...sensRecord };
+            else list.push({ ...sensRecord, created_at: timestamp });
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+
+            const sKey = getStudentsCacheKey(schoolId);
+            const sCached = localStorage.getItem(sKey);
+            const sList: Student[] = sCached ? JSON.parse(sCached) : [];
+            const sIdx = sList.findIndex((s) => s.id === studentId);
+            if (sIdx !== -1) {
+              sList[sIdx].aadhaar_last4 = last4;
+              sList[sIdx].aadhaar_hash = hash;
+              localStorage.setItem(sKey, JSON.stringify(sList));
+            }
+          }
+          updatedStudent.aadhaar_last4 = last4;
+          updatedStudent.aadhaar_hash = hash;
+        }
+      }
+    }
+
+    // 6. Medical Details (Step 6 or Full Save)
+    if (!currentStep || currentStep === 6 || currentStep === 9) {
+      if (payload.step6_medical && Object.keys(payload.step6_medical).length > 0) {
+        await updateStudentMedical(schoolId, studentId, payload.step6_medical, actorId, actorRole);
+      }
+    }
+
+    // 7. Transport Assignment (Step 7 or Full Save)
+    if (!currentStep || currentStep === 7 || currentStep === 9) {
+      if (payload.step7_transport) {
+        const activeAssignment = await getActiveAssignmentForStudent(schoolId, studentId);
+        const t = payload.step7_transport;
+
+        if (t.opt_in && t.route_id && t.stop_id) {
+          let serviceType: ServiceType = "both";
+          const pickup = t.pickup !== false;
+          const dropoff = t.dropoff !== false;
+          if (pickup && !dropoff) serviceType = "pickup_only";
+          else if (!pickup && dropoff) serviceType = "drop_only";
+
+          if (activeAssignment) {
+            if (
+              activeAssignment.route_id !== t.route_id ||
+              activeAssignment.pickup_stop_id !== t.stop_id ||
+              activeAssignment.service_type !== serviceType
+            ) {
+              await changeAssignment(schoolId, activeAssignment.id, {
+                new_route_id: t.route_id,
+                new_pickup_stop_id: t.stop_id,
+                new_drop_stop_id: t.stop_id,
+                new_service_type: serviceType,
+                effective_date: new Date().toISOString().split("T")[0],
+                override_reason: "Updated via Student Profile edit wizard",
+                actor_id: actorId,
+                actor_role: actorRole,
+              });
+            }
+          } else {
+            await createAssignment(schoolId, {
+              student_id: studentId,
+              academic_year_id: payload.step3_academic.academic_year_id || "ay-2026",
+              route_id: t.route_id,
+              pickup_stop_id: t.stop_id,
+              drop_stop_id: t.stop_id,
+              service_type: serviceType,
+              effective_from: new Date().toISOString().split("T")[0],
+              actor_id: actorId,
+              actor_role: actorRole,
+            });
+          }
+        } else if (t.opt_in === false && activeAssignment) {
+          await stopAssignment(schoolId, activeAssignment.id, {
+            effective_date: new Date().toISOString().split("T")[0],
+            reason: "Opted out via Student Profile edit wizard",
+            actor_id: actorId,
+            actor_role: actorRole,
+          });
+        }
+      }
+    }
+
+    // 8. Fee Structure Assignment (Step 8 or Full Save)
+    if (!currentStep || currentStep === 8 || currentStep === 9) {
+      if (payload.step8_fee?.fee_structure_id) {
+        let activeAssigns: any[] = [];
+        if (isSupabaseConfigured) {
+          const { data } = await supabase
+            .from("student_fee_assignments")
+            .select("*")
+            .eq("school_id", schoolId)
+            .eq("student_id", studentId)
+            .eq("status", "active");
+          activeAssigns = data || [];
+        } else {
+          const cached = localStorage.getItem(`myzkool_student_fee_assignments_${schoolId}`);
+          const all = cached ? JSON.parse(cached) : [];
+          activeAssigns = all.filter((a: any) => a.student_id === studentId && a.status === "active");
+        }
+
+        const currentStructureId = activeAssigns[0]?.structure_id;
+        if (!currentStructureId || currentStructureId !== payload.step8_fee.fee_structure_id) {
+          const schoolFeeService = createFeeService(schoolId);
+          await schoolFeeService.assignStructure(studentId, {
+            structureId: payload.step8_fee.fee_structure_id,
+            classId: payload.step3_academic.class_id,
+            academicYearId: payload.step3_academic.academic_year_id,
+            isRte: payload.step3_academic.is_rte,
+            admissionType: payload.step3_academic.admission_type,
+            actorId,
+          });
+        }
+      }
+    }
+
+    // Audit log entry
+    await logAudit({
+      school_id: schoolId,
+      actor_id: isValidUuid(actorId) ? actorId : null,
+      actor_role: actorRole,
+      entity_type: "students",
+      entity_id: studentId,
+      action: "student.updated",
+      before: { ...currentStudent },
+      after: {
+        admission_no: currentStudent.admission_no,
+        updated_at: timestamp,
+        step: currentStep || "all",
+      },
+      reason: `Updated student information via wizard step ${currentStep || "full"}`,
+    });
+
+    return { student: updatedStudent };
+  } catch (err: any) {
+    console.error("updateStudentFromWizard error:", err);
+    return { error: err?.message || "Failed to save student profile changes" };
+  }
+}
+
 export const admitStudent = admitStudentTransactional;
 
 export { STUDENT_PERMISSIONS, STUDENT_ROLE_PERMISSIONS };
 export type { StudentPermissionKey };
 export * from "./studentOperationsService";
+

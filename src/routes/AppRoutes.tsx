@@ -90,6 +90,7 @@ const BulkAssignPage = lazy(() =>
 const YearRenewalPage = lazy(() =>
   import("../pages/admin/transport/YearRenewalPage").then((m) => ({ default: m.YearRenewalPage }))
 );
+const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 export default function AppRoutes() {
   return (
@@ -169,6 +170,7 @@ export default function AppRoutes() {
             <Route path="students/tc" element={<StudentTCRegister />} />
             <Route path="students/id-cards" element={<StudentIdCards />} />
             <Route path="students/:id" element={<StudentProfileView />} />
+            <Route path="students/:id/edit" element={<StudentAdmissionWizard />} />
             <Route path="attendance" element={<ModulePlaceholder />} />
             <Route path="fees" element={<FeeDashboard />} />
             <Route path="fees/dashboard" element={<FeeDashboard />} />
@@ -203,17 +205,20 @@ export default function AppRoutes() {
             <Route path="transport/fees" element={<FeeZonesPage />} />
             <Route path="transport/assign" element={<BulkAssignPage />} />
             <Route path="transport/renewal" element={<YearRenewalPage />} />
+            <Route path="academics" element={<ModulePlaceholder />} />
             <Route path="staff" element={<ModulePlaceholder />} />
             <Route path="timetable" element={<ModulePlaceholder />} />
             <Route path="exams" element={<ModulePlaceholder />} />
             <Route path="communication" element={<ModulePlaceholder />} />
+            <Route path="library" element={<ModulePlaceholder />} />
+            <Route path="inventory" element={<ModulePlaceholder />} />
             <Route path="reports" element={<ModulePlaceholder />} />
             <Route path="settings" element={<ClassesSettings />} />
             <Route path="settings/classes" element={<ClassesSettings />} />
           </Route>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* 404 Catch-All */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
     </AuthProvider>

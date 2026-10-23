@@ -152,7 +152,6 @@ export default function ClassesSections() {
 
         if (!loadedSchool) {
           setPrerequisiteError("Please complete Step 1: School Profile first.");
-          setIsInitialLoading(false);
           return;
         }
         setSchool(loadedSchool);
@@ -163,7 +162,6 @@ export default function ClassesSections() {
 
         if (!loadedAY) {
           setPrerequisiteError("Please configure Step 2: Academic Year first.");
-          setIsInitialLoading(false);
           return;
         }
         setAcademicYear(loadedAY);
@@ -179,6 +177,7 @@ export default function ClassesSections() {
         setIsDirty(false);
       } catch (err: any) {
         console.error("Failed to load school classes data:", err);
+        if (!isMounted) return;
         setActionError("Failed to load school classes.");
       } finally {
         if (isMounted) {
@@ -382,9 +381,9 @@ export default function ClassesSections() {
     let suggestedLetter = "A";
 
     if (targetClass && targetClass.sections) {
-      const existingNames = targetClass.sections.map((s) => s.name.toUpperCase());
+      const existingNames = new Set(targetClass.sections.map((s) => s.name.toUpperCase()));
       const letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-      suggestedLetter = letters.find((l) => !existingNames.includes(l)) || "A";
+      suggestedLetter = letters.find((l) => !existingNames.has(l)) || "A";
     }
 
     setAddingSectionForClassId(classId);
@@ -649,7 +648,6 @@ export default function ClassesSections() {
 
       if (!res.success) {
         setActionError(res.error || "Failed to save classes. Please try again.");
-        setIsSubmitting(false);
         return;
       }
 
@@ -663,6 +661,7 @@ export default function ClassesSections() {
       setActionError(
         err?.message || "An unexpected error occurred while saving your classes."
       );
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -688,6 +687,8 @@ export default function ClassesSections() {
         });
       } catch (err) {
         console.warn("Background save on exit error:", err);
+      } finally {
+        setIsSavingAndExiting(false);
       }
     }
 
@@ -862,7 +863,7 @@ export default function ClassesSections() {
                 type="button"
                 onClick={() => handleSelectTemplate(tmpl.id)}
                 disabled={isSubmitting}
-                className="group flex flex-col items-start p-3 rounded-lg border border-[#E6EAF3] hover:border-[#2158E0] bg-[#F8FAFC] hover:bg-blue-50/50 transition-all text-left focus:outline-none focus:ring-2 focus:ring-[#2158E0] disabled:opacity-50"
+                className="group flex flex-col items-start p-3 rounded-lg border border-[#E6EAF3] hover:border-[#2158E0] bg-[#F8FAFC] hover:bg-blue-50/50 transition-colors text-left focus:outline-none focus:ring-2 focus:ring-[#2158E0] disabled:opacity-50"
               >
                 <div className="flex items-center justify-between w-full mb-1.5">
                   <div className="p-1.5 bg-white rounded border border-[#E6EAF3] group-hover:border-[#2158E0]/40">
@@ -937,7 +938,7 @@ export default function ClassesSections() {
                 return (
                   <div
                     key={cls.id}
-                    className="p-3.5 sm:p-4 rounded-lg border border-[#E6EAF3] bg-white hover:border-[#CBD5E1] transition-all space-y-3"
+                    className="p-3.5 sm:p-4 rounded-lg border border-[#E6EAF3] bg-white hover:border-[#CBD5E1] transition-colors space-y-3"
                   >
                     {/* Class Row Header */}
                     <div className="flex items-center justify-between gap-3">
@@ -1016,7 +1017,7 @@ export default function ClassesSections() {
                       {sectionList.map((sec) => (
                         <div
                           key={sec.id}
-                          className="group inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md bg-[#F8FAFC] border border-[#E6EAF3] hover:border-[#CBD5E1] text-xs text-[#141A2E] transition-all"
+                          className="group inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md bg-[#F8FAFC] border border-[#E6EAF3] hover:border-[#CBD5E1] text-xs text-[#141A2E] transition-colors"
                         >
                           <span className="font-semibold text-[#141A2E]">
                             {sec.name}
@@ -1081,7 +1082,7 @@ export default function ClassesSections() {
             type="button"
             onClick={handleContinue}
             disabled={isSubmitting || classes.length === 0}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#2158E0] hover:bg-[#1A46B8] disabled:bg-[#94A3B8] text-white rounded-lg text-sm font-semibold transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:ring-offset-2"
           >
             {isSubmitting ? (
               <>
@@ -1100,18 +1101,28 @@ export default function ClassesSections() {
 
       {/* MODAL 1: Add Class */}
       {showAddClassModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setShowAddClassModal(false);
+              };
+            }
+          }}
           aria-labelledby="add-class-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B0F19]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-[#0B0F19]/50 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setShowAddClassModal(false);
+          }}
         >
           <div className="bg-white rounded-xl shadow-xl border border-[#E6EAF3] max-w-md w-full p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#F1F4F9]">
               <h3 id="add-class-title" className="text-base font-bold text-[#141A2E]">
                 Add New Class
               </h3>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setShowAddClassModal(false)}
                 className="text-[#94A3B8] hover:text-[#141A2E] p-1 rounded"
@@ -1202,23 +1213,33 @@ export default function ClassesSections() {
               </div>
             </form>
           </div>
-        </div>
+        </dialog>
       )}
 
       {/* MODAL 2: Rename Class */}
       {editingClass && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setEditingClass(null);
+              };
+            }
+          }}
           aria-labelledby="edit-class-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B0F19]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-[#0B0F19]/50 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setEditingClass(null);
+          }}
         >
           <div className="bg-white rounded-xl shadow-xl border border-[#E6EAF3] max-w-sm w-full p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#F1F4F9]">
               <h3 id="edit-class-title" className="text-base font-bold text-[#141A2E]">
                 Rename Class
               </h3>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setEditingClass(null)}
                 className="text-[#94A3B8] hover:text-[#141A2E] p-1 rounded"
@@ -1270,23 +1291,33 @@ export default function ClassesSections() {
               </div>
             </form>
           </div>
-        </div>
+        </dialog>
       )}
 
       {/* MODAL 3: Add Section */}
       {addingSectionForClassId && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setAddingSectionForClassId(null);
+              };
+            }
+          }}
           aria-labelledby="add-section-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B0F19]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-[#0B0F19]/50 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setAddingSectionForClassId(null);
+          }}
         >
           <div className="bg-white rounded-xl shadow-xl border border-[#E6EAF3] max-w-sm w-full p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#F1F4F9]">
               <h3 id="add-section-title" className="text-base font-bold text-[#141A2E]">
                 Add Section
               </h3>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setAddingSectionForClassId(null)}
                 className="text-[#94A3B8] hover:text-[#141A2E] p-1 rounded"
@@ -1304,10 +1335,10 @@ export default function ClassesSections() {
 
             <form onSubmit={handleCreateSection} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                <label htmlFor="classessections-section-name" className="block text-xs font-semibold text-[#141A2E] mb-1">
                   Section Name *
                 </label>
-                <input
+                <input id="classessections-section-name"
                   type="text"
                   required
                   placeholder="e.g. C, D"
@@ -1319,10 +1350,10 @@ export default function ClassesSections() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                <label htmlFor="classessections-student-capacity" className="block text-xs font-semibold text-[#141A2E] mb-1">
                   Student Capacity
                 </label>
-                <input
+                <input id="classessections-student-capacity" aria-label="Student Capacity"
                   type="number"
                   min="1"
                   max="200"
@@ -1349,23 +1380,33 @@ export default function ClassesSections() {
               </div>
             </form>
           </div>
-        </div>
+        </dialog>
       )}
 
       {/* MODAL 4: Edit Section */}
       {editingSection && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setEditingSection(null);
+              };
+            }
+          }}
           aria-labelledby="edit-section-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B0F19]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-[#0B0F19]/50 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setEditingSection(null);
+          }}
         >
           <div className="bg-white rounded-xl shadow-xl border border-[#E6EAF3] max-w-sm w-full p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#F1F4F9]">
               <h3 id="edit-section-title" className="text-base font-bold text-[#141A2E]">
                 Edit Section
               </h3>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setEditingSection(null)}
                 className="text-[#94A3B8] hover:text-[#141A2E] p-1 rounded"
@@ -1383,10 +1424,10 @@ export default function ClassesSections() {
 
             <form onSubmit={handleUpdateSection} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                <label htmlFor="classessections-section-name-2" className="block text-xs font-semibold text-[#141A2E] mb-1">
                   Section Name *
                 </label>
-                <input
+                <input id="classessections-section-name-2" aria-label="Section Name"
                   type="text"
                   required
                   value={editSectionName}
@@ -1397,10 +1438,10 @@ export default function ClassesSections() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#141A2E] mb-1">
+                <label htmlFor="classessections-student-capacity-2" className="block text-xs font-semibold text-[#141A2E] mb-1">
                   Student Capacity
                 </label>
-                <input
+                <input id="classessections-student-capacity-2" aria-label="Student Capacity"
                   type="number"
                   min="1"
                   max="200"
@@ -1427,16 +1468,26 @@ export default function ClassesSections() {
               </div>
             </form>
           </div>
-        </div>
+        </dialog>
       )}
 
       {/* MODAL 5: Template Replace Confirmation */}
       {pendingTemplateId && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setPendingTemplateId(null);
+              };
+            }
+          }}
           aria-labelledby="template-replace-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B0F19]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-[#0B0F19]/50 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setPendingTemplateId(null);
+          }}
         >
           <div className="bg-white rounded-xl shadow-xl border border-[#E6EAF3] max-w-md w-full p-5 space-y-4">
             <div className="flex items-start gap-3">
@@ -1470,16 +1521,26 @@ export default function ClassesSections() {
               </button>
             </div>
           </div>
-        </div>
+        </dialog>
       )}
 
       {/* MODAL 6: Delete Confirmation Modal */}
       {deleteTarget && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setDeleteTarget(null);
+              };
+            }
+          }}
           aria-labelledby="delete-dialog-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B0F19]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-[#0B0F19]/50 backdrop-blur-xs flex items-center justify-center backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setDeleteTarget(null);
+          }}
         >
           <div className="bg-white rounded-xl shadow-xl border border-[#E6EAF3] max-w-md w-full p-5 space-y-4">
             <div className="flex items-start gap-3">
@@ -1537,7 +1598,7 @@ export default function ClassesSections() {
               )}
             </div>
           </div>
-        </div>
+        </dialog>
       )}
     </OnboardingLayout>
   );

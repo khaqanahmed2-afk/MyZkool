@@ -11,7 +11,7 @@
  * - Duplicate copy issuance and marking
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   FileText,
@@ -54,14 +54,12 @@ export default function TransferCertificateModal({
   actorRole,
   onSuccess,
 }: TransferCertificateModalProps) {
-  if (!isOpen) return null;
-
   const [mode, setMode] = useState<"status_only" | "tc_issue" | "preview">("status_only");
 
   // Form Fields
   const [newStatus, setNewStatus] = useState<StudentStatus>("transferred");
   const [effectiveDate, setEffectiveDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    () => new Date().toISOString().split("T")[0]
   );
   const [reason, setReason] = useState<string>("");
   const [conduct, setConduct] = useState<string>("Good");
@@ -70,7 +68,7 @@ export default function TransferCertificateModal({
   // Dues Check
   const [duesPaise, setDuesPaise] = useState<number>(0);
   const [duesOverrideReason, setDuesOverrideReason] = useState<string>("");
-  const [isCheckingDues, setIsCheckingDues] = useState(true);
+  const isCheckingDuesRef = useRef(true);
 
   // Transport Check
   const [hasTransport, setHasTransport] = useState(false);
@@ -85,23 +83,35 @@ export default function TransferCertificateModal({
   const isOwner = actorRole.toLowerCase() === "owner" || actorRole.toLowerCase() === "school_admin";
 
   useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+
     async function checkStudentState() {
-      setIsCheckingDues(true);
+      isCheckingDuesRef.current = true;
       try {
         const [feeRes, trans] = await Promise.all([
           feeService.getStudentBalance(student.id),
           transportService.getStudentTransport(student.id),
         ]);
+        if (!isMounted) return;
         setDuesPaise(feeRes?.balance || 0);
         setHasTransport(Boolean(trans?.assignment));
       } catch (err) {
         console.error("Failed to check dues or transport:", err);
       } finally {
-        setIsCheckingDues(false);
+        if (isMounted) {
+          isCheckingDuesRef.current = false;
+        }
       }
     }
     checkStudentState();
-  }, [student.id]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [student.id, isOpen]);
+
+  if (!isOpen) return null;
 
   const handleStatusChangeOnly = async () => {
     if (!reason.trim()) {
@@ -180,7 +190,7 @@ export default function TransferCertificateModal({
                 : "Student Status Change & TC"}
             </h3>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={onClose}
             className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
           >
@@ -245,10 +255,10 @@ export default function TransferCertificateModal({
               {/* Status & Effective Date */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  <label htmlFor="transfercertificatemodal-new-student-status" className="block text-xs font-semibold text-gray-700 mb-1">
                     New Student Status
                   </label>
-                  <select
+                  <select id="transfercertificatemodal-new-student-status" aria-label="New Student Status"
                     value={newStatus}
                     onChange={(e) => setNewStatus(e.target.value as StudentStatus)}
                     disabled={mode === "tc_issue"}
@@ -262,10 +272,10 @@ export default function TransferCertificateModal({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  <label htmlFor="transfercertificatemodal-effective-date" className="block text-xs font-semibold text-gray-700 mb-1">
                     Effective Date
                   </label>
-                  <input
+                  <input id="transfercertificatemodal-effective-date" aria-label="Effective Date"
                     type="date"
                     value={effectiveDate}
                     onChange={(e) => setEffectiveDate(e.target.value)}
@@ -287,10 +297,10 @@ export default function TransferCertificateModal({
 
                   {mode === "tc_issue" && (
                     <div className="pt-2">
-                      <label className="block text-xs font-bold text-amber-900 mb-1 uppercase">
+                      <label htmlFor="transfercertificatemodal-owner-override-reason-required" className="block text-xs font-bold text-amber-900 mb-1 uppercase">
                         Owner Override Reason (Required)
                       </label>
-                      <input
+                      <input id="transfercertificatemodal-owner-override-reason-required"
                         type="text"
                         placeholder="State why TC is authorized despite outstanding dues..."
                         value={duesOverrideReason}
@@ -329,10 +339,10 @@ export default function TransferCertificateModal({
 
               {/* Reason for status / leaving */}
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label htmlFor="transfercertificatemodal-reason-mandatory" className="block text-xs font-semibold text-gray-700 mb-1">
                   Reason (Mandatory)
                 </label>
-                <textarea
+                <textarea id="transfercertificatemodal-reason-mandatory"
                   rows={2}
                   placeholder="Reason for change or departure (e.g. Relocating to another state)..."
                   value={reason}
@@ -345,10 +355,10 @@ export default function TransferCertificateModal({
               {mode === "tc_issue" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    <label htmlFor="transfercertificatemodal-student-conduct" className="block text-xs font-semibold text-gray-700 mb-1">
                       Student Conduct
                     </label>
-                    <select
+                    <select id="transfercertificatemodal-student-conduct" aria-label="Student Conduct"
                       value={conduct}
                       onChange={(e) => setConduct(e.target.value)}
                       className="w-full border-gray-300 rounded-lg text-sm p-2 border"
@@ -359,10 +369,10 @@ export default function TransferCertificateModal({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    <label htmlFor="transfercertificatemodal-general-remarks" className="block text-xs font-semibold text-gray-700 mb-1">
                       General Remarks
                     </label>
-                    <input
+                    <input id="transfercertificatemodal-general-remarks"
                       type="text"
                       placeholder="Optional remarks..."
                       value={remarks}

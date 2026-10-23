@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   Search,
@@ -40,7 +40,7 @@ const CONCESSION_TYPES = [
   { id: "other", label: "Other" },
 ];
 
-export function AddConcessionDrawer({
+const AddConcessionDrawerContent: React.FC<AddConcessionDrawerProps> = ({
   isOpen,
   onClose,
   onSubmit,
@@ -50,7 +50,7 @@ export function AddConcessionDrawer({
   feeHeads,
   concessionRules,
   initialStudent,
-}: AddConcessionDrawerProps) {
+}) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<any>(initialStudent || null);
@@ -59,50 +59,34 @@ export function AddConcessionDrawer({
   const [concessionType, setConcessionType] = useState("sibling");
   const [discountType, setDiscountType] = useState<"percent" | "fixed">("percent");
   const [discountValue, setDiscountValue] = useState<number>(10);
-  const [selectedHeadIds, setSelectedHeadIds] = useState<string[]>([]);
+
+  const defaultHeadId = useMemo(() => {
+    if (!feeHeads || feeHeads.length === 0) return "";
+    const tuition = feeHeads.find(
+      (h) => h.code === "tuition_fee" || h.name.toLowerCase().includes("tuition")
+    );
+    return tuition ? tuition.id : feeHeads[0].id;
+  }, [feeHeads]);
+
+  const [customHeadIds, setCustomHeadIds] = useState<string[] | null>(null);
+  const selectedHeadIds = customHeadIds ?? (defaultHeadId ? [defaultHeadId] : []);
+
   const [validFrom, setValidFrom] = useState("2026-04-01");
   const [validTo, setValidTo] = useState("2027-03-31");
   const [billingPeriod, setBillingPeriod] = useState("monthly");
-  const [academicYearId, setAcademicYearId] = useState("");
+  const [userAcademicYearId, setUserAcademicYearId] = useState("");
+  const academicYearId = userAcademicYearId || academicYears[0]?.id || "";
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
 
   // Document Upload
   const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [uploadedDocUrl, setUploadedDocUrl] = useState<string | null>(null);
+  const uploadedDocUrlRef = useRef<string | null>(null);
   const [uploadedDocName, setUploadedDocName] = useState<string | null>(null);
 
   // Status
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Set default academic year
-  useEffect(() => {
-    if (academicYears.length > 0 && !academicYearId) {
-      setAcademicYearId(academicYears[0].id);
-    }
-  }, [academicYears, academicYearId]);
-
-  // Set initial default fee head (Tuition Fee)
-  useEffect(() => {
-    if (feeHeads.length > 0 && selectedHeadIds.length === 0) {
-      const tuition = feeHeads.find(
-        (h) => h.code === "tuition_fee" || h.name.toLowerCase().includes("tuition")
-      );
-      if (tuition) {
-        setSelectedHeadIds([tuition.id]);
-      } else {
-        setSelectedHeadIds([feeHeads[0].id]);
-      }
-    }
-  }, [feeHeads, selectedHeadIds]);
-
-  // Sync initial student
-  useEffect(() => {
-    if (initialStudent) {
-      setSelectedStudent(initialStudent);
-    }
-  }, [initialStudent]);
 
   if (!isOpen) return null;
 
@@ -125,13 +109,12 @@ export function AddConcessionDrawer({
   };
 
   const handleToggleHead = (headId: string) => {
-    setSelectedHeadIds((prev) => {
-      if (prev.includes(headId)) {
-        // Keep at least one or allow empty for all
-        return prev.filter((id) => id !== headId);
-      }
-      return [...prev, headId];
-    });
+    const current = selectedHeadIds;
+    if (current.includes(headId)) {
+      setCustomHeadIds(current.filter((id) => id !== headId));
+    } else {
+      setCustomHeadIds([...current, headId]);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,7 +127,7 @@ export function AddConcessionDrawer({
       if (res.error) {
         setErrorMsg(res.error);
       } else if (res.url) {
-        setUploadedDocUrl(res.url);
+        uploadedDocUrlRef.current = res.url;
         setUploadedDocName(res.name);
       }
     } catch (err: any) {
@@ -216,17 +199,22 @@ export function AddConcessionDrawer({
       valid_to: validTo,
       billing_period: billingPeriod,
       reason: reason || "Fee Concession",
-      document_url: uploadedDocUrl,
+      document_url: uploadedDocUrlRef.current,
       document_name: uploadedDocName,
       notes: notes,
     };
 
-    const success = await onSubmit(input);
-    setSubmitting(false);
-    if (success) {
-      onClose();
-    } else {
-      setErrorMsg("Failed to create concession. Please check inputs and try again.");
+    try {
+      const success = await onSubmit(input);
+      if (success) {
+        onClose();
+      } else {
+        setErrorMsg("Failed to create concession. Please check inputs and try again.");
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to create concession. Please check inputs and try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -234,17 +222,19 @@ export function AddConcessionDrawer({
     ? [selectedStudent.first_name, selectedStudent.last_name].filter(Boolean).join(" ")
     : "";
 
+  const selectedHeadIdSet = new Set(selectedHeadIds);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity" onClick={onClose} />
+      <div aria-hidden="true" className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity" onClick={onClose} />
 
       {/* Slide-over Drawer */}
       <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-200">
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E6EAF3]">
           <h2 className="text-base font-bold text-slate-900">Add Concession</h2>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -354,12 +344,12 @@ export function AddConcessionDrawer({
           {currentStep === 1 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                <label htmlFor="addconcessiondrawer-select-student" className="block text-xs font-bold text-slate-900 mb-1.5">
                   Select Student
                 </label>
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
+                  <input id="addconcessiondrawer-select-student"
                     type="text"
                     value={studentSearch}
                     onChange={(e) => setStudentSearch(e.target.value)}
@@ -374,7 +364,7 @@ export function AddConcessionDrawer({
                     {filteredStudents.map((st) => {
                       const name = [st.first_name, st.last_name].filter(Boolean).join(" ");
                       return (
-                        <div
+                        <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                           key={st.id}
                           onClick={() => handleSelectStudent(st)}
                           className="px-3.5 py-2.5 hover:bg-emerald-50/50 cursor-pointer flex items-center justify-between transition-colors"
@@ -409,7 +399,7 @@ export function AddConcessionDrawer({
                       </p>
                     </div>
                   </div>
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setSelectedStudent(null)}
                     className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
@@ -434,11 +424,11 @@ export function AddConcessionDrawer({
             <div className="space-y-4">
               {/* Concession Type */}
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1">
+                <label htmlFor="addconcessiondrawer-concession-type" className="block text-xs font-bold text-slate-900 mb-1">
                   Concession Type <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <select
+                  <select id="addconcessiondrawer-concession-type" aria-label="Concession Type"
                     value={concessionType}
                     onChange={(e) => setConcessionType(e.target.value)}
                     className="w-full appearance-none px-3.5 py-2 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -458,16 +448,16 @@ export function AddConcessionDrawer({
 
               {/* Discount Details (2 cols) */}
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                <span className="block text-xs font-bold text-slate-900 mb-1.5">
                   Discount Details
-                </label>
+                </span>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    <label htmlFor="addconcessiondrawer-discount-type" className="block text-[11px] font-semibold text-slate-500 mb-1">
                       Discount Type <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <select
+                      <select id="addconcessiondrawer-discount-type" aria-label="Discount Type"
                         value={discountType}
                         onChange={(e) => setDiscountType(e.target.value as any)}
                         className="w-full appearance-none px-3 py-2 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -480,16 +470,22 @@ export function AddConcessionDrawer({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    <label htmlFor="addconcessiondrawer-discount-value" className="block text-[11px] font-semibold text-slate-500 mb-1">
                       Discount Value <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <input
+                      <input id="addconcessiondrawer-discount-value" aria-label="Discount Value"
                         type="number"
                         min="1"
                         max={discountType === "percent" ? 100 : 1000000}
                         value={discountValue}
-                        onChange={(e) => setDiscountValue(Number(e.target.value))}
+                        onChange={(e) =>
+                          setDiscountValue(
+                            Number.isFinite(e.currentTarget.valueAsNumber)
+                              ? e.currentTarget.valueAsNumber
+                              : 0
+                          )
+                        }
                         className="w-full pl-3 pr-8 py-2 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:border-[#00875A]"
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
@@ -502,18 +498,18 @@ export function AddConcessionDrawer({
 
               {/* Applicable Fee Components */}
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                <label htmlFor="addconcessiondrawer-applicable-fee-components" className="block text-xs font-bold text-slate-900 mb-1.5">
                   Applicable Fee Components
                 </label>
                 <div className="grid grid-cols-2 gap-2.5 p-3 bg-slate-50 rounded-xl border border-[#E6EAF3]">
                   {feeHeads.map((head) => {
-                    const isChecked = selectedHeadIds.includes(head.id);
+                    const isChecked = selectedHeadIdSet.has(head.id);
                     return (
                       <label
                         key={head.id}
                         className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer"
                       >
-                        <input
+                        <input id="addconcessiondrawer-applicable-fee-components"
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleHead(head.id)}
@@ -533,14 +529,14 @@ export function AddConcessionDrawer({
             <div className="space-y-4">
               {/* Validity Dates */}
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1.5">Validity</label>
+                <span className="block text-xs font-bold text-slate-900 mb-1.5">Validity</span>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    <label htmlFor="addconcessiondrawer-valid-from" className="block text-[11px] font-semibold text-slate-500 mb-1">
                       Valid From <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <input
+                      <input id="addconcessiondrawer-valid-from" aria-label="Valid From"
                         type="date"
                         value={validFrom}
                         onChange={(e) => setValidFrom(e.target.value)}
@@ -551,11 +547,11 @@ export function AddConcessionDrawer({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    <label htmlFor="addconcessiondrawer-valid-to" className="block text-[11px] font-semibold text-slate-500 mb-1">
                       Valid To <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <input
+                      <input id="addconcessiondrawer-valid-to" aria-label="Valid To"
                         type="date"
                         value={validTo}
                         onChange={(e) => setValidTo(e.target.value)}
@@ -570,11 +566,11 @@ export function AddConcessionDrawer({
               {/* Billing Period & Academic Year */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  <label htmlFor="addconcessiondrawer-billing-period" className="block text-[11px] font-semibold text-slate-500 mb-1">
                     Billing Period
                   </label>
                   <div className="relative">
-                    <select
+                    <select id="addconcessiondrawer-billing-period" aria-label="Billing Period"
                       value={billingPeriod}
                       onChange={(e) => setBillingPeriod(e.target.value)}
                       className="w-full appearance-none px-3 py-2 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
@@ -589,13 +585,13 @@ export function AddConcessionDrawer({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  <label htmlFor="addconcessiondrawer-academic-year" className="block text-[11px] font-semibold text-slate-500 mb-1">
                     Academic Year
                   </label>
                   <div className="relative">
-                    <select
+                    <select id="addconcessiondrawer-academic-year" aria-label="Academic Year"
                       value={academicYearId}
-                      onChange={(e) => setAcademicYearId(e.target.value)}
+                      onChange={(e) => setUserAcademicYearId(e.target.value)}
                       className="w-full appearance-none px-3 py-2 bg-white border border-[#E6EAF3] rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#00875A] cursor-pointer"
                     >
                       {academicYears.map((y) => (
@@ -611,8 +607,8 @@ export function AddConcessionDrawer({
 
               {/* Reason */}
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1">Reason</label>
-                <textarea
+                <label htmlFor="addconcessiondrawer-reason" className="block text-xs font-bold text-slate-900 mb-1">Reason</label>
+                <textarea id="addconcessiondrawer-reason"
                   rows={2}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -623,11 +619,11 @@ export function AddConcessionDrawer({
 
               {/* Supporting Documents Dropzone */}
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1">
+                <label htmlFor="addconcessiondrawer-supporting-documents-optional" className="block text-xs font-bold text-slate-900 mb-1">
                   Supporting Documents <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <div className="relative border-2 border-dashed border-[#E6EAF3] hover:border-[#00875A] rounded-xl p-5 text-center transition-colors cursor-pointer bg-slate-50/50">
-                  <input
+                  <input id="addconcessiondrawer-supporting-documents-optional" aria-label="Supporting Documents (Optional)"
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg"
                     onChange={handleFileUpload}
@@ -789,4 +785,9 @@ export function AddConcessionDrawer({
       </div>
     </div>
   );
+};
+
+export function AddConcessionDrawer(props: AddConcessionDrawerProps) {
+  if (!props.isOpen) return null;
+  return <AddConcessionDrawerContent key={props.initialStudent?.id || "open"} {...props} />;
 }

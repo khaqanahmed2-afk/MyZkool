@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import {
   Bus,
@@ -95,23 +95,23 @@ export function VehiclesPage() {
     }
   };
 
+  const searchParamsRef = useRef(searchParams);
   useEffect(() => {
+    searchParamsRef.current = searchParams;
+  });
+
+  const handleOpenProfile = useCallback(async (v: EnrichedVehicle) => {
     if (!schoolId) return;
-    checkSchoolFeature(schoolId, "transport").then((enabled) => {
-      setHasFeature(enabled);
-      if (enabled) {
-        loadVehicles();
-        // Check if query params have ?action=new
-        if (searchParams.get("action") === "new") {
-          setShowAddModal(true);
-        }
-      } else {
-        setLoading(false);
-      }
-    });
+    try {
+      const docs = await getVehicleDocuments(schoolId, v.id);
+      setSelectedDocs(docs);
+      setSelectedVehicle(v);
+    } catch (err) {
+      console.error("Failed to load vehicle documents:", err);
+    }
   }, [schoolId]);
 
-  async function loadVehicles() {
+  const loadVehicles = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     setErrorMessage("");
@@ -120,7 +120,7 @@ export function VehiclesPage() {
       setVehicles(data);
 
       // If URL has ?id=xxx, auto open its profile modal
-      const targetId = searchParams.get("id");
+      const targetId = searchParamsRef.current.get("id");
       if (targetId) {
         const found = data.find((v) => v.id === targetId);
         if (found) {
@@ -133,7 +133,23 @@ export function VehiclesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [schoolId, handleOpenProfile]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    checkSchoolFeature(schoolId, "transport").then((enabled) => {
+      setHasFeature(enabled);
+      if (enabled) {
+        loadVehicles();
+        // Check if query params have ?action=new
+        if (searchParamsRef.current.get("action") === "new") {
+          setShowAddModal(true);
+        }
+      } else {
+        setLoading(false);
+      }
+    });
+  }, [schoolId, loadVehicles]);
 
   async function handleRefresh() {
     if (!schoolId || refreshing) return;
@@ -145,17 +161,6 @@ export function VehiclesPage() {
       console.error("Failed to refresh vehicles:", err);
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  async function handleOpenProfile(v: EnrichedVehicle) {
-    if (!schoolId) return;
-    try {
-      const docs = await getVehicleDocuments(schoolId, v.id);
-      setSelectedDocs(docs);
-      setSelectedVehicle(v);
-    } catch (err) {
-      console.error("Failed to load vehicle documents:", err);
     }
   }
 
@@ -198,44 +203,47 @@ export function VehiclesPage() {
     setAddError("");
     setIsSubmitting(true);
 
-    const res = await createVehicle(schoolId, {
-      registration_no: regNo,
-      vehicle_type: vehicleType,
-      make_model: makeModel.trim(),
-      capacity: Number(capacity) || 30,
-      fuel_type: fuelType,
-      ownership,
-      vendor_name: ownership === "contract" ? vendorName.trim() : null,
-      vendor_phone: ownership === "contract" ? vendorPhone.trim() : null,
-      status: "active",
-      safety_items: {
-        first_aid: false,
-        fire_extinguisher: false,
-        speed_governor: false,
-        cctv: false,
-        gps: false,
-        attendant_seat: false,
-      },
-    });
+    try {
+      const res = await createVehicle(schoolId, {
+        registration_no: regNo,
+        vehicle_type: vehicleType,
+        make_model: makeModel.trim(),
+        capacity: Number(capacity) || 30,
+        fuel_type: fuelType,
+        ownership,
+        vendor_name: ownership === "contract" ? vendorName.trim() : null,
+        vendor_phone: ownership === "contract" ? vendorPhone.trim() : null,
+        status: "active",
+        safety_items: {
+          first_aid: false,
+          fire_extinguisher: false,
+          speed_governor: false,
+          cctv: false,
+          gps: false,
+          attendant_seat: false,
+        },
+      });
 
-    setIsSubmitting(false);
-    if (!res.success) {
-      setAddError(res.error || "Failed to register vehicle.");
-      return;
-    }
+      if (!res.success) {
+        setAddError(res.error || "Failed to register vehicle.");
+        return;
+      }
 
-    setShowAddModal(false);
-    setRegNo("");
-    setMakeModel("");
-    setCapacity(40);
-    setVendorName("");
-    setVendorPhone("");
-    // Clear ?action=new if present
-    if (searchParams.get("action")) {
-      searchParams.delete("action");
-      setSearchParams(searchParams, { replace: true });
+      setShowAddModal(false);
+      setRegNo("");
+      setMakeModel("");
+      setCapacity(40);
+      setVendorName("");
+      setVendorPhone("");
+      // Clear ?action=new if present
+      if (searchParams.get("action")) {
+        searchParams.delete("action");
+        setSearchParams(searchParams, { replace: true });
+      }
+      loadVehicles();
+    } finally {
+      setIsSubmitting(false);
     }
-    loadVehicles();
   }
 
   const handleCloseAddModal = () => {
@@ -301,7 +309,7 @@ export function VehiclesPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white text-xs font-bold text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 shadow-sm transition-colors"
             title="Return to Transport Dashboard"
           >
             <ArrowLeft className="w-4 h-4 text-[#2158E0]" />
@@ -342,7 +350,7 @@ export function VehiclesPage() {
               setAddError("");
               setShowAddModal(true);
             }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm shadow-blue-500/20 transition-all hover:shadow-md"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2158E0] hover:bg-blue-600 text-white font-bold text-xs shadow-sm shadow-blue-500/20 transition hover:shadow-md"
           >
             <Plus className="w-4 h-4" />
             Add Vehicle
@@ -376,15 +384,15 @@ export function VehiclesPage() {
           {/* Search Field */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
+            <input aria-label="Search vehicles"
               type="text"
               placeholder="Search by registration number, make/model, or vendor..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-[#E6EAF3] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#2158E0] bg-gray-50/50 focus:bg-white transition-all"
+              className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-[#E6EAF3] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#2158E0] bg-gray-50/50 focus:bg-white transition-colors"
             />
             {search && (
-              <button
+              <button aria-label="Close"
                 onClick={() => setSearch("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
               >
@@ -396,7 +404,7 @@ export function VehiclesPage() {
           {/* Filter Dropdowns */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Status Filter */}
-            <select
+            <select aria-label="Status Filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold bg-white text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -408,7 +416,7 @@ export function VehiclesPage() {
             </select>
 
             {/* Type Filter */}
-            <select
+            <select aria-label="Type Filter"
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
               className="px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold bg-white text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -422,7 +430,7 @@ export function VehiclesPage() {
             </select>
 
             {/* Ownership Filter */}
-            <select
+            <select aria-label="Ownership Filter"
               value={ownershipFilter}
               onChange={(e) => setOwnershipFilter(e.target.value)}
               className="px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold bg-white text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -433,7 +441,7 @@ export function VehiclesPage() {
             </select>
 
             {/* Document Compliance Filter */}
-            <select
+            <select aria-label="Document Compliance Filter"
               value={docFilter}
               onChange={(e) => setDocFilter(e.target.value)}
               className="px-3 py-2 rounded-xl border border-[#E6EAF3] text-xs font-semibold bg-white text-[#141A2E] focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
@@ -693,7 +701,7 @@ export function VehiclesPage() {
                 <h2 className="text-base font-bold text-[#141A2E]">Register New Fleet Vehicle</h2>
                 <p className="text-xs text-[#5B6478]">Add a school bus, van, or contracted transport vehicle</p>
               </div>
-              <button
+              <button aria-label="Close"
                 onClick={handleCloseAddModal}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
               >
@@ -711,10 +719,10 @@ export function VehiclesPage() {
             <form onSubmit={handleCreateVehicle} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="vehiclespage-registration-number-unique" className="block text-[#5B6478] mb-1 font-semibold">
                     Registration Number (Unique) <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="vehiclespage-registration-number-unique"
                     type="text"
                     placeholder="e.g. DL 01 AB 1234"
                     value={regNo}
@@ -726,8 +734,8 @@ export function VehiclesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">Vehicle Type</label>
-                  <select
+                  <label htmlFor="vehiclespage-vehicle-type" className="block text-[#5B6478] mb-1 font-semibold">Vehicle Type</label>
+                  <select id="vehiclespage-vehicle-type" aria-label="Vehicle Type"
                     value={vehicleType}
                     onChange={(e) => setVehicleType(e.target.value as VehicleType)}
                     className="w-full px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white font-medium focus:ring-2 focus:ring-[#2158E0] focus:outline-none"
@@ -743,10 +751,10 @@ export function VehiclesPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="vehiclespage-make-model" className="block text-[#5B6478] mb-1 font-semibold">
                     Make & Model <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="vehiclespage-make-model"
                     type="text"
                     placeholder="e.g. Tata Starbus Ultra 40"
                     value={makeModel}
@@ -757,17 +765,17 @@ export function VehiclesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">
+                  <label htmlFor="vehiclespage-seating-capacity" className="block text-[#5B6478] mb-1 font-semibold">
                     Seating Capacity <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="vehiclespage-seating-capacity" aria-label="Seating Capacity"
                     type="number"
                     min="1"
                     max="100"
                     value={Number.isNaN(capacity) ? "" : capacity ?? ""}
                     onChange={(e) => {
-                      const parsed = parseInt(e.target.value, 10);
-                      setCapacity(isNaN(parsed) ? ("" as any) : parsed);
+                      const parsed = e.currentTarget.valueAsNumber;
+                      setCapacity(Number.isFinite(parsed) ? Math.trunc(parsed) : ("" as any));
                     }}
                     className="w-full px-3 py-2 rounded-xl border border-[#E6EAF3] font-bold focus:ring-2 focus:ring-[#2158E0] focus:outline-none"
                     required
@@ -777,8 +785,8 @@ export function VehiclesPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">Fuel Type</label>
-                  <select
+                  <label htmlFor="vehiclespage-fuel-type" className="block text-[#5B6478] mb-1 font-semibold">Fuel Type</label>
+                  <select id="vehiclespage-fuel-type" aria-label="Fuel Type"
                     value={fuelType}
                     onChange={(e) => setFuelType(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white font-medium focus:ring-2 focus:ring-[#2158E0] focus:outline-none"
@@ -791,8 +799,8 @@ export function VehiclesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[#5B6478] mb-1 font-semibold">Ownership</label>
-                  <select
+                  <label htmlFor="vehiclespage-ownership" className="block text-[#5B6478] mb-1 font-semibold">Ownership</label>
+                  <select id="vehiclespage-ownership" aria-label="Ownership"
                     value={ownership}
                     onChange={(e) => setOwnership(e.target.value as VehicleOwnership)}
                     className="w-full px-3 py-2 rounded-xl border border-[#E6EAF3] bg-white font-medium focus:ring-2 focus:ring-[#2158E0] focus:outline-none"
@@ -806,10 +814,10 @@ export function VehiclesPage() {
               {ownership === "contract" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-purple-50/50 border border-purple-100">
                   <div>
-                    <label className="block text-[#5B6478] mb-1 font-semibold">
+                    <label htmlFor="vehiclespage-vendor-agency-name" className="block text-[#5B6478] mb-1 font-semibold">
                       Vendor / Agency Name <span className="text-red-500">*</span>
                     </label>
-                    <input
+                    <input id="vehiclespage-vendor-agency-name"
                       type="text"
                       placeholder="e.g. Sharma Tours & Travels"
                       value={vendorName}
@@ -819,10 +827,10 @@ export function VehiclesPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[#5B6478] mb-1 font-semibold">
+                    <label htmlFor="vehiclespage-vendor-contact-phone" className="block text-[#5B6478] mb-1 font-semibold">
                       Vendor Contact Phone <span className="text-red-500">*</span>
                     </label>
-                    <input
+                    <input id="vehiclespage-vendor-contact-phone"
                       type="text"
                       placeholder="+91 9876543210"
                       value={vendorPhone}

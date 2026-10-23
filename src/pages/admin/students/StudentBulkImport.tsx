@@ -15,6 +15,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { StudentPageHeader } from "./StudentPageHeader";
+import { AdminTableHeader } from "./AdminTableHeader";
 import {
   Upload,
   Download,
@@ -89,9 +91,9 @@ export default function StudentBulkImport() {
   const { user, profile, schoolId: authSchoolId } = useAuth();
   const navigate = useNavigate();
 
-  const [schoolId, setSchoolId] = useState<string>("");
-  const [academicYearId, setAcademicYearId] = useState<string>("");
-  const [classes, setClasses] = useState<{ name: string; sections?: { name: string }[] }[]>([]);
+  const schoolIdRef = useRef<string>("");
+  const academicYearIdRef = useRef<string>("");
+  const classesRef = useRef<{ name: string; sections?: { name: string }[] }[]>([]);
   const [planLimits, setPlanLimits] = useState<PlanLimitsStatus | null>(null);
 
   // Flow State: 'upload' | 'mapping' | 'validate' | 'committing' | 'success'
@@ -99,7 +101,7 @@ export default function StudentBulkImport() {
   const [activeTab, setActiveTab] = useState<"import" | "history">("import");
 
   // Import Data State
-  const [csvContent, setCsvContent] = useState<string>("");
+  const csvContentRef = useRef<string>("");
   const [rawHeaders, setRawHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [fileName, setFileName] = useState<string>("");
@@ -120,47 +122,59 @@ export default function StudentBulkImport() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const targetSchoolId = authSchoolId || (profile as any)?.school_id || "";
+
   useEffect(() => {
+    let isMounted = true;
     async function loadData() {
       try {
-        const sId = authSchoolId || (profile as any)?.school_id || "";
-        if (!sId) return;
-        setSchoolId(sId);
+        if (!targetSchoolId) return;
+        schoolIdRef.current = targetSchoolId;
 
         const [ayRes, limits] = await Promise.all([
-          getCurrentAcademicYear(sId),
-          checkSchoolStudentLimit(sId),
+          getCurrentAcademicYear(targetSchoolId),
+          checkSchoolStudentLimit(targetSchoolId),
         ]);
+        if (!isMounted) return;
 
         setPlanLimits(limits);
 
         const activeAyId = (ayRes as any).year?.id || (ayRes as any).academicYear?.id || "";
-        setAcademicYearId(activeAyId || "ay-default");
+        academicYearIdRef.current = activeAyId || "ay-default";
 
-        const classRes = await getClassesWithSections(sId, activeAyId || undefined);
+        const classRes = await getClassesWithSections(targetSchoolId, activeAyId || undefined);
+        if (!isMounted) return;
         if (classRes.classes) {
-          setClasses(classRes.classes);
+          classesRef.current = classRes.classes;
         }
 
         // Load batches
-        const batches = await getImportBatches(sId);
+        const batches = await getImportBatches(targetSchoolId);
+        if (!isMounted) return;
         setImportBatches(batches);
       } catch (err: any) {
+        if (!isMounted) return;
         setErrorMsg(err.message || "Failed to initialize import page");
       }
     }
     loadData();
-  }, [authSchoolId, profile?.school_id]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetSchoolId]);
 
   const handleDownloadTemplate = () => {
-    const { csv, filename } = generateImportTemplate(classes);
+    const { csv, filename } = generateImportTemplate(classesRef.current);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.setAttribute("download", filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const handleFileUpload = (file: File) => {
@@ -174,7 +188,7 @@ export default function StudentBulkImport() {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const content = (e.target?.result as string) || "";
-      setCsvContent(content);
+      csvContentRef.current = content;
       try {
         const parsedRecords = parseCSVRecords(content);
         if (parsedRecords.length === 0) {
@@ -209,7 +223,7 @@ export default function StudentBulkImport() {
   const runValidation = async (content: string, mapping: Record<string, string>) => {
     setErrorMsg(null);
     try {
-      const result = await parseAndValidateImportCSV(schoolId, content, mapping, classes);
+      const result = await parseAndValidateImportCSV(schoolIdRef.current, content, mapping, classesRef.current);
       setValidationResult(result);
       setPreviewPage(1);
       setStep("validate");
@@ -222,12 +236,14 @@ export default function StudentBulkImport() {
     if (!validationResult) return;
     const csv = generateErrorReportCSV(validationResult.rows);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.setAttribute("download", `errors_${fileName || "import.csv"}`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const handleCommit = async () => {
@@ -254,7 +270,7 @@ export default function StudentBulkImport() {
       setCommitProgress(60);
 
       const actorUuid = user?.id || (profile as any)?.auth_id || "";
-      const res = await commitImportBatch(schoolId, actorUuid, fileName, validRows, academicYearId);
+      const res = await commitImportBatch(schoolIdRef.current, actorUuid, fileName, validRows, academicYearIdRef.current);
       setCommitProgress(100);
 
       if (res.created_rows === 0 || res.status === "failed") {
@@ -270,8 +286,8 @@ export default function StudentBulkImport() {
 
       // Refresh limits and batches
       const [updatedLimits, updatedBatches] = await Promise.all([
-        checkSchoolStudentLimit(schoolId),
-        getImportBatches(schoolId),
+        checkSchoolStudentLimit(schoolIdRef.current),
+        getImportBatches(schoolIdRef.current),
       ]);
       setPlanLimits(updatedLimits);
       setImportBatches(updatedBatches);
@@ -290,10 +306,10 @@ export default function StudentBulkImport() {
 
     try {
       const actorUuid = user?.id || (profile as any)?.auth_id || "";
-      await rollbackImportBatch(schoolId, batchId, actorUuid);
+      await rollbackImportBatch(schoolIdRef.current, batchId, actorUuid);
       const [updatedLimits, updatedBatches] = await Promise.all([
-        checkSchoolStudentLimit(schoolId),
-        getImportBatches(schoolId),
+        checkSchoolStudentLimit(schoolIdRef.current),
+        getImportBatches(schoolIdRef.current),
       ]);
       setPlanLimits(updatedLimits);
       setImportBatches(updatedBatches);
@@ -324,19 +340,11 @@ export default function StudentBulkImport() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-            <Link to="/admin/students" className="hover:text-blue-600 flex items-center gap-1">
-              <ArrowLeft className="w-4 h-4" /> Students
-            </Link>
-            <span>/</span>
-            <span className="font-medium text-gray-900">Bulk Import</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Student Bulk Import</h1>
-          <p className="text-sm text-gray-600">
-            Import up to 2,000 student records at once via CSV with automatic duplicate check and sibling linking.
-          </p>
-        </div>
+        <StudentPageHeader
+          currentPage="Bulk Import"
+          title="Student Bulk Import"
+          description="Import up to 2,000 student records at once via CSV with automatic duplicate check and sibling linking."
+        />
 
         {/* Plan Limit Indicator */}
         {planLimits && (
@@ -510,7 +518,7 @@ export default function StudentBulkImport() {
                         <p className="text-xs text-gray-500">{col.description}</p>
                       </div>
 
-                      <select
+                      <select aria-label="Map column"
                         value={currentIdx}
                         onChange={(e) => {
                           setColumnMapping((prev) => ({
@@ -525,9 +533,13 @@ export default function StudentBulkImport() {
                         }`}
                       >
                         <option value="">-- Unmapped --</option>
-                        {rawHeaders.map((header, idx) => (
-                          <option key={idx} value={String(idx)}>
-                            Column {idx + 1}: {header}
+                        {rawHeaders.map((header, colIdx) => ({
+                          key: `col_${colIdx}_${header}`,
+                          val: String(colIdx),
+                          label: `Column ${colIdx + 1}: ${header}`,
+                        })).map((opt) => (
+                          <option key={opt.key} value={opt.val}>
+                            {opt.label}
                           </option>
                         ))}
                       </select>
@@ -544,7 +556,7 @@ export default function StudentBulkImport() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => runValidation(csvContent, columnMapping)}
+                  onClick={() => runValidation(csvContentRef.current, columnMapping)}
                   className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow"
                 >
                   Validate & Preview Data <ArrowRight className="w-4 h-4 inline-block ml-1" />
@@ -743,7 +755,7 @@ export default function StudentBulkImport() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <button
+                    <button aria-label="Previous"
                       onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
                       disabled={previewPage === 1}
                       className="p-1.5 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -753,7 +765,7 @@ export default function StudentBulkImport() {
                     <span className="text-sm text-gray-700">
                       Page {previewPage} of {totalPages}
                     </span>
-                    <button
+                    <button aria-label="Next"
                       onClick={() => setPreviewPage((p) => Math.min(totalPages, p + 1))}
                       disabled={previewPage === totalPages}
                       className="p-1.5 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -776,7 +788,7 @@ export default function StudentBulkImport() {
               </p>
               <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                 <div
-                  className="bg-blue-600 h-3 transition-all duration-300"
+                  className="bg-blue-600 h-3 transition-[width] duration-300"
                   style={{ width: `${commitProgress}%` }}
                 />
               </div>
@@ -825,15 +837,15 @@ export default function StudentBulkImport() {
 
           <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">File Name</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Date & Time</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Imported Rows</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
-                </tr>
-              </thead>
+              <AdminTableHeader
+                columns={[
+                  { label: "File Name" },
+                  { label: "Date & Time" },
+                  { label: "Imported Rows" },
+                  { label: "Status" },
+                  { label: "Actions", align: "right" },
+                ]}
+              />
               <tbody className="divide-y divide-gray-200">
                 {importBatches.length === 0 ? (
                   <tr>

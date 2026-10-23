@@ -533,7 +533,7 @@ export default function WebsiteSetup() {
                   target="_blank"
                   rel="noopener noreferrer"
                   id="open-website-btn"
-                  className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#2158E0] hover:bg-[#1a4ec4] text-white text-xs font-bold transition-colors shadow-xs cursor-pointer"
                   title="Open live school website in a new tab"
                 >
                   <span>Open Website</span>
@@ -603,9 +603,9 @@ export default function WebsiteSetup() {
 
                 {/* Subdomain URL with Copy Button */}
                 <div>
-                  <label className="block text-xs font-semibold text-[#141A2E] mb-1.5">
+                  <span className="block text-xs font-semibold text-[#141A2E] mb-1.5">
                     Assigned school subdomain
-                  </label>
+                  </span>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 flex items-center px-3.5 py-2.5 rounded-xl border border-[#E6EAF3] bg-slate-50 text-sm font-mono text-[#141A2E]">
                       <span className="text-[#94A3B8]">https://</span>
@@ -727,7 +727,7 @@ export default function WebsiteSetup() {
                         key={preset.name}
                         type="button"
                         onClick={() => handleSelectPreset(preset)}
-                        className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        className={`p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                           isSelected
                             ? "border-[#2158E0] bg-blue-50/40 ring-2 ring-[#2158E0]/20 shadow-xs"
                             : "border-[#E6EAF3] bg-white hover:border-[#CBD5E1]"
@@ -1065,14 +1065,14 @@ export default function WebsiteSetup() {
                   <div className="p-4 rounded-xl border border-dashed border-[#CBD5E1] bg-white space-y-3">
                     <span className="text-xs font-bold text-[#141A2E]">Add a campus amenity</span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <input
+                      <input aria-label="Facility title"
                         type="text"
                         value={newFacilityTitle}
                         onChange={(e) => setNewFacilityTitle(e.target.value)}
                         placeholder="Amenity title (e.g. Robotics & AI Lab)"
                         className="px-3.5 py-2.5 rounded-xl border border-[#E6EAF3] text-xs text-[#141A2E] focus:border-[#2158E0] focus:outline-hidden"
                       />
-                      <input
+                      <input aria-label="Facility description"
                         type="text"
                         value={newFacilityDesc}
                         onChange={(e) => setNewFacilityDesc(e.target.value)}
@@ -1148,7 +1148,7 @@ export default function WebsiteSetup() {
                         className="p-3.5 rounded-xl border border-[#E6EAF3] bg-slate-50 flex items-center gap-3"
                       >
                         <div className="w-28">
-                          <input
+                          <input aria-label="Stat value"
                             type="text"
                             value={st.value}
                             onChange={(e) =>
@@ -1158,7 +1158,7 @@ export default function WebsiteSetup() {
                           />
                         </div>
                         <div className="flex-1">
-                          <input
+                          <input aria-label="Stat label"
                             type="text"
                             value={st.label}
                             onChange={(e) =>
@@ -1237,7 +1237,7 @@ export default function WebsiteSetup() {
                         </div>
 
                         {/* Toggle switch */}
-                        <button
+                        <button aria-label="Toggle section"
                           type="button"
                           disabled={sec.canDisable === false}
                           onClick={() => handleToggleSection(sec.key)}
@@ -1307,7 +1307,7 @@ export default function WebsiteSetup() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2.5">
                       <Facebook className="w-4 h-4 text-[#1877F2] shrink-0" />
-                      <input
+                      <input aria-label="Facebook page URL"
                         type="url"
                         value={homeContent.socialLinks?.facebook || ""}
                         onChange={(e) => {
@@ -1324,7 +1324,7 @@ export default function WebsiteSetup() {
 
                     <div className="flex items-center gap-2.5">
                       <Twitter className="w-4 h-4 text-[#1DA1F2] shrink-0" />
-                      <input
+                      <input aria-label="Twitter / X profile URL"
                         type="url"
                         value={homeContent.socialLinks?.twitter || ""}
                         onChange={(e) => {
@@ -1341,7 +1341,7 @@ export default function WebsiteSetup() {
 
                     <div className="flex items-center gap-2.5">
                       <Instagram className="w-4 h-4 text-[#E4405F] shrink-0" />
-                      <input
+                      <input aria-label="Instagram profile URL"
                         type="url"
                         value={homeContent.socialLinks?.instagram || ""}
                         onChange={(e) => {
@@ -1358,7 +1358,7 @@ export default function WebsiteSetup() {
 
                     <div className="flex items-center gap-2.5">
                       <Youtube className="w-4 h-4 text-[#CD201F] shrink-0" />
-                      <input
+                      <input aria-label="YouTube channel URL"
                         type="url"
                         value={homeContent.socialLinks?.youtube || ""}
                         onChange={(e) => {
@@ -1375,7 +1375,7 @@ export default function WebsiteSetup() {
 
                     <div className="flex items-center gap-2.5">
                       <Linkedin className="w-4 h-4 text-[#0A66C2] shrink-0" />
-                      <input
+                      <input aria-label="LinkedIn profile URL"
                         type="url"
                         value={homeContent.socialLinks?.linkedin || ""}
                         onChange={(e) => {
@@ -1420,7 +1420,7 @@ export default function WebsiteSetup() {
                   id="website-continue-btn"
                   onClick={handleSubmitAndContinue}
                   disabled={isSubmitting}
-                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-8 py-2.5 text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:opacity-60 disabled:cursor-not-allowed rounded-full shadow-sm transition-all cursor-pointer"
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-8 py-2.5 text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] disabled:opacity-60 disabled:cursor-not-allowed rounded-full shadow-sm transition-colors cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>

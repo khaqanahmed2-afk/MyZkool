@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   X,
   Plus,
@@ -49,7 +49,7 @@ export function ConcessionPoliciesDrawer({
   onRefresh,
 }: ConcessionPoliciesDrawerProps) {
   const [formMode, setFormMode] = useState<"list" | "create" | "edit">("list");
-  const [selectedRule, setSelectedRule] = useState<ConcessionRule | null>(null);
+  const selectedRuleRef = useRef<ConcessionRule | null>(null);
 
   // Form State
   const [name, setName] = useState("");
@@ -75,7 +75,7 @@ export function ConcessionPoliciesDrawer({
     setAutoApply(false);
     setNeedsApproval(false);
     setIsActive(true);
-    setSelectedRule(null);
+    selectedRuleRef.current = null;
     setErrorMsg(null);
     setFormMode("create");
   };
@@ -89,7 +89,7 @@ export function ConcessionPoliciesDrawer({
     setAutoApply(rule.auto_apply);
     setNeedsApproval(rule.needs_approval);
     setIsActive(rule.is_active);
-    setSelectedRule(rule);
+    selectedRuleRef.current = rule;
     setErrorMsg(null);
     setFormMode("edit");
   };
@@ -117,43 +117,48 @@ export function ConcessionPoliciesDrawer({
     setSaving(true);
     setErrorMsg(null);
 
-    const input: ConcessionRuleInput = {
-      name,
-      basis,
-      type,
-      value,
-      fee_head_ids: feeHeadIds,
-      auto_apply: autoApply,
-      needs_approval: needsApproval,
-    };
+    try {
+      const input: ConcessionRuleInput = {
+        name,
+        basis,
+        type,
+        value,
+        fee_head_ids: feeHeadIds,
+        auto_apply: autoApply,
+        needs_approval: needsApproval,
+      };
 
-    if (formMode === "edit" && selectedRule) {
-      const res = await updateConcessionRule(schoolId, selectedRule.id, {
-        ...input,
-        is_active: isActive,
-      } as any);
-      if (res.error) {
-        setErrorMsg(res.error);
-        setSaving(false);
-        return;
+      if (formMode === "edit" && selectedRuleRef.current) {
+        const res = await updateConcessionRule(schoolId, selectedRuleRef.current.id, {
+          ...input,
+          is_active: isActive,
+        } as any);
+        if (res.error) {
+          setErrorMsg(res.error);
+          return;
+        }
+      } else {
+        const res = await createConcessionRule(schoolId, input);
+        if (res.error) {
+          setErrorMsg(res.error);
+          return;
+        }
       }
-    } else {
-      const res = await createConcessionRule(schoolId, input);
-      if (res.error) {
-        setErrorMsg(res.error);
-        setSaving(false);
-        return;
-      }
+
+      await onRefresh();
+      setFormMode("list");
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to save concession policy.");
+    } finally {
+      setSaving(false);
     }
-
-    await onRefresh();
-    setSaving(false);
-    setFormMode("list");
   };
+
+  const feeHeadIdSet = new Set(feeHeadIds);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div aria-hidden="true" className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={onClose} />
 
       <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-200">
         {/* Header */}
@@ -167,7 +172,7 @@ export function ConcessionPoliciesDrawer({
               </p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -252,7 +257,7 @@ export function ConcessionPoliciesDrawer({
                         </div>
                       </div>
 
-                      <button
+                      <button aria-label="Edit"
                         type="button"
                         onClick={() => openEdit(rule)}
                         className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
@@ -281,8 +286,8 @@ export function ConcessionPoliciesDrawer({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1">Policy Name *</label>
-                <input
+                <label htmlFor="concessionpoliciesdrawer-policy-name" className="block text-xs font-bold text-slate-900 mb-1">Policy Name *</label>
+                <input id="concessionpoliciesdrawer-policy-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -293,8 +298,8 @@ export function ConcessionPoliciesDrawer({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-900 mb-1">Category</label>
-                  <select
+                  <label htmlFor="concessionpoliciesdrawer-category" className="block text-xs font-bold text-slate-900 mb-1">Category</label>
+                  <select id="concessionpoliciesdrawer-category" aria-label="Category"
                     value={basis}
                     onChange={(e) => setBasis(e.target.value as any)}
                     className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg text-xs focus:outline-none focus:border-[#00875A]"
@@ -309,8 +314,8 @@ export function ConcessionPoliciesDrawer({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-900 mb-1">Discount Type</label>
-                  <select
+                  <label htmlFor="concessionpoliciesdrawer-discount-type" className="block text-xs font-bold text-slate-900 mb-1">Discount Type</label>
+                  <select id="concessionpoliciesdrawer-discount-type" aria-label="Discount Type"
                     value={type}
                     onChange={(e) => setType(e.target.value as any)}
                     className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg text-xs focus:outline-none focus:border-[#00875A]"
@@ -322,27 +327,33 @@ export function ConcessionPoliciesDrawer({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1">Discount Value *</label>
-                <input
+                <label htmlFor="concessionpoliciesdrawer-discount-value" className="block text-xs font-bold text-slate-900 mb-1">Discount Value *</label>
+                <input id="concessionpoliciesdrawer-discount-value" aria-label="Discount Value"
                   type="number"
                   min="1"
                   max={type === "percent" ? 100 : 1000000}
                   value={value}
-                  onChange={(e) => setValue(Number(e.target.value))}
+                  onChange={(e) =>
+                    setValue(
+                      Number.isFinite(e.currentTarget.valueAsNumber)
+                        ? e.currentTarget.valueAsNumber
+                        : 0
+                    )
+                  }
                   className="w-full px-3 py-2 border border-[#E6EAF3] rounded-lg text-xs focus:outline-none focus:border-[#00875A]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                <label htmlFor="concessionpoliciesdrawer-eligible-fee-heads" className="block text-xs font-bold text-slate-900 mb-1.5">
                   Eligible Fee Heads
                 </label>
                 <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 border border-[#E6EAF3] rounded-xl max-h-36 overflow-y-auto">
                   {feeHeads.map((head) => (
                     <label key={head.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                      <input
+                      <input id="concessionpoliciesdrawer-eligible-fee-heads"
                         type="checkbox"
-                        checked={feeHeadIds.includes(head.id)}
+                        checked={feeHeadIdSet.has(head.id)}
                         onChange={() => handleToggleHead(head.id)}
                         className="rounded text-[#00875A] focus:ring-[#00875A] border-slate-300 w-3.5 h-3.5"
                       />

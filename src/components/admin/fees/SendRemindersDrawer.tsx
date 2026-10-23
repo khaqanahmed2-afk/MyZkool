@@ -37,80 +37,82 @@ interface SendRemindersDrawerProps {
   preSelectedRowIds?: string[];
 }
 
-export function SendRemindersDrawer({
+const EMPTY_TEMPLATES: ReminderTemplate[] = [];
+const EMPTY_ROW_IDS: string[] = [];
+
+const SendRemindersDrawerContent: React.FC<SendRemindersDrawerProps> = ({
   isOpen,
   onClose,
   rows,
-  templates,
+  templates = EMPTY_TEMPLATES,
   schoolId,
   schoolName,
   onSuccess,
   onOpenTemplates,
-  preSelectedRowIds = [],
-}: SendRemindersDrawerProps) {
+  preSelectedRowIds = EMPTY_ROW_IDS,
+}) => {
   // Stepper: 1: Select Students, 2: Message, 3: Preview, 4: Send
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Step 1: Selection Mode ('filter' | 'manual')
-  const [selectionMode, setSelectionMode] = useState<"filter" | "manual">("filter");
+  const [selectionMode, setSelectionMode] = useState<"filter" | "manual">(() =>
+    preSelectedRowIds && preSelectedRowIds.length > 0 ? "manual" : "filter"
+  );
   const [filterDueStatus, setFilterDueStatus] = useState<string>("overdue");
   const [filterClass, setFilterClass] = useState<string>("all");
   const [filterSection, setFilterSection] = useState<string>("all");
   const [filterPeriod, setFilterPeriod] = useState<string>("all");
   const [filterOverdueSince, setFilterOverdueSince] = useState<string>("all");
   const [manualSearch, setManualSearch] = useState<string>("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() =>
+    new Set(preSelectedRowIds || [])
+  );
   const [showFilterListModal, setShowFilterListModal] = useState<boolean>(false);
 
   // Step 2: Message Settings
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [editedBody, setEditedBody] = useState<string>("");
+  const defaultTpl = useMemo(() => {
+    if (!templates || templates.length === 0) return null;
+    return templates.find((t) => t.name?.toLowerCase().includes("default")) || templates[0];
+  }, [templates]);
+
+  const [userSelectedTemplateId, setUserSelectedTemplateId] = useState<string | null>(null);
+  const selectedTemplateId = userSelectedTemplateId || defaultTpl?.id || defaultTpl?.name || "default_reminder_template";
+
+  const activeTemplate = useMemo(() => {
+    return templates.find((t) => (t.id || t.name) === selectedTemplateId) || defaultTpl || templates[0];
+  }, [templates, selectedTemplateId, defaultTpl]);
+
+  const [customBody, setCustomBody] = useState<string | null>(null);
+  const editedBody = customBody !== null ? customBody : (activeTemplate?.body || "");
+
+  const setEditedBody = (valOrUpdater: string | ((prev: string) => string)) => {
+    if (typeof valOrUpdater === "function") {
+      setCustomBody(valOrUpdater(editedBody));
+    } else {
+      setCustomBody(valOrUpdater);
+    }
+  };
+
   const [isEditingTemplate, setIsEditingTemplate] = useState<boolean>(false);
   const [channelWhatsApp, setChannelWhatsApp] = useState<boolean>(true);
   const [channelSMS, setChannelSMS] = useState<boolean>(false);
   const [scheduleMode, setScheduleMode] = useState<"now" | "later">("now");
-  const [scheduledDate, setScheduledDate] = useState<string>("");
+  const [scheduledDate, setScheduledDate] = useState<string>(() => {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    return tmrw.toISOString().split("T")[0];
+  });
   const [scheduledTime, setScheduledTime] = useState<string>("10:00");
 
   // Step 4: Submission State
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitResult, setSubmitResult] = useState<SendRemindersResult | null>(null);
 
-  // Initialize pre-selected students or template
-  useEffect(() => {
-    if (preSelectedRowIds.length > 0) {
-      setSelectedIds(new Set(preSelectedRowIds));
-      setSelectionMode("manual");
-    } else {
-      setSelectedIds(new Set());
-    }
-  }, [preSelectedRowIds, isOpen]);
-
-  useEffect(() => {
-    if (templates.length > 0 && !selectedTemplateId) {
-      const defaultTpl = templates.find((t) => t.name.toLowerCase().includes("default")) || templates[0];
-      setSelectedTemplateId(defaultTpl.id);
-      setEditedBody(defaultTpl.body);
-    }
-  }, [templates, selectedTemplateId]);
-
-  // Set default schedule date to tomorrow
-  useEffect(() => {
-    const tmrw = new Date();
-    tmrw.setDate(tmrw.getDate() + 1);
-    setScheduledDate(tmrw.toISOString().split("T")[0]);
-  }, []);
-
-  // Selected template object
-  const activeTemplate = useMemo(() => {
-    return templates.find((t) => t.id === selectedTemplateId) || templates[0];
-  }, [templates, selectedTemplateId]);
-
   const handleTemplateChange = (tplId: string) => {
-    setSelectedTemplateId(tplId);
-    const tpl = templates.find((t) => t.id === tplId);
+    setUserSelectedTemplateId(tplId);
+    const tpl = templates.find((t) => (t.id || t.name) === tplId);
     if (tpl) {
-      setEditedBody(tpl.body);
+      setCustomBody(tpl.body);
       setIsEditingTemplate(false);
     }
   };
@@ -259,7 +261,7 @@ export function SendRemindersDrawer({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop */}
-      <div
+      <div aria-hidden="true"
         className="fixed inset-0 bg-black/40 backdrop-blur-2xs transition-opacity animate-in fade-in duration-200"
         onClick={onClose}
       />
@@ -281,7 +283,7 @@ export function SendRemindersDrawer({
                 <p className="text-[11px] text-[#5B6478]">Automate fee collection follow-ups</p>
               </div>
             </div>
-            <button
+            <button aria-label="Close"
               type="button"
               onClick={onClose}
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-slate-100 transition-colors"
@@ -294,7 +296,7 @@ export function SendRemindersDrawer({
           <div className="px-5 py-3 border-b border-[#E6EAF3] bg-slate-50/70 shrink-0">
             <div className="flex items-center justify-between text-xs">
               {/* Step 1 */}
-              <div
+              <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                 className={`flex items-center gap-1.5 cursor-pointer ${
                   currentStep === 1
                     ? "font-bold text-[#0B7B49]"
@@ -321,7 +323,7 @@ export function SendRemindersDrawer({
               <div className="w-6 h-0.5 bg-slate-200" />
 
               {/* Step 2 */}
-              <div
+              <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                 className={`flex items-center gap-1.5 cursor-pointer ${
                   currentStep === 2
                     ? "font-bold text-[#0B7B49]"
@@ -348,7 +350,7 @@ export function SendRemindersDrawer({
               <div className="w-6 h-0.5 bg-slate-200" />
 
               {/* Step 3 */}
-              <div
+              <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                 className={`flex items-center gap-1.5 cursor-pointer ${
                   currentStep === 3
                     ? "font-bold text-[#0B7B49]"
@@ -416,7 +418,7 @@ export function SendRemindersDrawer({
                     <button
                       type="button"
                       onClick={() => setSelectionMode("filter")}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors ${
                         selectionMode === "filter"
                           ? "bg-[#0B7B49] text-white shadow-xs"
                           : "text-[#5B6478] hover:text-[#141A2E]"
@@ -427,7 +429,7 @@ export function SendRemindersDrawer({
                     <button
                       type="button"
                       onClick={() => setSelectionMode("manual")}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors ${
                         selectionMode === "manual"
                           ? "bg-[#0B7B49] text-white shadow-xs"
                           : "text-[#5B6478] hover:text-[#141A2E]"
@@ -442,8 +444,8 @@ export function SendRemindersDrawer({
                     <div className="p-3.5 bg-slate-50/80 rounded-xl border border-[#E6EAF3] space-y-3">
                       <div className="grid grid-cols-2 gap-2.5">
                         <div>
-                          <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Due Status</label>
-                          <select
+                          <label htmlFor="sendremindersdrawer-due-status" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Due Status</label>
+                          <select id="sendremindersdrawer-due-status" aria-label="Due Status"
                             value={filterDueStatus}
                             onChange={(e) => setFilterDueStatus(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -457,8 +459,8 @@ export function SendRemindersDrawer({
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Class</label>
-                          <select
+                          <label htmlFor="sendremindersdrawer-class" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Class</label>
+                          <select id="sendremindersdrawer-class" aria-label="Class"
                             value={filterClass}
                             onChange={(e) => setFilterClass(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -471,8 +473,8 @@ export function SendRemindersDrawer({
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Section</label>
-                          <select
+                          <label htmlFor="sendremindersdrawer-section" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Section</label>
+                          <select id="sendremindersdrawer-section" aria-label="Section"
                             value={filterSection}
                             onChange={(e) => setFilterSection(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -485,8 +487,8 @@ export function SendRemindersDrawer({
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Fee Period</label>
-                          <select
+                          <label htmlFor="sendremindersdrawer-fee-period" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Fee Period</label>
+                          <select id="sendremindersdrawer-fee-period" aria-label="Fee Period"
                             value={filterPeriod}
                             onChange={(e) => setFilterPeriod(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -501,8 +503,8 @@ export function SendRemindersDrawer({
 
                       <div className="flex items-center gap-2">
                         <div className="flex-1">
-                          <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">Overdue Since</label>
-                          <select
+                          <label htmlFor="sendremindersdrawer-overdue-since" className="block text-[11px] font-semibold text-[#5B6478] mb-1">Overdue Since</label>
+                          <select id="sendremindersdrawer-overdue-since" aria-label="Overdue Since"
                             value={filterOverdueSince}
                             onChange={(e) => setFilterOverdueSince(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -545,7 +547,7 @@ export function SendRemindersDrawer({
                     <div className="p-3.5 bg-slate-50/80 rounded-xl border border-[#E6EAF3] space-y-2.5">
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
-                        <input
+                        <input aria-label="Search students to remind"
                           type="text"
                           placeholder="Search student, adm no., invoice..."
                           value={manualSearch}
@@ -573,9 +575,8 @@ export function SendRemindersDrawer({
                           manualFilteredRows.map((r) => {
                             const isSelected = selectedIds.has(r.id);
                             return (
-                              <div
+                              <label
                                 key={r.id}
-                                onClick={() => toggleSelectManual(r.id)}
                                 className={`p-2 rounded-lg border flex items-center justify-between cursor-pointer transition-colors ${
                                   isSelected
                                     ? "bg-emerald-50/50 border-emerald-300"
@@ -586,8 +587,8 @@ export function SendRemindersDrawer({
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
-                                    onChange={() => {}}
-                                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                    onChange={() => toggleSelectManual(r.id)}
+                                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                   />
                                   <div className="min-w-0">
                                     <p className="text-xs font-semibold text-[#141A2E] truncate">{r.studentName}</p>
@@ -604,7 +605,7 @@ export function SendRemindersDrawer({
                                     {r.status === "overdue" ? "Overdue" : "Pending"}
                                   </span>
                                 </div>
-                              </div>
+                              </label>
                             );
                           })
                         )}
@@ -630,26 +631,29 @@ export function SendRemindersDrawer({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-[#5B6478] mb-1">
+                    <label htmlFor="sendremindersdrawer-select-template" className="block text-[11px] font-semibold text-[#5B6478] mb-1">
                       Select Template <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <select id="sendremindersdrawer-select-template" aria-label="Select Template"
                       value={selectedTemplateId}
                       onChange={(e) => handleTemplateChange(e.target.value)}
                       className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     >
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
+                      {templates.map((t) => {
+                        const val = t.id || t.name;
+                        return (
+                          <option key={val} value={val}>
+                            {t.name}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
                   {/* Message Preview Box */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-semibold text-[#5B6478]">Message Preview</label>
+                      <label htmlFor="sendremindersdrawer-message-preview" className="text-[11px] font-semibold text-[#5B6478]">Message Preview</label>
                       <button
                         type="button"
                         onClick={() => setIsEditingTemplate(!isEditingTemplate)}
@@ -662,7 +666,7 @@ export function SendRemindersDrawer({
 
                     {isEditingTemplate ? (
                       <div className="space-y-1.5">
-                        <textarea
+                        <textarea id="sendremindersdrawer-message-preview" aria-label="Notes"
                           rows={6}
                           value={editedBody}
                           onChange={(e) => setEditedBody(e.target.value)}
@@ -691,10 +695,10 @@ export function SendRemindersDrawer({
 
                   {/* Send Via Checkboxes */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-[#5B6478] mb-1.5">Send via</label>
+                    <label htmlFor="sendremindersdrawer-send-via" className="block text-[11px] font-semibold text-[#5B6478] mb-1.5">Send via</label>
                     <div className="flex items-center gap-6">
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#141A2E]">
-                        <input
+                        <input id="sendremindersdrawer-send-via"
                           type="checkbox"
                           checked={channelWhatsApp}
                           onChange={(e) => setChannelWhatsApp(e.target.checked)}
@@ -723,10 +727,10 @@ export function SendRemindersDrawer({
 
                   {/* Schedule Radio */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-[#5B6478] mb-1.5">Schedule</label>
+                    <label htmlFor="sendremindersdrawer-schedule" className="block text-[11px] font-semibold text-[#5B6478] mb-1.5">Schedule</label>
                     <div className="flex items-center gap-6">
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#141A2E]">
-                        <input
+                        <input id="sendremindersdrawer-schedule"
                           type="radio"
                           name="scheduleMode"
                           checked={scheduleMode === "now"}
@@ -752,8 +756,8 @@ export function SendRemindersDrawer({
                       <div className="mt-3 p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl space-y-2.5">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="block text-[10px] font-semibold text-amber-900 mb-0.5">Date</label>
-                            <input
+                            <label htmlFor="sendremindersdrawer-date" className="block text-[10px] font-semibold text-amber-900 mb-0.5">Date</label>
+                            <input id="sendremindersdrawer-date" aria-label="Date"
                               type="date"
                               value={scheduledDate}
                               onChange={(e) => setScheduledDate(e.target.value)}
@@ -761,8 +765,8 @@ export function SendRemindersDrawer({
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] font-semibold text-amber-900 mb-0.5">Time (IST)</label>
-                            <input
+                            <label htmlFor="sendremindersdrawer-time-ist" className="block text-[10px] font-semibold text-amber-900 mb-0.5">Time (IST)</label>
+                            <input id="sendremindersdrawer-time-ist" aria-label="Time (IST)"
                               type="time"
                               value={scheduledTime}
                               onChange={(e) => setScheduledTime(e.target.value)}
@@ -977,7 +981,7 @@ export function SendRemindersDrawer({
               <h3 className="text-sm font-bold text-[#141A2E]">
                 Filtered Students ({filteredStudents.length})
               </h3>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setShowFilterListModal(false)}
                 className="p-1 rounded-lg text-gray-400 hover:text-gray-700"
@@ -1013,4 +1017,10 @@ export function SendRemindersDrawer({
       )}
     </div>
   );
+};
+
+export function SendRemindersDrawer(props: SendRemindersDrawerProps) {
+  if (!props.isOpen) return null;
+  const key = props.preSelectedRowIds ? props.preSelectedRowIds.join(",") : "open";
+  return <SendRemindersDrawerContent key={key} {...props} />;
 }

@@ -82,7 +82,7 @@ export function ImportInvoicesModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" onClick={onClose} />
+      <div aria-hidden="true" className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" onClick={onClose} />
 
       <div className="relative bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden z-10 animate-in zoom-in-95 duration-200">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
@@ -95,7 +95,7 @@ export function ImportInvoicesModal({
               <p className="text-[11px] text-slate-500">Upload CSV to batch import student invoices.</p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={onClose}
             className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
           >

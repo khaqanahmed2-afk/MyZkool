@@ -704,7 +704,7 @@ export async function reorderWebsitePages({
 
   if (isSupabaseConfigured) {
     try {
-      for (const page of reordered) {
+      for await (const page of reordered) {
         await supabase
           .from("website_pages")
           .update({ sort_order: page.sort_order, updated_at: now })
@@ -787,20 +787,22 @@ export async function saveWebsiteSetupProgress({
       const currentStep = currentSchool?.onboarding_step || 5;
       const newStep = Math.max(currentStep, 6);
 
+      const schoolUpdate = {
+        onboarding_step: newStep,
+        updated_at: timestamp,
+      };
       await supabase
         .from("schools")
-        .update({
-          onboarding_step: newStep,
-          updated_at: timestamp,
-        })
+        .update(schoolUpdate)
         .eq("id", schoolId);
 
+      const profileUpdate = {
+        current_onboarding_step: "/onboarding/complete",
+        updated_at: timestamp,
+      };
       await supabase
         .from("profiles")
-        .update({
-          current_onboarding_step: "/onboarding/complete",
-          updated_at: timestamp,
-        })
+        .update(profileUpdate)
         .eq("auth_id", userId);
 
       await supabase.auth.updateUser({
@@ -904,9 +906,17 @@ export async function uploadWebsiteAsset({
     }
   }
 
-  // Graceful client preview fallback
-  const clientUrl = URL.createObjectURL(file);
-  return { success: true, url: clientUrl };
+  // Graceful client preview fallback using base64 Data URL to prevent object URL memory leak
+  return new Promise<{ success: boolean; url?: string; error?: string }>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve({ success: true, url: reader.result as string });
+    };
+    reader.onerror = () => {
+      resolve({ success: false, error: "Failed to read image preview." });
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 /**

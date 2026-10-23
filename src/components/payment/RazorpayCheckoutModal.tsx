@@ -138,7 +138,7 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
               <p className="text-xs text-blue-100">Official Web Integration</p>
             </div>
           </div>
-          <button
+          <button aria-label="Close"
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
@@ -212,9 +212,9 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
             <>
               {/* Presets */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                <span className="block text-xs font-semibold text-slate-700 mb-2">
                   Select Amount (or enter custom)
-                </label>
+                </span>
                 <div className="grid grid-cols-4 gap-2">
                   {presets.map((p) => {
                     const isSelected = amountPaise === p.paise;
@@ -223,7 +223,7 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
                         key={p.paise}
                         type="button"
                         onClick={() => handleSelectPreset(p.paise)}
-                        className={`py-2 px-1 text-xs font-bold rounded-xl border transition-all text-center ${
+                        className={`py-2 px-1 text-xs font-bold rounded-xl border transition-colors text-center ${
                           isSelected
                             ? "bg-[#2158E0] text-white border-[#2158E0] shadow-sm"
                             : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
@@ -238,14 +238,14 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
 
               {/* Amount Input */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="razorpaycheckoutmodal-amount-in-rupees" className="block text-xs font-semibold text-slate-700 mb-1">
                   Amount in Rupees (₹)
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">
                     ₹
                   </span>
-                  <input
+                  <input id="razorpaycheckoutmodal-amount-in-rupees"
                     type="number"
                     min="1"
                     step="1"
@@ -263,10 +263,10 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
               {/* Payer Details */}
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <label htmlFor="razorpaycheckoutmodal-parent-payer-name" className="block text-[11px] font-semibold text-slate-600 mb-1">
                     Parent / Payer Name
                   </label>
-                  <input
+                  <input id="razorpaycheckoutmodal-parent-payer-name" aria-label="Parent / Payer Name"
                     type="text"
                     value={parentName}
                     onChange={(e) => setParentName(e.target.value)}
@@ -274,10 +274,10 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <label htmlFor="razorpaycheckoutmodal-contact-phone" className="block text-[11px] font-semibold text-slate-600 mb-1">
                     Contact Phone
                   </label>
-                  <input
+                  <input id="razorpaycheckoutmodal-contact-phone" aria-label="Contact Phone"
                     type="tel"
                     value={parentPhone}
                     onChange={(e) => setParentPhone(e.target.value)}
@@ -318,7 +318,7 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
                 type="button"
                 onClick={handlePayNow}
                 disabled={isLoading || amountPaise < 100}
-                className="w-full py-3.5 px-4 bg-[#2158E0] hover:bg-[#1A46B8] active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full py-3.5 px-4 bg-[#2158E0] hover:bg-[#1A46B8] active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
                   <>

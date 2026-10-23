@@ -496,7 +496,7 @@ export async function applyConcessionToStudentDues(
   const eligibleHeadIds = new Set(concession.fee_head_ids || []);
   const allHeadsEligible = eligibleHeadIds.size === 0;
 
-  for (const due of dues) {
+  for await (const due of dues) {
     // Only apply if head is eligible
     if (!allHeadsEligible && !eligibleHeadIds.has(due.fee_head_id)) {
       continue;
@@ -749,7 +749,7 @@ export async function revokeStudentConcession(
         .neq("status", "paid")
         .neq("status", "cancelled");
 
-      for (const due of (dues || []) as StudentDue[]) {
+      for await (const due of (dues || []) as StudentDue[]) {
         if (due.concession_paise > 0) {
           const revertedPaise = due.concession_paise;
           const restoredNet = due.gross_paise;

@@ -37,7 +37,9 @@ import {
   Linkedin,
   X,
   Share2,
+  Menu,
 } from "lucide-react";
+import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 export default function PublicSchoolWebsite() {
   const { subdomain: paramSubdomain } = useParams<{ subdomain: string }>();
@@ -48,11 +50,6 @@ export default function PublicSchoolWebsite() {
     (typeof window !== "undefined" && window.location.hostname
       ? getSubdomainFromHost(window.location.hostname) || ""
       : "");
-
-  // If accessed without a school subdomain or on the main application domain, redirect to landing page
-  if (!effectiveSubdomain || isReservedSubdomain(effectiveSubdomain)) {
-    return <Navigate to="/" replace />;
-  }
 
   const [school, setSchool] = useState<School | null>(null);
   const [website, setWebsite] = useState<SchoolWebsite | null>(null);
@@ -78,11 +75,21 @@ export default function PublicSchoolWebsite() {
   const [newsletterEmail, setNewsletterEmail] = useState("");
   const [newsletterSuccess, setNewsletterSuccess] = useState(false);
 
+  // Mobile Navigation Menu State
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  usePageMetadata({
+    title: school ? `${website?.site_name || school.name} — Official School Portal` : "Official School Website",
+    description:
+      website?.tagline ||
+      (school ? `Welcome to ${school.name}. Explore curriculum, campus facilities, and online admissions.` : "Official School Website"),
+  });
+
   useEffect(() => {
     let isMounted = true;
 
     async function loadSchoolData() {
-      if (!effectiveSubdomain) {
+      if (!effectiveSubdomain || isReservedSubdomain(effectiveSubdomain)) {
         setNotFound(true);
         setIsLoading(false);
         return;
@@ -98,7 +105,6 @@ export default function PublicSchoolWebsite() {
 
         if (!loadedSchool) {
           setNotFound(true);
-          setIsLoading(false);
           return;
         }
 
@@ -129,6 +135,11 @@ export default function PublicSchoolWebsite() {
       isMounted = false;
     };
   }, [effectiveSubdomain]);
+
+  // If accessed without a school subdomain or on the main application domain, redirect to landing page
+  if (!effectiveSubdomain || isReservedSubdomain(effectiveSubdomain)) {
+    return <Navigate to="/" replace />;
+  }
 
   // Handle Enquiry Submit
   const handleEnquirySubmit = async (e: React.FormEvent) => {
@@ -296,8 +307,18 @@ export default function PublicSchoolWebsite() {
             <span>
               {school.address || "Campus Address"}, {school.city}, {school.state} - {school.pin_code}
             </span>
-            <span className="hidden md:inline">|</span>
-            <span className="hidden md:inline">{school.contact_phone}</span>
+            {school.contact_phone && (
+              <>
+                <span className="hidden md:inline">|</span>
+                <a
+                  href={`tel:${school.contact_phone}`}
+                  className="hidden md:inline hover:underline"
+                  aria-label={`Call ${school.contact_phone}`}
+                >
+                  {school.contact_phone}
+                </a>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-3 text-[11px] font-medium text-white/90">
             <Link to="/login" className="hover:text-amber-300 transition-colors">
@@ -364,15 +385,54 @@ export default function PublicSchoolWebsite() {
             </a>
           </nav>
 
-          {/* CTA Enquire Now Button */}
-          <a
-            href="#admissions"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-xs font-bold shadow-xs hover:opacity-95 transition-opacity cursor-pointer shrink-0"
-            style={{ backgroundColor: primaryColor }}
-          >
-            <span>Enquire now</span>
-          </a>
+          {/* Action Button & Mobile Hamburger */}
+          <div className="flex items-center gap-2">
+            <a
+              href="#admissions"
+              className="inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white text-xs font-bold shadow-xs hover:opacity-95 transition-opacity cursor-pointer shrink-0"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <span>Enquire now</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 text-[#14213d] hover:bg-black/5 rounded-lg transition-colors cursor-pointer"
+              aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="school-mobile-nav"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Navigation Dropdown */}
+        {mobileMenuOpen && (
+          <nav
+            id="school-mobile-nav"
+            aria-label="Mobile Navigation"
+            className="lg:hidden bg-[#fffaf5] border-t border-[#eadfd3] px-4 py-3 space-y-1 shadow-md"
+          >
+            {[
+              { href: "#about", label: "About" },
+              { href: "#programs", label: "Programs" },
+              { href: "#campus", label: "Campus" },
+              { href: "#gallery", label: "Gallery" },
+              { href: "#news", label: "News" },
+              { href: "#contact", label: "Contact" },
+            ].map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 px-3 rounded-lg text-sm font-semibold text-[#14213d] hover:bg-black/5 transition-colors"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        )}
       </header>
 
       {/* Main Content Sections */}
@@ -407,7 +467,7 @@ export default function PublicSchoolWebsite() {
               <div className="pt-2 flex flex-wrap items-center gap-3">
                 <a
                   href="#admissions"
-                  className="px-6 py-3 rounded-full text-white font-bold text-sm shadow-sm hover:opacity-95 transition-all"
+                  className="px-6 py-3 rounded-full text-white font-bold text-sm shadow-sm hover:opacity-95 transition-colors"
                   style={{ backgroundColor: primaryColor }}
                 >
                   {content?.hero?.ctaText || "Apply for admission"}
@@ -712,7 +772,7 @@ export default function PublicSchoolWebsite() {
                       key={cat}
                       type="button"
                       onClick={() => setGalleryFilter(cat)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${
                         galleryFilter === cat
                           ? "bg-[#14213d] text-white"
                           : "bg-white border border-[#eadfd3] text-[#14213d] hover:bg-slate-50"
@@ -733,10 +793,10 @@ export default function PublicSchoolWebsite() {
                       img.category?.toLowerCase() === galleryFilter.toLowerCase()
                   )
                   .map((img) => (
-                    <div
+                    <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
                       key={img.id}
                       onClick={() => setLightboxUrl(img.imageUrl)}
-                      className="group relative aspect-4/3 rounded-2xl overflow-hidden border border-[#eadfd3] bg-white cursor-pointer shadow-xs hover:shadow-md transition-all"
+                      className="group relative aspect-4/3 rounded-2xl overflow-hidden border border-[#eadfd3] bg-white cursor-pointer shadow-xs hover:shadow-md transition"
                     >
                       <img
                         src={img.imageUrl}
@@ -815,10 +875,10 @@ export default function PublicSchoolWebsite() {
 
                 <form onSubmit={handleEnquirySubmit} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[#14213d] mb-1">
+                    <label htmlFor="publicschoolwebsite-parent-s-full-name" className="block text-xs font-semibold text-[#14213d] mb-1">
                       Parent's full name <span className="text-red-500">*</span>
                     </label>
-                    <input
+                    <input id="publicschoolwebsite-parent-s-full-name"
                       type="text"
                       required
                       value={parentName}
@@ -830,10 +890,10 @@ export default function PublicSchoolWebsite() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-[#14213d] mb-1">
+                      <label htmlFor="publicschoolwebsite-phone-number" className="block text-xs font-semibold text-[#14213d] mb-1">
                         Phone number <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <input id="publicschoolwebsite-phone-number"
                         type="tel"
                         required
                         value={parentPhone}
@@ -844,10 +904,10 @@ export default function PublicSchoolWebsite() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#14213d] mb-1">
+                      <label htmlFor="publicschoolwebsite-email-address" className="block text-xs font-semibold text-[#14213d] mb-1">
                         Email address
                       </label>
-                      <input
+                      <input id="publicschoolwebsite-email-address"
                         type="email"
                         value={parentEmail}
                         onChange={(e) => setParentEmail(e.target.value)}
@@ -858,10 +918,10 @@ export default function PublicSchoolWebsite() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#14213d] mb-1">
+                    <label htmlFor="publicschoolwebsite-seeking-class-grade" className="block text-xs font-semibold text-[#14213d] mb-1">
                       Seeking class / grade <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <select id="publicschoolwebsite-seeking-class-grade" aria-label="Seeking class / grade"
                       value={studentGrade}
                       onChange={(e) => setStudentGrade(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-[#eadfd3] bg-[#fffaf5] text-xs text-[#14213d] focus:border-[#2158E0] focus:outline-hidden"
@@ -885,10 +945,10 @@ export default function PublicSchoolWebsite() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#14213d] mb-1">
+                    <label htmlFor="publicschoolwebsite-message-questions-optional" className="block text-xs font-semibold text-[#14213d] mb-1">
                       Message / questions (optional)
                     </label>
-                    <textarea
+                    <textarea id="publicschoolwebsite-message-questions-optional"
                       rows={2}
                       value={enquiryMessage}
                       onChange={(e) => setEnquiryMessage(e.target.value)}
@@ -900,7 +960,7 @@ export default function PublicSchoolWebsite() {
                   <button
                     type="submit"
                     disabled={isSubmittingEnquiry}
-                    className="w-full py-3 rounded-xl text-white font-bold text-xs shadow-sm hover:opacity-95 transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full py-3 rounded-xl text-white font-bold text-xs shadow-sm hover:opacity-95 transition-colors cursor-pointer disabled:opacity-50"
                     style={{ backgroundColor: primaryColor }}
                   >
                     {isSubmittingEnquiry ? "Submitting enquiry..." : "Send admission enquiry"}
@@ -926,7 +986,7 @@ export default function PublicSchoolWebsite() {
             <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
               <a
                 href="#admissions"
-                className="px-6 py-2.5 rounded-full text-xs font-bold text-white shadow-sm hover:opacity-95 transition-all"
+                className="px-6 py-2.5 rounded-full text-xs font-bold text-white shadow-sm hover:opacity-95 transition-colors"
                 style={{ backgroundColor: primaryColor }}
               >
                 Apply online
@@ -972,27 +1032,27 @@ export default function PublicSchoolWebsite() {
               </p>
               <div className="flex items-center gap-2 text-[#5b6478] pt-2">
                 {content?.socialLinks?.facebook && (
-                  <a href={content.socialLinks.facebook} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
+                  <a aria-label="Facebook" href={content.socialLinks.facebook} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
                     <Facebook className="w-4 h-4" />
                   </a>
                 )}
                 {content?.socialLinks?.twitter && (
-                  <a href={content.socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
+                  <a aria-label="Twitter" href={content.socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
                     <Twitter className="w-4 h-4" />
                   </a>
                 )}
                 {content?.socialLinks?.instagram && (
-                  <a href={content.socialLinks.instagram} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
+                  <a aria-label="Instagram" href={content.socialLinks.instagram} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
                     <Instagram className="w-4 h-4" />
                   </a>
                 )}
                 {content?.socialLinks?.youtube && (
-                  <a href={content.socialLinks.youtube} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
+                  <a aria-label="YouTube" href={content.socialLinks.youtube} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
                     <Youtube className="w-4 h-4" />
                   </a>
                 )}
                 {content?.socialLinks?.linkedin && (
-                  <a href={content.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
+                  <a aria-label="LinkedIn" href={content.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" className="p-1 hover:text-[#2158E0]">
                     <Linkedin className="w-4 h-4" />
                   </a>
                 )}
@@ -1027,11 +1087,31 @@ export default function PublicSchoolWebsite() {
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 shrink-0 text-[#2158E0]" />
-                  <span>{school.contact_phone || "Contact Phone"}</span>
+                  {school.contact_phone ? (
+                    <a
+                      href={`tel:${school.contact_phone}`}
+                      className="hover:underline transition-colors"
+                      aria-label={`Call ${school.contact_phone}`}
+                    >
+                      {school.contact_phone}
+                    </a>
+                  ) : (
+                    <span>Contact Phone</span>
+                  )}
                 </li>
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 shrink-0 text-[#2158E0]" />
-                  <span>{school.official_email || "admissions@school.edu"}</span>
+                  {school.official_email ? (
+                    <a
+                      href={`mailto:${school.official_email}`}
+                      className="hover:underline transition-colors"
+                      aria-label={`Email ${school.official_email}`}
+                    >
+                      {school.official_email}
+                    </a>
+                  ) : (
+                    <span>admissions@school.edu</span>
+                  )}
                 </li>
                 <li className="flex items-center gap-2 text-[11px] text-[#94a3b8]">
                   <Clock className="w-3.5 h-3.5 shrink-0" />
@@ -1061,7 +1141,7 @@ export default function PublicSchoolWebsite() {
                   }}
                   className="flex gap-1.5 pt-1"
                 >
-                  <input
+                  <input aria-label="Newsletter subscription email"
                     type="email"
                     required
                     value={newsletterEmail}
@@ -1093,17 +1173,27 @@ export default function PublicSchoolWebsite() {
 
       {/* Lightbox Photo Viewer */}
       {lightboxUrl && (
-        <div
-          role="dialog"
+        <dialog
+          ref={(el) => {
+            if (el && !el.open) {
+              el.showModal();
+              el.onclick = (e) => {
+                if (e.target === el) setLightboxUrl(null);
+              };
+            }
+          }}
           aria-label="Enlarged photo"
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-xs"
-          onClick={() => setLightboxUrl(null)}
+          className="fixed inset-0 z-50 m-0 p-4 w-full h-full max-w-none max-h-none border-0 bg-black/85 flex items-center justify-center backdrop-blur-xs backdrop:bg-transparent"
+          onCancel={(e) => {
+            e.preventDefault();
+            setLightboxUrl(null);
+          }}
         >
           <div
             className="relative max-w-4xl max-h-[85vh] rounded-2xl overflow-hidden bg-black"
             onClick={(e) => e.stopPropagation()}
           >
-            <button
+            <button aria-label="Close"
               type="button"
               onClick={() => setLightboxUrl(null)}
               className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black transition-colors cursor-pointer"
@@ -1116,7 +1206,7 @@ export default function PublicSchoolWebsite() {
               className="w-full h-full object-contain max-h-[80vh]"
             />
           </div>
-        </div>
+        </dialog>
       )}
     </div>
   );

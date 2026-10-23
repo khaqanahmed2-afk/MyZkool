@@ -151,7 +151,7 @@ export async function getSchoolInvoices(
           supabase.from("fee_receipts").select("*").eq("school_id", schoolId),
           supabase.from("fee_receipt_items").select("*"),
           supabase.from("fee_payments").select("*").eq("school_id", schoolId),
-          supabase.from("academic_years").select("id, name, is_current").eq("school_id", schoolId),
+          supabase.from("academic_years").select("id, label, is_current").eq("school_id", schoolId),
           supabase.from("transport_assignments").select("id, student_id, route_id, pickup_stop_id, status").eq("school_id", schoolId).eq("status", "active"),
         ]);
 
@@ -164,7 +164,12 @@ export async function getSchoolInvoices(
         receipts = (receiptsRes.data || []) as FeeReceipt[];
         receiptItems = (receiptItemsRes.data || []) as FeeReceiptItem[];
         payments = (paymentsRes.data || []) as FeePayment[];
-        academicYears = yearsRes.data || [];
+        academicYears = (yearsRes.data || []).map((y: any) => ({
+          id: y.id,
+          name: y.label || y.name || "Academic Year",
+          label: y.label || y.name || "Academic Year",
+          is_current: Boolean(y.is_current),
+        }));
         transportAssignments = transportRes.data || [];
       } catch (dbErr) {
         console.warn("Supabase fetch notice, falling back to local cache:", dbErr);
@@ -196,7 +201,13 @@ export async function getSchoolInvoices(
       receipts = lsGet<FeeReceipt>(`myzkool_fee_receipts_${schoolId}`);
       receiptItems = lsGet<FeeReceiptItem>(`myzkool_fee_receipt_items_${schoolId}`);
       payments = lsGet<FeePayment>(`myzkool_fee_payments_${schoolId}`);
-      academicYears = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+      const cachedYears = lsGet<any>(`myzkool_academic_years_${schoolId}`);
+      academicYears = cachedYears.map((y: any) => ({
+        id: y.id,
+        name: y.label || y.name || "Academic Year",
+        label: y.label || y.name || "Academic Year",
+        is_current: Boolean(y.is_current),
+      }));
       transportAssignments = lsGet<any>(`myzkool_transport_assignments_${schoolId}`).filter((a) => a.status === "active");
     }
 
@@ -208,6 +219,12 @@ export async function getSchoolInvoices(
     const headMap = new Map<string, FeeHead>(heads.map((h) => [h.id, h]));
     const yearMap = new Map<string, any>(academicYears.map((y) => [y.id, y]));
     const receiptMap = new Map<string, FeeReceipt>(receipts.map((r) => [r.id, r]));
+    const paymentMap = new Map<string, FeePayment>();
+    for (const p of payments) {
+      if (!paymentMap.has(p.receipt_id)) {
+        paymentMap.set(p.receipt_id, p);
+      }
+    }
 
     // Group dues by (student_id + academic_year_id + term_id)
     // Dues without a term_id are grouped into a "general" invoice for that student and year
@@ -373,7 +390,7 @@ export async function getSchoolInvoices(
             .filter((ri) => ri.receipt_id === rcptId)
             .reduce((s, ri) => s + ri.amount_paise, 0);
 
-          const rcptPayment = payments.find((p) => p.receipt_id === rcptId);
+          const rcptPayment = paymentMap.get(rcptId);
 
           linkedPayments.push({
             receipt_id: rcpt.id,
@@ -423,8 +440,11 @@ export async function getSchoolInvoices(
 
     lsSetMap(invNoMapKey, invoiceNoMap);
 
-    // Compute Summary Metrics across all real un-filtered active invoices for the school/year
-    const activeInvoices = compiledInvoices.filter((inv) => inv.status !== "cancelled");
+    // Compute Summary Metrics across real un-filtered active invoices for the school/year
+    const yearScopedInvoices = filters.academic_year_id
+      ? compiledInvoices.filter((inv) => inv.academic_year_id === filters.academic_year_id)
+      : compiledInvoices;
+    const activeInvoices = yearScopedInvoices.filter((inv) => inv.status !== "cancelled");
     const totalInvoicedPaise = activeInvoices.reduce((s, inv) => s + inv.total_paise, 0);
     const totalPaidPaise = activeInvoices.reduce((s, inv) => s + inv.paid_paise, 0);
     const outstandingPaise = activeInvoices.reduce((s, inv) => s + inv.balance_paise, 0);
@@ -434,6 +454,7 @@ export async function getSchoolInvoices(
 
     const paidCount = activeInvoices.filter((inv) => inv.status === "paid").length;
     const pendingCount = activeInvoices.filter((inv) => inv.status === "unpaid" || inv.status === "partial").length;
+    const distinctStudentsWithInvoices = new Set(activeInvoices.map((inv) => inv.student_id)).size;
 
     const metrics: InvoiceSummaryMetrics = {
       totalInvoicedPaise,
@@ -444,11 +465,15 @@ export async function getSchoolInvoices(
       invoiceCount: activeInvoices.length,
       paidCount,
       pendingCount,
+      distinctStudentsCount: distinctStudentsWithInvoices,
     };
 
     // Apply User Filters
     let filtered = [...compiledInvoices];
 
+    if (filters.student_id) {
+      filtered = filtered.filter((i) => i.student_id === filters.student_id);
+    }
     if (filters.academic_year_id) {
       filtered = filtered.filter((i) => i.academic_year_id === filters.academic_year_id);
     }
@@ -712,7 +737,7 @@ export async function executeInvoiceGeneration(
         );
       }
 
-      for (const assignment of assignments) {
+      for await (const assignment of assignments) {
         try {
           const tRes = await createTransportDues(schoolId, assignment.id);
           if (tRes.success && tRes.count) {
@@ -793,7 +818,7 @@ export async function cancelInvoice(
             .in("id", dueIds)
             .eq("school_id", schoolId);
 
-          for (const li of invoice.line_items) {
+          for await (const li of invoice.line_items) {
             await supabase.from("fee_ledger").insert({
               id: crypto.randomUUID(),
               school_id: schoolId,
@@ -1225,7 +1250,7 @@ export async function createSingleStudentInvoice(
       try {
         await supabase.from("student_dues").insert(createdDues);
         // Record ledger rows
-        for (const d of createdDues) {
+        for await (const d of createdDues) {
           await supabase.from("fee_ledger").insert({
             id: crypto.randomUUID(),
             school_id: schoolId,

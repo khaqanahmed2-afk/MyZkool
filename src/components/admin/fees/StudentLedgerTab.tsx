@@ -14,7 +14,7 @@ import {
   TrendingDown, TrendingUp, Wallet, AlertCircle, ArrowUpRight, ArrowDownLeft
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
-import { getStudentDues } from "../../../services/feeDuesService";
+import { getStudentDues, getLedger } from "../../../services/feeDuesService";
 import { amountInWords, formatPaise } from "../../../lib/amountInWords";
 import type { StudentDue, FeeLedgerEntry } from "../../../types/fees";
 
@@ -87,10 +87,15 @@ export default function StudentLedgerTab({ studentId, studentName }: Props) {
       const { dues: d } = await getStudentDues(schoolId, studentId, yearId || undefined);
       setDues(d);
 
-      // Load ledger from localStorage (dev) or Supabase
-      const allLedger = JSON.parse(localStorage.getItem(`myzkool_fee_ledger_${schoolId}`) || "[]") as FeeLedgerEntry[];
-      const studentLedger = allLedger.filter(e => e.student_id === studentId);
-      setLedger(studentLedger.sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      // Load authentic ledger from database (or fallback)
+      const { entries } = await getLedger(schoolId, studentId, yearId || undefined);
+      if (entries && entries.length > 0) {
+        setLedger(entries.sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      } else {
+        const allLedger = JSON.parse(localStorage.getItem(`myzkool_fee_ledger_${schoolId}`) || "[]") as FeeLedgerEntry[];
+        const studentLedger = allLedger.filter(e => e.student_id === studentId);
+        setLedger(studentLedger.sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      }
     } finally {
       setLoading(false);
     }
@@ -98,11 +103,12 @@ export default function StudentLedgerTab({ studentId, studentName }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Summary metrics ───────────────────────────────────────────────────────
-  const totalDemand = dues.reduce((s, d) => s + d.net_paise, 0);
-  const totalConcession = dues.reduce((s, d) => s + d.concession_paise, 0);
-  const totalPaid = dues.reduce((s, d) => s + d.paid_paise, 0);
-  const totalBalance = dues.reduce((s, d) => s + d.balance_paise, 0);
+  // ── Summary metrics (strictly excluding cancelled dues from active demand) ──
+  const activeDues = dues.filter(d => d.status !== "cancelled");
+  const totalDemand = activeDues.reduce((s, d) => s + d.net_paise, 0);
+  const totalConcession = activeDues.reduce((s, d) => s + d.concession_paise, 0);
+  const totalPaid = activeDues.reduce((s, d) => s + d.paid_paise, 0);
+  const totalBalance = activeDues.reduce((s, d) => s + d.balance_paise, 0);
 
   // ── Running balance calc ───────────────────────────────────────────────────
   let running = 0;
@@ -210,9 +216,8 @@ export default function StudentLedgerTab({ studentId, studentName }: Props) {
             <button
               key={t}
               onClick={() => setTypeFilter(t)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize flex-shrink-0 ${
-                typeFilter === t ? "bg-[#2158E0] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize flex-shrink-0 ${typeFilter === t ? "bg-[#2158E0] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
             >
               {t.replace(/_/g, " ")}
             </button>
@@ -302,12 +307,11 @@ export default function StudentLedgerTab({ studentId, studentName }: Props) {
                       <span className={d.balance_paise > 0 ? "text-red-600" : "text-slate-700"}>{fmt(d.balance_paise)}</span>
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                        d.status === "paid" ? "bg-green-50 text-green-700"
-                        : d.status === "partial" ? "bg-amber-50 text-amber-700"
-                        : d.status === "pending" ? "bg-slate-100 text-slate-600"
-                        : "bg-red-50 text-red-700"
-                      }`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${d.status === "paid" ? "bg-green-50 text-green-700"
+                          : d.status === "partial" ? "bg-amber-50 text-amber-700"
+                            : d.status === "pending" ? "bg-slate-100 text-slate-600"
+                              : "bg-red-50 text-red-700"
+                        }`}>
                         {d.status}
                       </span>
                     </td>

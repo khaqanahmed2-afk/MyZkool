@@ -56,7 +56,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
 
             {/* LEFT — Marketing Content */}
             <div
-              className={`lg:col-span-5 xl:col-span-5 space-y-6 lg:space-y-7 transition-all duration-700 ease-out ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+              className={`lg:col-span-5 xl:col-span-5 space-y-6 lg:space-y-7 transition duration-700 ease-out ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
                 }`}
             >
               {/* Badge */}
@@ -93,23 +93,22 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                 <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
                   Core Modules
                 </p>
-                <div className="flex flex-wrap gap-2" id="hero-feature-pills" role="list">
+                <ul className="flex flex-wrap gap-2 p-0 m-0 list-none" id="hero-feature-pills">
                   {FEATURE_PILLS.map((pill) => {
                     const Icon = pill.icon;
                     return (
-                      <div
+                      <li
                         key={pill.label}
-                        role="listitem"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-700 text-xs font-medium shadow-2xs hover:border-[#2158E0]/40 hover:shadow-xs transition-all cursor-default"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-700 text-xs font-medium shadow-2xs hover:border-[#2158E0]/40 hover:shadow-xs transition cursor-default"
                       >
                         <span className={`${pill.bg} p-0.5 rounded-full`}>
                           <Icon className={`w-3 h-3 ${pill.color} shrink-0`} aria-hidden="true" />
                         </span>
                         {pill.label}
-                      </div>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               </div>
 
               {/* CTA Buttons */}
@@ -117,7 +116,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                 <button
                   onClick={onOpenDemo}
                   id="hero-primary-cta"
-                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 text-[15px] font-semibold text-white bg-[#2158E0] hover:bg-[#1A47B8] rounded-xl shadow-md shadow-[#2158E0]/20 hover:shadow-lg hover:shadow-[#2158E0]/30 active:scale-[0.98] transition-all duration-200 cursor-pointer group"
+                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 text-[15px] font-semibold text-white bg-[#2158E0] hover:bg-[#1A47B8] rounded-xl shadow-md shadow-[#2158E0]/20 hover:shadow-lg hover:shadow-[#2158E0]/30 active:scale-[0.98] transition duration-200 cursor-pointer group"
                 >
                   Book a Demo
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" aria-hidden="true" />
@@ -126,7 +125,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                 <button
                   onClick={scrollToFeatures}
                   id="hero-secondary-cta"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-[15px] font-semibold text-[#2158E0] bg-white border-2 border-[#2158E0] hover:bg-[#2158E0]/5 rounded-xl active:scale-[0.98] transition-all duration-200 cursor-pointer group"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-[15px] font-semibold text-[#2158E0] bg-white border-2 border-[#2158E0] hover:bg-[#2158E0]/5 rounded-xl active:scale-[0.98] transition duration-200 cursor-pointer group"
                 >
                   Explore MyZkool
                   <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" aria-hidden="true" />
@@ -148,7 +147,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
 
             {/* RIGHT — Product Showcase Image */}
             <div
-              className={`lg:col-span-7 xl:col-span-7 flex items-center justify-center lg:justify-end transition-all duration-700 ease-out delay-150 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+              className={`lg:col-span-7 xl:col-span-7 flex items-center justify-center lg:justify-end transition duration-700 ease-out delay-150 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
                 }`}
             >
               <div className="relative w-full max-w-[720px] xl:max-w-[780px] flex items-center justify-center">
@@ -162,15 +161,18 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                 />
 
                 {/* Main Product Mockup Image */}
-                <img
-                  src="/hero-laptop.png"
-                  alt="MyZkool School Management Platform and Parent App preview"
-                  className="w-full h-auto object-contain drop-shadow-[0_20px_45px_rgba(15,23,42,0.12)] rounded-xl select-none"
-                  width={1517}
-                  height={1037}
-                  loading="eager"
-                  decoding="async"
-                />
+                <picture>
+                  <source srcSet="/hero-laptop.webp" type="image/webp" />
+                  <img
+                    src="/hero-laptop.png"
+                    alt="MyZkool School Management Platform and Parent App preview"
+                    className="w-full h-auto object-contain drop-shadow-[0_20px_45px_rgba(15,23,42,0.12)] rounded-xl select-none"
+                    width={1517}
+                    height={1037}
+                    loading="eager"
+                    decoding="async"
+                  />
+                </picture>
               </div>
             </div>
 

@@ -43,6 +43,7 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
       <div className="flex items-center gap-3 sm:gap-4">
         <button
           onClick={onMenuClick}
+          aria-label="Open sidebar menu"
           className="p-2 -ml-2 text-[#5B6478] hover:bg-gray-100 rounded-lg md:hidden"
         >
           <Menu className="w-5 h-5" />
@@ -63,8 +64,12 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
 
       <div className="flex items-center gap-3 sm:gap-4">
         <div className="hidden md:flex relative">
+          <label htmlFor="admin-search-input" className="sr-only">
+            Search students, invoices, receipts
+          </label>
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
+            id="admin-search-input"
             type="text"
             placeholder="Search students, invoices, receipts..."
             className="pl-9 pr-4 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-full text-xs focus:outline-none focus:border-[#0B7B49] focus:ring-1 focus:ring-[#0B7B49] transition-shadow w-72 text-[#141A2E]"
@@ -115,6 +120,7 @@ export function AdminHeader({ school, onMenuClick }: AdminHeaderProps) {
             <>
               <div
                 className="fixed inset-0 z-10"
+                aria-hidden="true"
                 onClick={() => setIsProfileOpen(false)}
               ></div>
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-[#E6EAF3] py-1 z-20">

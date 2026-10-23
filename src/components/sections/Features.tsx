@@ -37,7 +37,7 @@ export const Features: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
           {/* Card 1: Student Management (Large) */}
-          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-6 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col group">
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-6 shadow-sm hover:shadow-lg transition duration-300 flex flex-col group">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#2158E0]/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -94,7 +94,7 @@ export const Features: React.FC = () => {
           </div>
 
           {/* Card 2: Fee Management (Large) */}
-          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-6 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col group">
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-6 shadow-sm hover:shadow-lg transition duration-300 flex flex-col group">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -135,8 +135,8 @@ export const Features: React.FC = () => {
                   { s: "Student A", h: "Tuition", a: "₹4,200", st: "Paid", sc: "text-emerald-700" },
                   { s: "Student B", h: "Transport", a: "₹1,800", st: "Due", sc: "text-amber-600" },
                   { s: "Student C", h: "Tuition", a: "₹4,200", st: "Paid", sc: "text-emerald-700" },
-                ].map((r, i) => (
-                  <div key={i} className="grid grid-cols-4 items-center py-1.5 text-[10px] border-b border-[#F1F5F9] last:border-0">
+                ].map((r) => (
+                  <div key={r.s} className="grid grid-cols-4 items-center py-1.5 text-[10px] border-b border-[#F1F5F9] last:border-0">
                     <span className="text-[#141A2E] font-medium truncate">{r.s}</span>
                     <span className="text-[#5B6478]">{r.h}</span>
                     <span className="text-[#141A2E] font-semibold">{r.a}</span>
@@ -156,7 +156,7 @@ export const Features: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
 
           {/* Card 3: Smart Attendance */}
-          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col group">
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition duration-300 flex flex-col group">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
               <UserCheck className="w-4.5 h-4.5 text-emerald-600" />
             </div>
@@ -197,7 +197,7 @@ export const Features: React.FC = () => {
           </div>
 
           {/* Card 4: Parent App */}
-          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col group">
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition duration-300 flex flex-col group">
             <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
               <Smartphone className="w-4.5 h-4.5 text-indigo-600" />
             </div>
@@ -249,7 +249,7 @@ export const Features: React.FC = () => {
           </div>
 
           {/* Card 5: Online Admissions */}
-          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col group">
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition duration-300 flex flex-col group">
             <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
               <ClipboardList className="w-4.5 h-4.5 text-violet-600" />
             </div>
@@ -293,7 +293,7 @@ export const Features: React.FC = () => {
           </div>
 
           {/* Card 6: School Website */}
-          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col group">
+          <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 shadow-sm hover:shadow-lg transition duration-300 flex flex-col group">
             <div className="w-9 h-9 rounded-xl bg-sky-50 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
               <Globe className="w-4.5 h-4.5 text-sky-600" />
             </div>

@@ -22,7 +22,13 @@ ALTER TABLE public.admission_enquiries ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public can insert admission enquiries" ON public.admission_enquiries;
 CREATE POLICY "Public can insert admission enquiries"
   ON public.admission_enquiries FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (
+    school_id IS NOT NULL
+    AND parent_name IS NOT NULL
+    AND length(trim(parent_name)) > 0
+    AND length(trim(phone)) > 0
+    AND status = 'new'
+  );
 
 DROP POLICY IF EXISTS "School members can view admission enquiries" ON public.admission_enquiries;
 CREATE POLICY "School members can view admission enquiries"
