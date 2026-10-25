@@ -1,1268 +1,1670 @@
 /**
  * FeeCollectPage — /admin/fees/collect
- * B5.3: Two-panel fee collection counter
+ * Dedicated Full-Page Fee Collection Counter
  *
- * Left: student search, dues list with selection, siblings tab
- * Right: payment modes, split, cash change, concession block with PIN override,
- *        summary, sticky collect button, success panel
- *
- * Full keyboard map:
- *   / — focus search
- *   ↑↓ — navigate results / dues rows
- *   Enter — select result / toggle due
- *   Space — toggle due row
- *   A — select all overdue
- *   Alt+1…6 — payment mode
- *   Ctrl+Enter — collect
- *   P — print
- *   W — WhatsApp
- *   N — next student
- *   Esc — back to search
+ * Implements:
+ * 1. Full-page layout within AdminShell (no cramped drawer)
+ * 2. Header with title, subtitle, back navigation, student change action
+ * 3. 4-step horizontal stepper: Student -> Invoices -> Payment -> Receipt
+ * 4. Compact Student Summary card with parent/guardian details & dues
+ * 5. Full-width Invoice Selection Table with checkboxes, particulars, due dates, status badges, amounts
+ * 6. Real-time Collection Summary (Selected Count, Total Billed, Previously Paid, Outstanding, Selected Collection, Advance)
+ * 7. Payment method selection, partial payment validation, cheque/UPI instrument fields, confirmation modal
+ * 8. Official receipt issuance, live A4 theme preview with NO QR code, print and PDF download
+ * 9. Content-aligned sticky footer with bottom padding to prevent content overlap
+ * 10. Responsive layout for desktop, laptop, tablet, and mobile screens
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import {
-  Search, X, ChevronRight, CreditCard, Banknote, Smartphone, CheckSquare,
-  Building2, MoreHorizontal, Plus, Minus, Printer, MessageCircle, Download,
-  UserPlus, AlertTriangle, Wifi, WifiOff, ChevronDown, Users, Info, Shield, KeyRound, Check
+  ArrowLeft,
+  ArrowRight,
+  Search,
+  X,
+  Check,
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck,
+  FileText,
+  CreditCard,
+  Banknote,
+  Smartphone,
+  Building2,
+  CheckSquare,
+  Printer,
+  Download,
+  Share2,
+  RotateCcw,
+  RefreshCw,
+  Calendar,
+  User,
+  Users,
+  DollarSign,
+  Clock,
+  ChevronDown,
+  Filter,
+  Plus,
+  Receipt,
+  Phone,
+  Layers,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
-import { FeeNavHeader } from "../../../components/admin/fees/FeeNavHeader";
-import {
-  collectFees, getCollectContext, searchStudentsForCounter,
-} from "../../../services/collectionService";
-import { getStudentDues } from "../../../services/feeDuesService";
-import { getFeeSettings, verifyOwnerPin } from "../../../services/feeSetupService";
-import { getStudentSiblings } from "../../../services/studentService";
-import { amountInWords, formatPaise } from "../../../lib/amountInWords";
-import { computeAllocation } from "../../../lib/feeAllocation";
-import { generateReceiptHTML } from "../../../lib/receiptTemplate";
-import type { StudentDue } from "../../../types/fees";
-import type { CollectPaymentLine, FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
+import { useCollectFeeDrawer } from "../../../components/admin/fees/useCollectFeeDrawer";
+import { formatPaise, amountInWords } from "../../../lib/amountInWords";
+import { PaymentReviewModal } from "../../../components/admin/fees/CollectFeeDrawerComponents";
+import type { PaymentMode } from "../../../types/collection";
+import type { OutstandingInvoiceItem } from "../../../services/feeCollectionsQueryService";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const PAYMENT_MODES = [
-  { id: "cash", label: "Cash", icon: Banknote, shortcut: "1" },
-  { id: "upi", label: "UPI", icon: Smartphone, shortcut: "2" },
-  { id: "card", label: "Card", icon: CreditCard, shortcut: "3" },
-  { id: "cheque", label: "Cheque", icon: CheckSquare, shortcut: "4" },
-  { id: "bank_transfer", label: "Bank transfer", icon: Building2, shortcut: "5" },
-  { id: "other", label: "Other", icon: MoreHorizontal, shortcut: "6" },
-] as const;
-
-type PaymentMode = typeof PAYMENT_MODES[number]["id"];
-
-interface PaymentRow {
-  id: string;
-  mode: PaymentMode;
-  amount: string;
-  reference: string;
-  received?: string;
+// Helper for avatar initials
+function getInitials(name: string): string {
+  if (!name) return "ST";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "ST";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-interface SearchResult {
-  id: string;
-  name: string;
-  admission_no: string;
-  balance_paise: number;
-}
-
-interface SiblingItem {
-  id: string;
-  name: string;
-  admission_no: string;
-  dues: StudentDue[];
-  selectedDueIds: Set<string>;
-  includedInPayment: boolean;
-}
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-function paise(s: string): number {
-  const v = parseFloat(s.replace(/,/g, ""));
-  return isNaN(v) ? 0 : Math.round(v * 100);
-}
-
-function formatRupees(p: number): string {
-  return (p / 100).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
-
-// ─── Component ───────────────────────────────────────────────────────────────
+// Payment modes with icons and labels
+const PAYMENT_MODES: Array<{ id: PaymentMode; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: "upi", label: "UPI / QR", icon: Smartphone },
+  { id: "cash", label: "Cash", icon: Banknote },
+  { id: "cheque", label: "Cheque", icon: CheckSquare },
+  { id: "card", label: "Card (POS)", icon: CreditCard },
+  { id: "bank_transfer", label: "Bank Transfer (NEFT/RTGS)", icon: Building2 },
+];
 
 export default function FeeCollectPage() {
-  const { user, schoolId } = useAuth();
+  const { schoolId, school } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [resultIdx, setResultIdx] = useState(-1);
+  // Query parameter for initial student (e.g. /admin/fees/collect?student=xyz)
+  const initialStudentId = searchParams.get("student") || searchParams.get("studentId") || undefined;
+  const academicYearParam = searchParams.get("academicYearId") || undefined;
 
-  const [student, setStudent] = useState<SearchResult | null>(null);
-  const [dues, setDues] = useState<StudentDue[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"dues" | "siblings">("dues");
+  // Filter & Search inside invoices table (Step 2)
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<"all" | "overdue" | "partial" | "pending">("all");
+  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState("");
 
-  // Siblings state (B7.4)
-  const [siblings, setSiblings] = useState<SiblingItem[]>([]);
-  const [siblingsLoading, setSiblingsLoading] = useState(false);
+  // Cash tender calculator state (Step 3 helper)
+  const [cashTendered, setCashTendered] = useState<string>("");
 
-  // Concession state (B7.5)
-  const [showConcessionModal, setShowConcessionModal] = useState(false);
-  const [concessionBasis, setConcessionBasis] = useState<"management" | "merit" | "staff_ward" | "other">("management");
-  const [concessionType, setConcessionType] = useState<"percent" | "fixed">("percent");
-  const [concessionVal, setConcessionVal] = useState("10");
-  const [concessionReason, setConcessionReason] = useState("");
-  const [ownerPin, setOwnerPin] = useState("");
-  const [pinError, setPinError] = useState("");
-  const [appliedConcessions, setAppliedConcessions] = useState<{ basis: string; value: number; type: string; reason: string } | null>(null);
+  // Hook managing the 4-step workflow, database state, calculations, and payment recording
+  const {
+    step,
+    setStep,
+    goToStep,
+    searchQuery,
+    setSearchQuery,
+    isSearching,
+    searchResults,
+    selectedStudent,
+    classesList,
+    selectedClassId,
+    selectedSectionId,
+    availableSections,
+    isLoadingClasses,
+    handleClassChange,
+    setSelectedSectionId,
+    handleSelectStudent,
+    handleResetFilters,
+    handleChangeStudent,
+    invoices,
+    selectedInvoiceIds,
+    invoicesLoading,
+    invoiceLoadError,
+    handleRetryLoadInvoices,
+    selectedInvoicesTotalPaise,
+    toggleInvoice,
+    selectAllInvoices,
+    deselectAllInvoices,
+    amountRupees,
+    setAmountRupees,
+    enteredPaise,
+    isAdvancePayment,
+    setIsAdvancePayment,
+    handleToggleAdvancePayment,
+    paymentMethod,
+    setPaymentMethod,
+    referenceNo,
+    setReferenceNo,
+    chequeNo,
+    setChequeNo,
+    bankName,
+    setBankName,
+    chequeDate,
+    setChequeDate,
+    branchName,
+    setBranchName,
+    paymentDate,
+    setPaymentDate,
+    notes,
+    setNotes,
+    invoiceAllocations,
+    isReviewOpen,
+    setIsReviewOpen,
+    isSubmitting,
+    errorMessage,
+    setErrorMessage,
+    generatedReceipt,
+    notificationToast,
+    buildCurrentReceiptHTML,
+    handleProceedToInvoices,
+    handleProceedToPayment,
+    handleBackToStudent,
+    handleBackToInvoices,
+    handleSubmitPayment,
+    handlePrintReceipt,
+    handleDownloadReceipt,
+    handleSendToParent,
+    handleCollectAnother,
+  } = useCollectFeeDrawer({
+    isOpen: true,
+    initialStudentId,
+    academicYearId: academicYearParam,
+    onSuccess: (receiptNo) => {
+      // payment recorded
+    },
+  });
 
-  const [payments, setPayments] = useState<PaymentRow[]>([
-    { id: "p1", mode: "cash", amount: "", reference: "", received: "" },
-  ]);
-  const [remarks, setRemarks] = useState("");
+  // Calculate change for cash payment
+  const cashChangePaise = useMemo(() => {
+    if (paymentMethod !== "cash" || !cashTendered) return 0;
+    const tenderedPaise = Math.round((parseFloat(cashTendered.replace(/,/g, "")) || 0) * 100);
+    return Math.max(0, tenderedPaise - enteredPaise);
+  }, [paymentMethod, cashTendered, enteredPaise]);
 
-  const [collecting, setCollecting] = useState(false);
-  const [success, setSuccess] = useState<{
-    receipt_no: string;
-    total_paise: number;
-    advance_paise: number;
-    receipt_id: string;
-    items?: FeeReceiptItem[];
-    payments?: FeePayment[];
-    family_receipt_nos?: string[];
-  } | null>(null);
-  const [error, setError] = useState("");
-
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [yearId, setYearId] = useState("");
-  const [settings, setSettings] = useState<any>(null);
-
-  const idempKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (idempKeyRef.current === null) {
-      idempKeyRef.current = crypto.randomUUID();
-    }
-  }, []);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  // ── Online/offline detection ───────────────────────────────────────────────
-  useEffect(() => {
-    const onOnline  = () => setIsOffline(false);
-    const onOffline = () => setIsOffline(true);
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
-  }, []);
-
-  // ── Load settings & current year ──────────────────────────────────────────
-  useEffect(() => {
-    if (!schoolId) return;
-    getFeeSettings(schoolId).then(({ settings: s }) => setSettings(s));
-    const years = JSON.parse(localStorage.getItem(`myzkool_academic_years_${schoolId}`) || "[]");
-    const cur = years.find((y: any) => y.is_current);
-    if (cur) setYearId(cur.id);
-  }, [schoolId]);
-
-  // ── Student search (debounced 200 ms) ─────────────────────────────────────
-  useEffect(() => {
-    if (!schoolId || query.length < 2) { setResults([]); return; }
-    const t = setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const r = await searchStudentsForCounter(schoolId, query);
-        setResults(r);
-        setResultIdx(-1);
-      } finally { setSearchLoading(false); }
-    }, 200);
-    return () => clearTimeout(t);
-  }, [query, schoolId]);
-
-  // ── Load student when selected ───────────────────────────────────────────
-  const selectStudent = useCallback(async (s: SearchResult) => {
-    setStudent(s);
-    setQuery("");
-    setResults([]);
-    setSelectedIds(new Set());
-    setSuccess(null);
-    setError("");
-    setAppliedConcessions(null);
-    idempKeyRef.current = crypto.randomUUID();
-
-    if (!schoolId || !yearId) return;
-    const { dues: d } = await getStudentDues(schoolId, s.id, yearId);
-    const pendingDues = d.filter(due => due.status === "pending" || due.status === "partial");
-    setDues(pendingDues);
-
-    // Auto-select all overdue dues
-    const overdue = pendingDues.filter(due => new Date(due.due_date) <= new Date());
-    setSelectedIds(new Set(overdue.length > 0 ? overdue.map(x => x.id) : pendingDues.map(x => x.id)));
-
-    // Load siblings
-    setSiblingsLoading(true);
-    try {
-      const { siblings: sibList } = await getStudentSiblings(schoolId, s.id);
-      if (sibList && sibList.length > 0) {
-        const sibItems: SiblingItem[] = await Promise.all(
-          sibList.map(async (sib) => {
-            const { dues: sDues } = await getStudentDues(schoolId, sib.sibling_id, yearId);
-            const sPending = sDues.filter(due => due.status === "pending" || due.status === "partial");
-            return {
-              id: sib.sibling_id,
-              name: `${sib.sibling_first_name} ${sib.sibling_last_name}`.trim(),
-              admission_no: sib.sibling_admission_no,
-              dues: sPending,
-              selectedDueIds: new Set(sPending.map(x => x.id)),
-              includedInPayment: false,
-            };
-          })
-        );
-        setSiblings(sibItems);
-      } else {
-        setSiblings([]);
+  // Filter invoices for Step 2 table
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      // Status filter
+      if (invoiceStatusFilter !== "all") {
+        if (invoiceStatusFilter === "overdue" && !inv.is_overdue && inv.status !== "overdue") return false;
+        if (invoiceStatusFilter === "partial" && inv.status !== "partial") return false;
+        if (invoiceStatusFilter === "pending" && inv.status !== "pending") return false;
       }
-    } catch {
-      setSiblings([]);
-    } finally {
-      setSiblingsLoading(false);
-    }
-  }, [schoolId, yearId]);
-
-  // ── Load student from URL param ?student= or ?studentId= ────────────────────────────────
-  useEffect(() => {
-    const studentParam = searchParams.get("student") || searchParams.get("studentId");
-    if (studentParam && schoolId && yearId && !student) {
-      getCollectContext(schoolId, studentParam, yearId).then(ctx => {
-        if (ctx?.student) {
-          selectStudent({
-            id: ctx.student.id,
-            name: ctx.student.name,
-            admission_no: ctx.student.admission_no,
-            balance_paise: ctx.dues.reduce((sum, d) => sum + d.balance_paise, 0),
-          });
-        }
-      });
-    }
-  }, [searchParams, schoolId, yearId, student, selectStudent]);
-
-  // ── Sibling toggle ────────────────────────────────────────────────────────
-  function toggleSiblingIncluded(siblingId: string) {
-    setSiblings(prev => prev.map(sib => {
-      if (sib.id === siblingId) {
-        return { ...sib, includedInPayment: !sib.includedInPayment };
+      // Text search
+      if (invoiceSearchQuery.trim()) {
+        const q = invoiceSearchQuery.toLowerCase().trim();
+        const matchesNo = inv.invoice_number.toLowerCase().includes(q);
+        const matchesTerm = inv.term_name.toLowerCase().includes(q);
+        const matchesPart = inv.particulars.some((p) => p.toLowerCase().includes(q));
+        if (!matchesNo && !matchesTerm && !matchesPart) return false;
       }
-      return sib;
-    }));
-  }
-
-  // ── Sibling due selection ─────────────────────────────────────────────────
-  function toggleSiblingDue(siblingId: string, dueId: string) {
-    setSiblings(prev => prev.map(sib => {
-      if (sib.id === siblingId) {
-        const nextSet = new Set(sib.selectedDueIds);
-        if (nextSet.has(dueId)) nextSet.delete(dueId);
-        else nextSet.add(dueId);
-        return { ...sib, selectedDueIds: nextSet };
-      }
-      return sib;
-    }));
-  }
-
-  // ── Selected dues and siblings dues ───────────────────────────────────────
-  const selectedDues = dues.filter(d => selectedIds.has(d.id));
-  const primarySelectedPaise = selectedDues.reduce((s, d) => s + d.balance_paise, 0);
-
-  // Sibling dues included
-  const includedSiblings = siblings.filter(s => s.includedInPayment);
-  const siblingSelectedPaise = includedSiblings.reduce((total, sib) => {
-    const dueSum = sib.dues.filter(d => sib.selectedDueIds.has(d.id)).reduce((s, d) => s + d.balance_paise, 0);
-    return total + dueSum;
-  }, 0);
-
-  const totalSelectedPaise = primarySelectedPaise + siblingSelectedPaise;
-  const totalPaymentPaise = payments.reduce((s, p) => s + paise(p.amount), 0);
-
-  // Auto-fill payment amount when selecting dues if payment amount is currently empty
-  useEffect(() => {
-    if (totalSelectedPaise > 0) {
-      setPayments((prev) => {
-        if (prev.length === 1 && prev[0].amount === "") {
-          return [{ ...prev[0], amount: (totalSelectedPaise / 100).toString() }];
-        }
-        return prev;
-      });
-    }
-  }, [totalSelectedPaise]);
-
-  const allocation = totalPaymentPaise > 0 && selectedDues.length > 0
-    ? computeAllocation(selectedDues, Math.min(totalPaymentPaise, primarySelectedPaise), settings?.allocation_mode ?? "auto_oldest_first")
-    : null;
-
-  const advancePaise = totalPaymentPaise > totalSelectedPaise ? totalPaymentPaise - totalSelectedPaise : 0;
-  const cashRow = payments.find(p => p.mode === "cash");
-  const receivedPaise = cashRow?.received ? paise(cashRow.received) : 0;
-  const changePaise = receivedPaise > totalPaymentPaise ? receivedPaise - totalPaymentPaise : 0;
-
-  const canCollect = !collecting && !isOffline &&
-    totalPaymentPaise > 0 && totalSelectedPaise > 0 &&
-    totalPaymentPaise >= totalSelectedPaise;
-
-  // ── Apply Ad-hoc Concession (B7.5) ────────────────────────────────────────
-  const handleApplyConcession = async () => {
-    if (!student || !schoolId) return;
-    setPinError("");
-
-    const valNum = parseFloat(concessionVal);
-    if (isNaN(valNum) || valNum <= 0) {
-      setPinError("Enter a valid discount amount or percentage");
-      return;
-    }
-    if (!concessionReason || concessionReason.trim().length < 5) {
-      setPinError("Reason is required (min 5 characters)");
-      return;
-    }
-
-    const thresholdPercent = settings?.discount_approval_threshold_percent ?? 10;
-    const isAboveThreshold = concessionType === "percent"
-      ? valNum > thresholdPercent
-      : (valNum * 100) > (primarySelectedPaise * (thresholdPercent / 100));
-
-    if (isAboveThreshold) {
-      if (!ownerPin) {
-        setPinError(`Concession exceeds threshold (${thresholdPercent}%). Owner PIN required.`);
-        return;
-      }
-      const pinRes = await verifyOwnerPin(schoolId, ownerPin);
-      if (!pinRes.ok) {
-        setPinError(pinRes.error || "Incorrect Owner PIN");
-        return;
-      }
-    }
-
-    // Apply concession to state dues
-    setDues(prev => prev.map(due => {
-      if (!selectedIds.has(due.id)) return due;
-      const discount = concessionType === "percent"
-        ? Math.round(due.gross_paise * (valNum / 100))
-        : Math.min(due.gross_paise, Math.round((valNum * 100) / selectedIds.size));
-      const newConcession = Math.min(due.gross_paise, due.concession_paise + discount);
-      const newNet = Math.max(0, due.gross_paise - newConcession);
-      const newBal = Math.max(0, newNet - due.paid_paise);
-      return {
-        ...due,
-        concession_paise: newConcession,
-        net_paise: newNet,
-        balance_paise: newBal,
-      };
-    }));
-
-    setAppliedConcessions({
-      basis: concessionBasis,
-      value: valNum,
-      type: concessionType,
-      reason: concessionReason,
+      return true;
     });
-    setShowConcessionModal(false);
-  };
+  }, [invoices, invoiceStatusFilter, invoiceSearchQuery]);
 
-  // ── Print helper ──────────────────────────────────────────────────────────
-  const triggerPrint = useCallback((receiptNo?: string) => {
-    if (!student) return;
-    const dummyReceipt: FeeReceipt = {
-      id: success?.receipt_id || crypto.randomUUID(),
-      school_id: schoolId || "",
-      receipt_no: receiptNo || success?.receipt_no || "MZ/2026-27/000001",
-      student_id: student.id,
-      academic_year_id: yearId,
-      receipt_date: new Date().toISOString().split("T")[0],
-      total_paise: success?.total_paise || totalPaymentPaise,
-      status: "active",
-      source: "counter",
-      payment_group_id: null,
-      collected_by: (user as any)?.name || user?.email || "Cashier",
-      remarks,
+  // Numerical summary metrics (strictly calculated from financial paise data)
+  const collectionSummary = useMemo(() => {
+    const selectedList = invoices.filter((inv) => selectedInvoiceIds.has(inv.id));
+    const selectedCount = isAdvancePayment ? 0 : selectedList.length;
+    const totalBilledPaise = selectedList.reduce((acc, curr) => acc + curr.total_paise, 0);
+    const previouslyPaidPaise = selectedList.reduce((acc, curr) => acc + curr.paid_paise, 0);
+    const outstandingPaise = selectedList.reduce((acc, curr) => acc + curr.balance_paise, 0);
+    const selectedCollectionPaise = enteredPaise;
+    const advanceAmountPaise = isAdvancePayment
+      ? enteredPaise
+      : Math.max(0, enteredPaise - selectedInvoicesTotalPaise);
 
-      idempotency_key: null,
-      print_count: 1,
-      whatsapp_sent_at: null,
-      cancelled_by: null,
-      cancelled_at: null,
-      cancel_reason: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+    return {
+      selectedCount,
+      totalBilledPaise,
+      previouslyPaidPaise,
+      outstandingPaise,
+      selectedCollectionPaise,
+      advanceAmountPaise,
+    };
+  }, [invoices, selectedInvoiceIds, enteredPaise, isAdvancePayment, selectedInvoicesTotalPaise]);
+
+  // Stepper definition
+  const STEPS = [
+    { num: 1 as const, title: "Student", desc: "Select Student" },
+    { num: 2 as const, title: "Invoices", desc: "Review & Select Dues" },
+    { num: 3 as const, title: "Payment", desc: "Mode & Details" },
+    { num: 4 as const, title: "Receipt", desc: "Official Receipt" },
+  ];
+
+  // Offline status tracking
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
+
+      // Escape to reset/close
+      if (e.key === "Escape") {
+        if (isReviewOpen) {
+          setIsReviewOpen(false);
+          return;
+        }
+        if (step === 3) {
+          handleBackToInvoices();
+        } else if (step === 2) {
+          handleBackToStudent();
+        } else if (step === 1) {
+          setSearchQuery("");
+        }
+        return;
+      }
+
+      // Ctrl+Enter to collect / submit
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (step === 1 && selectedStudent) {
+          handleProceedToInvoices();
+        } else if (step === 2 && ((selectedInvoiceIds.size > 0 || isAdvancePayment) && enteredPaise > 0)) {
+          handleProceedToPayment();
+        } else if (step === 3 && enteredPaise > 0 && !isSubmitting) {
+          if (isReviewOpen) {
+            handleSubmitPayment();
+          } else {
+            setIsReviewOpen(true);
+          }
+        }
+        return;
+      }
+
+      // Input field guard for single-character shortcuts
+      if (isInput) return;
+
+      // '/' to focus search
+      if (e.key === "/") {
+        e.preventDefault();
+        const searchInput = document.getElementById(step === 2 ? "invoice-search-input" : "student-search-input");
+        searchInput?.focus();
+        return;
+      }
+
+      // 'a' to select all overdue / invoices
+      if ((e.key === "a" || e.key === "A") && step === 2) {
+        e.preventDefault();
+        selectAllInvoices();
+        return;
+      }
+
+      // Alt+1...6 for payment modes
+      if (e.altKey) {
+        const keyNum = parseInt(e.key, 10);
+        if (keyNum >= 1 && keyNum <= 5) {
+          e.preventDefault();
+          const modes: PaymentMode[] = ["upi", "cash", "cheque", "card", "bank_transfer"];
+          if (modes[keyNum - 1]) {
+            setPaymentMethod(modes[keyNum - 1]);
+          }
+        }
+        return;
+      }
+
+      // Receipt screen shortcuts: 'p' for Print, 'n' for Next student
+      if (step === 4) {
+        if (e.key === "p" || e.key === "P") {
+          e.preventDefault();
+          handlePrintReceipt();
+        } else if (e.key === "n" || e.key === "N") {
+          e.preventDefault();
+          handleCollectAnother();
+        }
+      }
     };
 
-    const receiptItems: FeeReceiptItem[] = selectedDues.map(d => ({
-      id: crypto.randomUUID(),
-      receipt_id: dummyReceipt.id,
-      due_id: d.id,
-      fee_head_id: d.description || "Tuition fee",
-      amount_paise: d.balance_paise,
-      concession_paise: d.concession_paise,
-    }));
-
-    const paymentItems: FeePayment[] = payments.map(p => ({
-      id: crypto.randomUUID(),
-      school_id: schoolId || "",
-      receipt_id: dummyReceipt.id,
-      mode: p.mode,
-      amount_paise: paise(p.amount),
-      reference_no: p.reference || null,
-      bank_name: null,
-      instrument_no: null,
-      instrument_date: null,
-      cheque_status: null,
-      gateway_order_id: null,
-      gateway_payment_id: null,
-      created_at: new Date().toISOString(),
-    }));
-
-    const html = generateReceiptHTML(
-      dummyReceipt,
-      receiptItems,
-      paymentItems,
-      {
-        student_name: student.name,
-        admission_no: student.admission_no,
-        balance_remaining_paise: Math.max(0, primarySelectedPaise - totalPaymentPaise),
-      },
-      {
-        name: "MyZkool School",
-      },
-      settings?.receipt_paper || "a5",
-      false
-    );
-
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    win.print();
-  }, [student, success, schoolId, yearId, totalPaymentPaise, user, remarks, selectedDues, payments, primarySelectedPaise, settings?.receipt_paper]);
-
-  // ── Collect Action (B7.2, B7.4) ───────────────────────────────────────────
-  const handleCollect = useCallback(async () => {
-    if (!canCollect || !student || !schoolId || !yearId) return;
-    setCollecting(true);
-    setError("");
-
-    try {
-      const isFamilyPayment = includedSiblings.length > 0;
-      const paymentGroupId = isFamilyPayment ? crypto.randomUUID() : undefined;
-
-      // 1. Collect for primary student
-      const primaryPaymentAmt = isFamilyPayment ? primarySelectedPaise : totalPaymentPaise;
-      const primaryLines: CollectPaymentLine[] = payments
-        .filter(p => paise(p.amount) > 0)
-        .map(p => ({
-          mode: p.mode,
-          amount_paise: isFamilyPayment
-            ? Math.round((paise(p.amount) * primarySelectedPaise) / totalPaymentPaise)
-            : paise(p.amount),
-          reference_no: p.reference || undefined,
-        }));
-
-      const primaryResult = await collectFees(schoolId, {
-        student_id: student.id,
-        academic_year_id: yearId,
-        selected_due_ids: [...selectedIds],
-        payments: primaryLines,
-        remarks: remarks + (appliedConcessions ? ` [Concession: ${appliedConcessions.basis} - ${appliedConcessions.reason}]` : ""),
-        payment_group_id: paymentGroupId,
-      }, idempKeyRef.current!, user?.id);
-
-      const createdReceiptNos = [primaryResult.receipt_no];
-
-      // 2. Collect for each included sibling (B7.4)
-      for await (const sib of includedSiblings) {
-        const sibDueIds = [...sib.selectedDueIds];
-        const sibAmt = sib.dues.filter(d => sib.selectedDueIds.has(d.id)).reduce((s, d) => s + d.balance_paise, 0);
-        if (sibAmt <= 0) continue;
-
-        const sibLines: CollectPaymentLine[] = [{
-          mode: payments[0]?.mode || "cash",
-          amount_paise: sibAmt,
-          reference_no: payments[0]?.reference || undefined,
-        }];
-
-        const sibRes = await collectFees(schoolId, {
-          student_id: sib.id,
-          academic_year_id: yearId,
-          selected_due_ids: sibDueIds,
-          payments: sibLines,
-          remarks: `Family payment (Linked with ${student.admission_no})`,
-          payment_group_id: paymentGroupId,
-        }, crypto.randomUUID(), user?.id);
-
-        createdReceiptNos.push(sibRes.receipt_no);
-      }
-
-      setSuccess({
-        receipt_no: primaryResult.receipt_no,
-        total_paise: primaryResult.total_paise,
-        advance_paise: primaryResult.advance_paise,
-        receipt_id: primaryResult.receipt_id,
-        family_receipt_nos: isFamilyPayment ? createdReceiptNos : undefined,
-      });
-
-      if (settings?.auto_print_receipt) {
-        setTimeout(() => triggerPrint(primaryResult.receipt_no), 500);
-      }
-    } catch (e: any) {
-      setError(e.message?.includes("network") || e.message?.includes("fetch")
-        ? "We could not confirm this payment. Check receipts before trying again."
-        : e.message);
-    } finally {
-      setCollecting(false);
-    }
-  }, [canCollect, student, schoolId, yearId, payments, selectedIds, remarks, settings, user, includedSiblings, primarySelectedPaise, totalPaymentPaise, appliedConcessions, triggerPrint]);
-
-  // ── Keyboard Map (B5.3) ───────────────────────────────────────────────────
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName;
-      const inInput = tag === "INPUT" || tag === "TEXTAREA";
-
-      // / → focus search
-      if (e.key === "/" && !inInput) {
-        e.preventDefault();
-        searchRef.current?.focus();
-        return;
-      }
-      // Esc → clear / back to search
-      if (e.key === "Escape") {
-        if (showConcessionModal) { setShowConcessionModal(false); return; }
-        if (results.length) { setResults([]); return; }
-        if (student && !success) { setStudent(null); setDues([]); searchRef.current?.focus(); }
-        return;
-      }
-      // While search results open: ↑↓ navigate, Enter select
-      if (results.length) {
-        if (e.key === "ArrowDown") { e.preventDefault(); setResultIdx(i => Math.min(i + 1, results.length - 1)); }
-        if (e.key === "ArrowUp")   { e.preventDefault(); setResultIdx(i => Math.max(i - 1, 0)); }
-        if (e.key === "Enter" && resultIdx >= 0) { e.preventDefault(); selectStudent(results[resultIdx]); }
-        return;
-      }
-      // Success panel
-      if (success) {
-        if (e.key === "p" || e.key === "P") { triggerPrint(); }
-        if (e.key === "n" || e.key === "N") { resetToSearch(); }
-        return;
-      }
-      // Due panel
-      if (student && !inInput) {
-        if (e.key === "a" || e.key === "A") {
-          e.preventDefault();
-          const overdue = dues.filter(d => new Date(d.due_date) <= new Date());
-          setSelectedIds(new Set(overdue.length > 0 ? overdue.map(d => d.id) : dues.map(d => d.id)));
-        }
-        // Alt+1…6 payment mode
-        if (e.altKey && /^[1-6]$/.test(e.key)) {
-          e.preventDefault();
-          const mode = PAYMENT_MODES[parseInt(e.key) - 1]?.id;
-          if (mode) setPayments(prev => [{ ...prev[0], mode }]);
-        }
-        // Ctrl+Enter → collect
-        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-          e.preventDefault();
-          handleCollect();
-        }
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [results, resultIdx, student, dues, success, handleCollect, selectStudent, showConcessionModal, triggerPrint]);
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  function resetToSearch() {
-    setStudent(null);
-    setDues([]);
-    setSelectedIds(new Set());
-    setSiblings([]);
-    setSuccess(null);
-    setError("");
-    setAppliedConcessions(null);
-    setPayments([{ id: "p1", mode: "cash", amount: "", reference: "", received: "" }]);
-    setRemarks("");
-    setTimeout(() => searchRef.current?.focus(), 50);
-  }
-
-  function toggleDue(id: string) {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  function addPaymentRow() {
-    setPayments(prev => [...prev, { id: crypto.randomUUID(), mode: "cash", amount: "", reference: "" }]);
-  }
-
-  function removePaymentRow(id: string) {
-    setPayments(prev => prev.filter(p => p.id !== id));
-  }
-
-  function updatePayment(id: string, field: Partial<PaymentRow>) {
-    setPayments(prev => prev.map(p => p.id === id ? { ...p, ...field } : p));
-  }
-
-  // Group dues by term period
-  const duesByPeriod = dues.reduce((acc, due) => {
-    const key = due.due_date.slice(0, 7);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(due);
-    return acc;
-  }, {} as Record<string, StudentDue[]>);
-
-  const periods = Object.keys(duesByPeriod).sort();
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    step,
+    isReviewOpen,
+    selectedStudent,
+    selectedInvoiceIds,
+    isAdvancePayment,
+    enteredPaise,
+    isSubmitting,
+    selectAllInvoices,
+    handleProceedToInvoices,
+    handleProceedToPayment,
+    handleBackToInvoices,
+    handleBackToStudent,
+    handleSubmitPayment,
+    handlePrintReceipt,
+    handleCollectAnother,
+    setPaymentMethod,
+    setSearchQuery,
+    setIsReviewOpen,
+  ]);
 
   return (
-    <div className="flex flex-col h-full min-h-screen bg-slate-50">
-      {/* Offline banner */}
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">
+      {/* Offline Banner */}
       {isOffline && (
-        <div className="bg-amber-600 text-white px-4 py-2 flex items-center gap-2 text-sm font-medium">
-          <WifiOff className="w-4 h-4 flex-shrink-0" />
-          <span>You are offline. Fee collection needs a connection so receipts are not duplicated.</span>
+        <div className="bg-amber-500 text-white text-xs font-semibold px-4 py-2 text-center sticky top-0 z-50">
+          You are offline. Fee collection needs a connection to sync transactions.
         </div>
       )}
 
-      {/* Persistent Fee Module Nav Header */}
-      <div className="px-4 sm:px-6 pt-4 bg-white border-b border-slate-200">
-        <FeeNavHeader
-          title="Collect Fee"
-          subtitle="Point-of-sale counter for collecting student fees, splitting modes & printing receipts."
-        />
-      </div>
+      {/* ── 1. Top Bar & Page Header ── */}
+      <div className="bg-white border-b border-[#E6EAF3] sticky top-0 z-30 shadow-2xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
+          {/* Breadcrumb & Navigation */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (step > 1 && step < 4) {
+                    goToStep((step - 1) as 1 | 2 | 3);
+                  } else {
+                    navigate("/admin/fees/collections");
+                  }
+                }}
+                className="p-2 -ml-2 rounded-xl text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer shrink-0"
+                title="Go Back"
+                aria-label="Back to Previous Page"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
 
-      {/* Search bar */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 relative z-20">
-        <div className="max-w-2xl relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input aria-label="Search student to collect fee"
-            ref={searchRef}
-            type="text"
-            placeholder="Search by name, admission number or phone…"
-            className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0] focus:border-[#2158E0]"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-          {searchLoading && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin" />
-          )}
-
-          {/* Search results dropdown */}
-          {results.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-30">
-              {results.map((r, idx) => (
-                <button
-                  key={r.id}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 focus:outline-none cursor-pointer ${idx === resultIdx ? "bg-[#2158E0]/5" : ""}`}
-                  onClick={() => selectStudent(r)}
-                >
-                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-sm font-semibold flex-shrink-0">
-                    {r.name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-slate-900 truncate">{r.name}</div>
-                    <div className="text-xs text-slate-500">{r.admission_no}</div>
-                  </div>
-                  {r.balance_paise > 0 && (
-                    <span className="text-xs font-semibold text-red-600 tabular-nums">
-                      ₹{formatRupees(r.balance_paise)}
-                    </span>
-                  )}
-                </button>
-              ))}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium truncate">
+                  <Link to="/admin/fees" className="hover:text-[#2563EB]">Fees</Link>
+                  <span>/</span>
+                  <Link to="/admin/fees/collections" className="hover:text-[#2563EB]">Collections</Link>
+                  <span>/</span>
+                  <span className="text-gray-800 font-semibold">Counter</span>
+                </div>
+                <h1 className="text-lg sm:text-xl font-bold text-[#141A2E] tracking-tight flex items-center gap-2">
+                  <span>Fee Collection Counter</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-[#2563EB] border border-blue-200">
+                    Full-Page Desk
+                  </span>
+                </h1>
+                <p className="text-xs text-gray-500 hidden sm:block">
+                  Record payments and issue official school receipts.
+                </p>
+              </div>
             </div>
-          )}
+
+            {/* Header Right Action Area */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              {selectedStudent && step !== 1 && step !== 4 && (
+                <button
+                  type="button"
+                  onClick={handleChangeStudent}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6EAF3] hover:border-gray-300 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors cursor-pointer shadow-2xs"
+                >
+                  <User className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Change Student</span>
+                </button>
+              )}
+
+              <Link
+                to="/admin/fees/collections"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6EAF3] hover:border-gray-300 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors cursor-pointer shadow-2xs"
+              >
+                <Receipt className="w-3.5 h-3.5 text-gray-500" />
+                <span className="hidden sm:inline">All Collections</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 2. Horizontal Responsive Stepper ── */}
+        <div className="bg-[#F8FAFC] border-t border-[#E6EAF3] px-4 sm:px-6 lg:px-8 py-3">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between relative">
+              {/* Connecting background bar */}
+              <div className="absolute top-1/2 left-6 right-6 h-0.5 bg-gray-200 -translate-y-1/2 z-0 hidden sm:block" />
+
+              {STEPS.map((s, idx) => {
+                const isCompleted = step > s.num;
+                const isCurrent = step === s.num;
+                const canNavigate = isCompleted || (s.num === 2 && Boolean(selectedStudent));
+
+                return (
+                  <button
+                    key={s.num}
+                    type="button"
+                    disabled={!canNavigate && !isCurrent}
+                    onClick={() => {
+                      if (canNavigate) {
+                        goToStep(s.num);
+                      }
+                    }}
+                    className={`flex items-center gap-2.5 sm:flex-col sm:items-center relative z-10 transition-all ${
+                      canNavigate ? "cursor-pointer group" : "cursor-default"
+                    }`}
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-xs ${
+                        isCompleted
+                          ? "bg-[#2563EB] text-white ring-4 ring-blue-100 group-hover:bg-[#1D4ED8]"
+                          : isCurrent
+                          ? "bg-[#2563EB] text-white ring-4 ring-blue-100 ring-offset-1"
+                          : "bg-white border-2 border-gray-300 text-gray-400"
+                      }`}
+                    >
+                      {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : s.num}
+                    </div>
+
+                    <div className="text-left sm:text-center">
+                      <p
+                        className={`text-xs font-bold leading-tight transition-colors ${
+                          isCompleted
+                            ? "text-[#2563EB] group-hover:underline"
+                            : isCurrent
+                            ? "text-[#141A2E]"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {s.title}
+                      </p>
+                      <p className="text-[10px] text-gray-400 hidden sm:block font-medium">
+                        {s.desc}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 overflow-auto">
-        {!student ? (
-          <div className="flex flex-col items-center justify-center h-full min-h-64 text-center px-4 py-16">
-            <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
-              <CreditCard className="w-7 h-7 text-slate-400" />
-            </div>
-            <p className="text-sm text-slate-600 font-medium">Search for a student to collect fee</p>
-            <p className="text-xs text-slate-400 mt-1">Type a name, admission number or parent phone number</p>
+      {/* ── Main Scrollable Content Container (pb-32 ensures sticky footer never hides content) ── */}
+      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 pb-32 flex-1 space-y-6">
+        {/* Error / Alert notification banner */}
+        {errorMessage && (
+          <div className="p-3.5 bg-red-50 border border-red-200 text-red-800 text-xs font-medium rounded-xl flex items-center gap-2.5 animate-in fade-in duration-200 shadow-2xs">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <div className="flex-1">{errorMessage}</div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="p-1 text-red-400 hover:text-red-700 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        ) : success ? (
-          /* ── Success panel ── */
-          <div className="max-w-lg mx-auto py-12 px-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-[#1FAE7A]/10 flex items-center justify-center mx-auto">
-                <CheckSquare className="w-8 h-8 text-[#1FAE7A]" />
-              </div>
+        )}
+
+        {/* Success toast message */}
+        {notificationToast && (
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-xl flex items-center gap-2.5 animate-in fade-in duration-200 shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className="flex-1">{notificationToast}</div>
+          </div>
+        )}
+
+        {/* ── STEP 1: SELECT STUDENT ── */}
+        {step === 1 && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Search and Filters Card */}
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-900 font-display">Fee collected</h2>
-                <p className="text-sm text-slate-500 mt-1">Receipt {success.receipt_no}</p>
-                {success.family_receipt_nos && success.family_receipt_nos.length > 1 && (
-                  <p className="text-xs text-emerald-600 font-medium mt-1">
-                    Family payment: {success.family_receipt_nos.length} receipts generated ({success.family_receipt_nos.join(", ")})
-                  </p>
+                <h2 className="text-base font-bold text-[#141A2E]">Step 1: Select Student for Fee Collection</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Search by student name or admission number, or filter by class and section.
+                </p>
+              </div>
+
+              {/* Main Search Input */}
+              <div className="relative">
+                <Search className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  id="student-search-input"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Type student name or admission number (e.g. Aarav, ADM-2024-001)..."
+                  className="w-full pl-11 pr-10 py-3 bg-white border border-[#E6EAF3] rounded-xl text-sm font-medium text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors"
+                  autoFocus
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Clear search query"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 )}
               </div>
-              <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Amount collected</span>
-                  <span className="font-semibold tabular-nums">₹{formatRupees(success.total_paise)}</span>
+
+              {/* Class & Section Dropdowns */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+                <div>
+                  <label htmlFor="counter-class-select" className="text-[11px] font-semibold text-gray-500 block mb-1">
+                    Class Filter
+                  </label>
+                  <select
+                    id="counter-class-select"
+                    value={selectedClassId}
+                    onChange={(e) => handleClassChange(e.target.value)}
+                    disabled={isLoadingClasses}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-800 focus:outline-none focus:border-[#2563EB]"
+                  >
+                    <option value="all">All Classes</option>
+                    {classesList.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                {success.advance_paise > 0 && (
-                  <div className="flex justify-between text-[#1FAE7A]">
-                    <span>Advance credit</span>
-                    <span className="font-semibold tabular-nums">₹{formatRupees(success.advance_paise)}</span>
-                  </div>
-                )}
+
+                <div>
+                  <label htmlFor="counter-section-select" className="text-[11px] font-semibold text-gray-500 block mb-1">
+                    Section Filter
+                  </label>
+                  <select
+                    id="counter-section-select"
+                    value={selectedSectionId}
+                    onChange={(e) => setSelectedSectionId(e.target.value)}
+                    disabled={selectedClassId === "all" || availableSections.length === 0}
+                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-800 focus:outline-none focus:border-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="all">
+                      {selectedClassId === "all"
+                        ? "All Sections"
+                        : availableSections.length === 0
+                        ? "No Sections"
+                        : "All Sections"}
+                    </option>
+                    {availableSections.map((sec) => (
+                      <option key={sec.id} value={sec.id}>
+                        Section {sec.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="w-full py-2 px-3 border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => triggerPrint()}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" /> Print <span className="text-xs text-slate-400">(P)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alert("WhatsApp receipt template sent successfully.")}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1FAE7A] text-white text-sm font-medium hover:bg-[#1FAE7A]/90 cursor-pointer"
-                >
-                  <MessageCircle className="w-4 h-4" /> WhatsApp <span className="text-xs text-white/70">(W)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={resetToSearch}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#2158E0] text-white text-sm font-medium hover:bg-[#2158E0]/90 cursor-pointer"
-                >
-                  <UserPlus className="w-4 h-4" /> Next <span className="text-xs text-white/70">(N)</span>
-                </button>
+            </div>
+
+            {/* Results Grid / List */}
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl shadow-2xs overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-[#E6EAF3] flex items-center justify-between bg-[#F8FAFC]">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                  {isSearching
+                    ? "Searching Students..."
+                    : searchResults.length > 0
+                    ? `Matching Students (${searchResults.length})`
+                    : "Student Search Results"}
+                </h3>
               </div>
+
+              {isSearching ? (
+                <div className="py-16 text-center text-gray-400 text-xs flex items-center justify-center gap-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-[#2563EB]" />
+                  <span>Searching student records...</span>
+                </div>
+              ) : searchResults.length > 0 ? (
+                <div className="divide-y divide-[#E6EAF3]">
+                  {searchResults.map((std) => {
+                    const isSelected = selectedStudent?.id === std.id;
+                    return (
+                      <div
+                        key={std.id}
+                        onClick={() => handleSelectStudent(std)}
+                        className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-blue-50/40 transition-colors cursor-pointer ${
+                          isSelected ? "bg-blue-50/70 border-l-4 border-l-[#2563EB]" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-11 h-11 rounded-full bg-[#EBF2FE] text-[#2563EB] font-bold text-sm flex items-center justify-center shrink-0 ring-2 ring-blue-100">
+                            {getInitials(std.name)}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-[#141A2E]">{std.name}</h4>
+                              <span className="font-mono text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                {std.admission_no}
+                              </span>
+                              <span className="text-xs text-gray-600 font-medium">
+                                Class: {std.class_name || "—"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                              {std.guardian_name && (
+                                <span className="flex items-center gap-1">
+                                  <Users className="w-3.5 h-3.5 text-gray-400" />
+                                  <span>{std.guardian_name}</span>
+                                </span>
+                              )}
+                              {std.guardian_phone && (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="w-3.5 h-3.5 text-gray-400" />
+                                  <span>{std.guardian_phone}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
+                          <div className="text-left sm:text-right">
+                            <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                              Outstanding Dues
+                            </span>
+                            <span
+                              className={`text-sm font-extrabold ${
+                                (std.balance_paise || 0) > 0 ? "text-amber-700" : "text-emerald-700"
+                              }`}
+                            >
+                              {formatPaise(std.balance_paise || 0)}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectStudent(std);
+                            }}
+                            className="px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-2xs"
+                          >
+                            Select & Continue
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-16 text-center text-gray-400 px-4">
+                  <User className="w-10 h-10 text-gray-300 mx-auto mb-2.5" />
+                  <p className="text-sm font-semibold text-gray-700">No students found</p>
+                  <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                    Type a student name or admission number in the search box above to select a student for payment collection.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
-        ) : (
-          /* ── Two-panel collect view ── */
-          <div className="flex flex-col lg:flex-row gap-0 h-full">
+        )}
 
-            {/* LEFT: Student + dues / Siblings */}
-            <div className="flex-1 border-b lg:border-b-0 lg:border-r border-slate-200 overflow-auto">
-              {/* Student header */}
-              <div className="bg-white border-b border-slate-100 px-4 sm:px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#2158E0]/10 flex items-center justify-center text-[#2158E0] font-bold">
-                    {student.name.charAt(0)}
+        {/* ── STEP 2: INVOICES SELECTION ── */}
+        {step === 2 && selectedStudent && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Compact Student Summary Card (Requirement 4) */}
+            <div className="bg-white border border-blue-200 rounded-2xl p-4 sm:p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-50/40 via-white to-white">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-full bg-[#EBF2FE] text-[#2563EB] font-black text-base flex items-center justify-center shrink-0 ring-4 ring-blue-50">
+                  {getInitials(selectedStudent.name)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h2 className="text-base sm:text-lg font-bold text-[#141A2E]">{selectedStudent.name}</h2>
+                    <span className="font-mono text-xs font-bold bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full">
+                      {selectedStudent.admission_no}
+                    </span>
+                    <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-0.5 rounded-full">
+                      Class {selectedStudent.class_name || "—"}
+                    </span>
                   </div>
-                  <div>
-                    <div className="font-semibold text-slate-900 text-sm">{student.name}</div>
-                    <div className="text-xs text-slate-500">{student.admission_no}</div>
+                  <div className="flex items-center gap-4 mt-1 text-xs text-gray-600 flex-wrap">
+                    {selectedStudent.guardian_name ? (
+                      <span className="flex items-center gap-1 font-medium">
+                        <Users className="w-3.5 h-3.5 text-gray-400" />
+                        <span>Guardian: {selectedStudent.guardian_name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">Guardian info not recorded</span>
+                    )}
+                    {selectedStudent.guardian_phone && (
+                      <span className="flex items-center gap-1 font-medium">
+                        <Phone className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{selectedStudent.guardian_phone}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button aria-label="Close" type="button" onClick={resetToSearch} className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer">
-                  <X className="w-4 h-4 text-slate-500" />
-                </button>
               </div>
 
-              {/* Tabs */}
-              <div className="flex border-b border-slate-100 bg-white px-4 sm:px-6">
+              <div className="flex items-center gap-3 border-t md:border-t-0 pt-3 md:pt-0 justify-between md:justify-end">
+                <div className="text-left md:text-right">
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                    Total Dues Balance
+                  </p>
+                  <p className="text-base sm:text-lg font-black text-amber-700">
+                    {formatPaise(selectedStudent.balance_paise || 0)}
+                  </p>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setActiveTab("dues")}
-                  className={`px-4 py-2.5 text-xs font-medium border-b-2 -mb-px cursor-pointer ${
-                    activeTab === "dues"
-                      ? "border-[#2158E0] text-[#2158E0]"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
-                  }`}
+                  onClick={handleChangeStudent}
+                  className="px-3.5 py-2 bg-white border border-[#E6EAF3] hover:border-gray-300 text-xs font-bold text-gray-700 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer shadow-2xs"
                 >
-                  Current Dues
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("siblings")}
-                  className={`px-4 py-2.5 text-xs font-medium border-b-2 -mb-px cursor-pointer flex items-center gap-1.5 ${
-                    activeTab === "siblings"
-                      ? "border-[#2158E0] text-[#2158E0]"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Siblings ({siblings.length})</span>
-                  {includedSiblings.length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  )}
+                  Change Student
                 </button>
               </div>
-
-              {activeTab === "dues" && (
-                <div className="px-4 sm:px-6 py-3 space-y-1">
-                  {/* Quick selectors */}
-                  <div className="flex gap-2 mb-3 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const overdue = dues.filter(d => new Date(d.due_date) <= new Date());
-                        setSelectedIds(new Set(overdue.length > 0 ? overdue.map(d => d.id) : dues.map(d => d.id)));
-                      }}
-                      className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-lg border border-red-200 hover:bg-red-100 cursor-pointer"
-                    >
-                      All overdue (A)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedIds(new Set(dues.map(d => d.id)))}
-                      className="px-3 py-1.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-200 cursor-pointer"
-                    >
-                      Select all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedIds(new Set())}
-                      className="px-3 py-1.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-200 cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-
-                  {dues.length === 0 ? (
-                    <div className="py-8 text-center">
-                      <p className="text-sm text-slate-500">No pending dues.</p>
-                    </div>
-                  ) : (
-                    periods.map(period => (
-                      <div key={period} className="mb-4">
-                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 px-1">
-                          {new Date(period + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
-                        </div>
-                        {duesByPeriod[period].map(due => {
-                          const isOverdue = new Date(due.due_date) < new Date();
-                          return (
-                            <button
-                              key={due.id}
-                              type="button"
-                              onClick={() => toggleDue(due.id)}
-                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 text-left transition-colors cursor-pointer ${
-                                selectedIds.has(due.id)
-                                  ? "bg-[#2158E0]/8 border border-[#2158E0]/30"
-                                  : "bg-white border border-slate-100 hover:border-slate-200"
-                              }`}
-                            >
-                              <div className={`w-4 h-4 rounded flex-shrink-0 border flex items-center justify-center ${
-                                selectedIds.has(due.id) ? "bg-[#2158E0] border-[#2158E0]" : "border-slate-300"
-                              }`}>
-                                {selectedIds.has(due.id) && <span className="text-white text-xs">✓</span>}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-medium text-slate-800 truncate">{due.description || "Due"}</div>
-                                <div className="text-xs text-slate-400">
-                                  Due {new Date(due.due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
-                                  {isOverdue && <span className="ml-1 text-red-500 font-medium">• Overdue</span>}
-                                </div>
-                              </div>
-                              <div className="text-right flex-shrink-0">
-                                <div className="text-sm font-semibold tabular-nums text-slate-900">
-                                  ₹{formatRupees(due.balance_paise)}
-                                </div>
-                                {due.concession_paise > 0 && (
-                                  <div className="text-xs text-slate-400 line-through tabular-nums">₹{formatRupees(due.gross_paise)}</div>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* Siblings tab (B7.4) */}
-              {activeTab === "siblings" && (
-                <div className="px-4 sm:px-6 py-4 space-y-4">
-                  {siblingsLoading ? (
-                    <div className="py-8 text-center text-xs text-slate-400">Loading siblings…</div>
-                  ) : siblings.length === 0 ? (
-                    <div className="py-8 text-center text-slate-500 text-sm">
-                      <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                      <p>No siblings detected for this student.</p>
-                      <p className="text-xs text-slate-400 mt-1">Siblings are identified by shared parent phone records.</p>
-                    </div>
-                  ) : (
-                    siblings.map(sib => {
-                      const sibTotal = sib.dues.filter(d => sib.selectedDueIds.has(d.id)).reduce((s, d) => s + d.balance_paise, 0);
-                      return (
-                        <div
-                          key={sib.id}
-                          className={`border rounded-xl p-4 transition-colors ${
-                            sib.includedInPayment ? "border-emerald-500 bg-emerald-50/20" : "border-slate-200 bg-white"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <div className="font-semibold text-sm text-slate-900">{sib.name}</div>
-                              <div className="text-xs text-slate-500">{sib.admission_no} • {sib.dues.length} pending dues</div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => toggleSiblingIncluded(sib.id)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                                sib.includedInPayment
-                                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                  : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-                              }`}
-                            >
-                              {sib.includedInPayment ? "✓ Added to payment" : "+ Add to this payment"}
-                            </button>
-                          </div>
-
-                          {sib.dues.length > 0 && (
-                            <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                              {sib.dues.map(d => (
-                                <label
-                                  key={d.id}
-                                  className="flex items-center justify-between text-xs p-1.5 rounded-md hover:bg-slate-50 cursor-pointer"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={sib.selectedDueIds.has(d.id)}
-                                      onChange={() => toggleSiblingDue(sib.id, d.id)}
-                                      className="rounded text-emerald-600 cursor-pointer"
-                                    />
-                                    <span className="text-slate-700">{d.description || "Due"}</span>
-                                  </div>
-                                  <span className="font-semibold tabular-nums">₹{formatRupees(d.balance_paise)}</span>
-                                </label>
-                              ))}
-                              <div className="flex justify-between text-xs font-bold pt-1.5 border-t border-slate-100">
-                                <span>Total for {sib.name}:</span>
-                                <span className="tabular-nums">₹{formatRupees(sibTotal)}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
             </div>
 
-            {/* RIGHT: Payment panel (sticky on desktop) */}
-            <div className="w-full lg:w-96 flex flex-col bg-white">
-              <div className="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-4">
+            {/* Collection Summary Section (Requirement 6 - Strict numeric calculation) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* Selected Count */}
+              <div className="bg-white border border-[#E6EAF3] rounded-xl p-3.5 shadow-2xs">
+                <p className="text-[11px] font-semibold text-gray-500">Selected Invoices</p>
+                <p className="text-lg font-black text-[#141A2E] mt-1">
+                  {collectionSummary.selectedCount} {collectionSummary.selectedCount === 1 ? "inv" : "invs"}
+                </p>
+              </div>
 
-                {/* Dues summary */}
-                <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Selected dues</span>
-                    <span className="font-semibold tabular-nums">₹{formatRupees(primarySelectedPaise)}</span>
-                  </div>
+              {/* Total Invoice Amount */}
+              <div className="bg-white border border-[#E6EAF3] rounded-xl p-3.5 shadow-2xs">
+                <p className="text-[11px] font-semibold text-gray-500">Total Billed</p>
+                <p className="text-lg font-bold text-gray-700 mt-1">
+                  {formatPaise(collectionSummary.totalBilledPaise)}
+                </p>
+              </div>
 
-                  {includedSiblings.length > 0 && (
-                    <div className="flex justify-between items-center text-emerald-700">
-                      <span className="text-xs font-medium">Sibling dues ({includedSiblings.length})</span>
-                      <span className="font-semibold tabular-nums">+₹{formatRupees(siblingSelectedPaise)}</span>
-                    </div>
-                  )}
+              {/* Previously Paid */}
+              <div className="bg-white border border-[#E6EAF3] rounded-xl p-3.5 shadow-2xs">
+                <p className="text-[11px] font-semibold text-gray-500">Previously Paid</p>
+                <p className="text-lg font-bold text-emerald-700 mt-1">
+                  {formatPaise(collectionSummary.previouslyPaidPaise)}
+                </p>
+              </div>
 
-                  {appliedConcessions && (
-                    <div className="flex justify-between items-center text-amber-700 bg-amber-50 px-2 py-1 rounded-md text-xs">
-                      <span>Discount ({appliedConcessions.basis})</span>
-                      <span className="font-semibold">Applied</span>
-                    </div>
-                  )}
+              {/* Outstanding Balance */}
+              <div className="bg-white border border-[#E6EAF3] rounded-xl p-3.5 shadow-2xs">
+                <p className="text-[11px] font-semibold text-gray-500">Outstanding Due</p>
+                <p className="text-lg font-black text-amber-700 mt-1">
+                  {formatPaise(collectionSummary.outstandingPaise)}
+                </p>
+              </div>
 
-                  {advancePaise > 0 && (
-                    <div className="flex justify-between text-[#1FAE7A]">
-                      <span>Advance credit</span>
-                      <span className="font-semibold tabular-nums">+₹{formatRupees(advancePaise)}</span>
-                    </div>
-                  )}
+              {/* Selected Collection Amount */}
+              <div className="bg-[#EBF2FE] border border-blue-200 rounded-xl p-3.5 shadow-2xs col-span-2 sm:col-span-1">
+                <p className="text-[11px] font-bold text-[#2563EB]">Collection Amount</p>
+                <p className="text-lg font-black text-[#2563EB] mt-1">
+                  {formatPaise(collectionSummary.selectedCollectionPaise)}
+                </p>
+              </div>
 
-                  <div className="border-t border-slate-200 pt-2 flex justify-between font-semibold">
-                    <span>Net to collect</span>
-                    <span className="tabular-nums text-[#2158E0] text-base">₹{formatRupees(totalSelectedPaise)}</span>
-                  </div>
-                </div>
+              {/* Advance Amount */}
+              <div className="bg-white border border-[#E6EAF3] rounded-xl p-3.5 shadow-2xs col-span-2 sm:col-span-1">
+                <p className="text-[11px] font-semibold text-gray-500">Advance Credit</p>
+                <p className="text-lg font-bold text-purple-700 mt-1">
+                  {formatPaise(collectionSummary.advanceAmountPaise)}
+                </p>
+              </div>
+            </div>
 
-                {/* Concession button (B7.5) */}
-                <button
-                  type="button"
-                  onClick={() => setShowConcessionModal(true)}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer"
-                >
-                  <Shield className="w-3.5 h-3.5 text-amber-700" />
-                  {appliedConcessions ? "Edit ad-hoc concession" : "+ Add concession / discount"}
-                </button>
+            {/* Advance Payment Banner / Toggle */}
+            <div className="p-4 bg-purple-50/60 border border-purple-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="advance-payment-checkbox"
+                  checked={isAdvancePayment}
+                  onChange={(e) => handleToggleAdvancePayment(e.target.checked)}
+                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 accent-purple-600 cursor-pointer"
+                />
+                <label htmlFor="advance-payment-checkbox" className="font-semibold text-purple-900 cursor-pointer">
+                  Advance Fee Payment Mode
+                  <span className="block font-normal text-purple-700 text-[11px]">
+                    Check this option to accept an advance deposit without selecting outstanding invoices.
+                  </span>
+                </label>
+              </div>
 
-                {/* Payment mode tabs */}
-                {payments.map((p, idx) => (
-                  <div key={p.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="flex overflow-x-auto border-b border-slate-100">
-                      {PAYMENT_MODES.map(m => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => updatePayment(p.id, { mode: m.id })}
-                          className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap cursor-pointer ${
-                            p.mode === m.id
-                              ? "bg-[#2158E0] text-white"
-                              : "text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          <m.icon className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">{m.label}</span>
-                          <span className="sm:hidden">{m.shortcut}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="p-3 space-y-2">
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <label htmlFor={`fee-amount-${p.id}`} className="text-xs text-slate-500">Amount (₹)</label>
-                          <input id={`fee-amount-${p.id}`}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0.00"
-                            className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0] tabular-nums"
-                            value={typeof p.amount === "number" && Number.isNaN(p.amount) ? "" : (p.amount ?? "")}
-                            onChange={e => updatePayment(p.id, { amount: e.target.value })}
-                          />
-                        </div>
-                        {payments.length > 1 && (
-                          <button aria-label="Delete" type="button" onClick={() => removePaymentRow(p.id)} className="self-end p-2 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer">
-                            <Minus className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Cash: received + change */}
-                      {p.mode === "cash" && (
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label htmlFor={`fee-received-${p.id}`} className="text-xs text-slate-500">Received (₹)</label>
-                            <input id={`fee-received-${p.id}`}
-                              type="number"
-                              min="0"
-                              placeholder="0.00"
-                              className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0] tabular-nums"
-                              value={typeof p.received === "number" && Number.isNaN(p.received) ? "" : (p.received ?? "")}
-                              onChange={e => updatePayment(p.id, { received: e.target.value })}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <span className="text-xs text-slate-500">Change</span>
-                            <div className={`mt-0.5 px-3 py-1.5 text-sm border rounded-lg font-semibold tabular-nums ${
-                              changePaise > 0 ? "border-green-200 bg-green-50 text-green-700" : "border-slate-200 bg-slate-50 text-slate-400"
-                            }`}>
-                              ₹{formatRupees(changePaise)}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Reference field */}
-                      {["upi", "cheque", "bank_transfer"].includes(p.mode) && (
-                        <div>
-                          <label htmlFor={`fee-reference-${p.id}`} className="text-xs text-slate-500">
-                            {p.mode === "upi" ? "UPI reference (optional)" : p.mode === "cheque" ? "Cheque number" : "Reference"}
-                          </label>
-                          <input id={`fee-reference-${p.id}`} aria-label="Input value"
-                            type="text"
-                            className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
-                            value={p.reference}
-                            onChange={e => updatePayment(p.id, { reference: e.target.value })}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {/* Split payment */}
-                <button
-                  type="button"
-                  onClick={addPaymentRow}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-[#2158E0] border border-dashed border-[#2158E0]/40 rounded-lg hover:bg-[#2158E0]/5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Split payment
-                </button>
-
-                {/* Remarks */}
-                <div>
-                  <label htmlFor="feecollectpage-remarks-optional" className="text-xs text-slate-500">Remarks (optional)</label>
-                  <input id="feecollectpage-remarks-optional"
-                    type="text"
-                    className="w-full mt-0.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
-                    value={remarks}
-                    onChange={e => setRemarks(e.target.value)}
-                    placeholder="Add a note…"
+              {isAdvancePayment && (
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-purple-900 text-xs">Amount: ₹</span>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Enter advance amount"
+                    value={amountRupees}
+                    onChange={(e) => setAmountRupees(e.target.value)}
+                    className="w-36 px-3 py-1.5 bg-white border border-purple-300 rounded-xl text-xs font-bold text-purple-900 focus:outline-none focus:border-purple-600"
                   />
                 </div>
+              )}
+            </div>
 
-                {/* Error */}
-                {error && (
-                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            {/* Invoice Selection Table (Requirement 5) */}
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl shadow-2xs overflow-hidden">
+              {/* Table Action Bar */}
+              <div className="px-5 py-4 border-b border-[#E6EAF3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#F8FAFC]">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-bold text-[#141A2E]">
+                    Outstanding Term Invoices ({filteredInvoices.length})
+                  </h3>
+                  {invoices.length > 0 && !isAdvancePayment && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={selectAllInvoices}
+                        className="text-[#2563EB] font-bold hover:underline cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-gray-300">|</span>
+                      <button
+                        type="button"
+                        onClick={deselectAllInvoices}
+                        className="text-gray-500 font-semibold hover:underline cursor-pointer"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter and search controls inside invoices */}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* Status pills */}
+                  <div className="flex items-center gap-1 bg-white border border-[#E6EAF3] rounded-xl p-0.5">
+                    {(["all", "overdue", "partial", "pending"] as const).map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setInvoiceStatusFilter(st)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold capitalize transition-colors cursor-pointer ${
+                          invoiceStatusFilter === st
+                            ? "bg-[#2563EB] text-white shadow-2xs"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Search inside invoices */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      id="invoice-search-input"
+                      type="text"
+                      value={invoiceSearchQuery}
+                      onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+                      placeholder="Filter invoices..."
+                      className="w-36 sm:w-44 pl-8 pr-2 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Container with Horizontal Scroll on mobile/small screens */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-[#F8FAFC] text-gray-500 font-bold border-b border-[#E6EAF3]">
+                    <tr>
+                      <th className="py-3 px-4 w-12 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all invoices"
+                          checked={
+                            invoices.length > 0 &&
+                            selectedInvoiceIds.size === invoices.length &&
+                            !isAdvancePayment
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) selectAllInvoices();
+                            else deselectAllInvoices();
+                          }}
+                          disabled={isAdvancePayment || invoices.length === 0}
+                          className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB] accent-[#2563EB] border-gray-300 cursor-pointer disabled:opacity-40"
+                        />
+                      </th>
+                      <th className="py-3 px-4 font-bold text-gray-700">Invoice No.</th>
+                      <th className="py-3 px-4 font-bold text-gray-700">Billing Month / Term</th>
+                      <th className="py-3 px-4 font-bold text-gray-700">Fee Particulars</th>
+                      <th className="py-3 px-4 font-bold text-gray-700">Due Date</th>
+                      <th className="py-3 px-4 font-bold text-gray-700">Status</th>
+                      <th className="py-3 px-4 text-right font-bold text-gray-700">Invoice Amount</th>
+                      <th className="py-3 px-4 text-right font-bold text-gray-700">Paid Amount</th>
+                      <th className="py-3 px-4 text-right font-bold text-gray-700">Outstanding Balance</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-[#E6EAF3]">
+                    {invoicesLoading ? (
+                      <tr>
+                        <td colSpan={9} className="py-14 text-center text-gray-400">
+                          <div className="flex items-center justify-center gap-2">
+                            <RefreshCw className="w-5 h-5 animate-spin text-[#2563EB]" />
+                            <span>Loading student invoices...</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : invoiceLoadError ? (
+                      <tr>
+                        <td colSpan={9} className="py-10 text-center text-red-600">
+                          <p className="text-xs font-semibold">{invoiceLoadError}</p>
+                          <button
+                            type="button"
+                            onClick={handleRetryLoadInvoices}
+                            className="mt-2 text-xs font-bold text-[#2563EB] underline cursor-pointer"
+                          >
+                            Retry Loading
+                          </button>
+                        </td>
+                      </tr>
+                    ) : filteredInvoices.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-14 text-center text-gray-400 px-4">
+                          <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                          <p className="text-sm font-bold text-gray-700">
+                            {invoices.length === 0 ? "No Outstanding Invoices" : "No invoices match the filter"}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                            {invoices.length === 0
+                              ? "This student has no pending dues or invoices. You can record an advance fee payment."
+                              : "Try resetting your search query or status filter to view invoices."}
+                          </p>
+                          {invoices.length === 0 && !isAdvancePayment && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAdvancePayment(true)}
+                              className="mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                            >
+                              Enable Advance Fee Payment
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredInvoices.map((inv) => {
+                        const isChecked = selectedInvoiceIds.has(inv.id);
+                        return (
+                          <tr
+                            key={inv.id}
+                            onClick={() => toggleInvoice(inv.id)}
+                            className={`transition-colors cursor-pointer ${
+                              isChecked
+                                ? "bg-blue-50/50 hover:bg-blue-50/80"
+                                : "hover:bg-gray-50/70"
+                            }`}
+                          >
+                            <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select invoice ${inv.invoice_number}`}
+                                checked={isChecked}
+                                onChange={() => toggleInvoice(inv.id)}
+                                className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB] accent-[#2563EB] border-gray-300 cursor-pointer"
+                              />
+                            </td>
+
+                            {/* Invoice Number */}
+                            <td className="py-3 px-4 font-mono font-bold text-gray-900">
+                              {inv.invoice_number}
+                            </td>
+
+                            {/* Term & Billing Period */}
+                            <td className="py-3 px-4">
+                              <p className="font-semibold text-gray-900">{inv.term_name}</p>
+                              {inv.billing_period && (
+                                <p className="text-[11px] text-gray-500 mt-0.5">{inv.billing_period}</p>
+                              )}
+                            </td>
+
+                            {/* Fee Particulars */}
+                            <td className="py-3 px-4">
+                              <div className="flex flex-wrap gap-1 max-w-xs">
+                                {inv.particulars && inv.particulars.length > 0 ? (
+                                  inv.particulars.map((p, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-700"
+                                    >
+                                      {p}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Due Date */}
+                            <td className="py-3 px-4 font-medium">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                <span className={inv.is_overdue ? "text-rose-600 font-bold" : "text-gray-700"}>
+                                  {inv.due_date || "—"}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Status Badge */}
+                            <td className="py-3 px-4">
+                              {inv.is_overdue || inv.status === "overdue" ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                  Overdue
+                                </span>
+                              ) : inv.status === "partial" ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                  Partially Paid
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Invoice Amount */}
+                            <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
+                              {formatPaise(inv.total_paise)}
+                            </td>
+
+                            {/* Paid Amount */}
+                            <td className="py-3 px-4 text-right font-medium text-emerald-700 tabular-nums">
+                              {formatPaise(inv.paid_paise)}
+                            </td>
+
+                            {/* Outstanding Balance */}
+                            <td className="py-3 px-4 text-right font-black text-[#141A2E] tabular-nums text-sm">
+                              {formatPaise(inv.balance_paise)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 3: PAYMENT DETAILS ── */}
+        {step === 3 && selectedStudent && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Student Summary Top Strip */}
+            <div className="bg-white border border-blue-200 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#EBF2FE] text-[#2563EB] font-bold text-sm flex items-center justify-center">
+                  {getInitials(selectedStudent.name)}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#141A2E]">{selectedStudent.name}</h3>
+                  <p className="text-xs text-gray-500">
+                    Adm: {selectedStudent.admission_no} • Class {selectedStudent.class_name || "—"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleBackToInvoices}
+                className="text-xs font-semibold text-[#2563EB] hover:underline cursor-pointer"
+              >
+                Edit Invoices
+              </button>
+            </div>
+
+            {/* Selected Invoices Allocation Breakdown Table */}
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl p-5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[#141A2E]">Payment Allocation Breakdown</h3>
+                <span className="text-xs text-gray-500 font-medium">
+                  Auto-allocated oldest invoice first
+                </span>
+              </div>
+
+              {invoiceAllocations.lines.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#F8FAFC] text-gray-500 font-bold border-b border-[#E6EAF3]">
+                      <tr>
+                        <th className="py-2.5 px-3">Invoice No.</th>
+                        <th className="py-2.5 px-3">Term Period</th>
+                        <th className="py-2.5 px-3 text-right">Balance Due</th>
+                        <th className="py-2.5 px-3 text-right">Allocated Amount</th>
+                        <th className="py-2.5 px-3 text-right">Remaining Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E6EAF3]">
+                      {invoiceAllocations.lines.map((line) => (
+                        <tr key={line.id}>
+                          <td className="py-2.5 px-3 font-mono font-bold text-gray-900">{line.invoice_number}</td>
+                          <td className="py-2.5 px-3 text-gray-600">{line.billing_period || "Term Fee"}</td>
+                          <td className="py-2.5 px-3 text-right text-gray-600 tabular-nums">{formatPaise(line.balance_before_paise)}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-emerald-700 tabular-nums">
+                            {formatPaise(line.allocated_paise)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-medium text-gray-900 tabular-nums">
+                            {formatPaise(line.balance_after_paise)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-purple-700 italic py-2">
+                  Advance fee collection: Entire amount will be credited to student's advance account.
+                </p>
+              )}
+
+              {invoiceAllocations.advancePaise > 0 && (
+                <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-purple-900 text-xs font-semibold flex items-center justify-between">
+                  <span>Excess payment credited as Advance:</span>
+                  <span className="text-sm font-black">{formatPaise(invoiceAllocations.advancePaise)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Payment Form (2-column layout on desktop, single column on mobile) */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Left Column: Payment Details */}
+              <div className="flex-1 min-w-0 bg-white border border-[#E6EAF3] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-5">
+                <h3 className="text-sm font-bold text-[#141A2E]">Payment Configuration</h3>
+
+                {/* Amount Input */}
+                <div>
+                  <label htmlFor="collection-amount-input" className="text-xs font-bold text-gray-700 block mb-1.5">
+                    Collection Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-base">₹</span>
+                    <input
+                      id="collection-amount-input"
+                      type="number"
+                      min="1"
+                      value={amountRupees}
+                      onChange={(e) => setAmountRupees(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-base font-extrabold text-[#141A2E] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
+                    />
+                  </div>
+                  {enteredPaise > 0 && enteredPaise < selectedInvoicesTotalPaise && !isAdvancePayment && (
+                    <p className="text-[11px] text-amber-700 font-semibold mt-1">
+                      Partial payment: Remaining ₹{((selectedInvoicesTotalPaise - enteredPaise) / 100).toLocaleString("en-IN")} will remain due.
+                    </p>
+                  )}
+                </div>
+
+                {/* Payment Method Selector Cards */}
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-2">
+                    Payment Method <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {PAYMENT_MODES.map((pm) => {
+                      const Icon = pm.icon;
+                      const isSelected = paymentMethod === pm.id;
+                      return (
+                        <button
+                          key={pm.id}
+                          type="button"
+                          onClick={() => setPaymentMethod(pm.id)}
+                          className={`p-3 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
+                            isSelected
+                              ? "border-[#2563EB] bg-blue-50/70 text-[#2563EB] ring-2 ring-blue-100 font-bold shadow-2xs"
+                              : "border-[#E6EAF3] bg-[#F8FAFC] text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          <Icon className={`w-4 h-4 shrink-0 ${isSelected ? "text-[#2563EB]" : "text-gray-500"}`} />
+                          <span className="text-xs leading-tight">{pm.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Conditional Fields based on method */}
+                {paymentMethod === "upi" && (
+                  <div>
+                    <label htmlFor="upi-reference" className="text-xs font-semibold text-gray-700 block mb-1">
+                      UPI Reference No. / UTR / Transaction ID
+                    </label>
+                    <input
+                      id="upi-reference"
+                      type="text"
+                      value={referenceNo}
+                      onChange={(e) => setReferenceNo(e.target.value)}
+                      placeholder="e.g. 423985729183"
+                      className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                )}
+
+                {paymentMethod === "cheque" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-3.5 bg-amber-50/50 border border-amber-200 rounded-xl">
                     <div>
-                      {error}
-                      {error.includes("confirm") && (
-                        <span> <button type="button" onClick={() => navigate("/admin/fees/collections")} className="underline cursor-pointer">View collections</button></span>
-                      )}
+                      <label htmlFor="cheque-number" className="text-xs font-bold text-gray-800 block mb-1">
+                        Cheque Number <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="cheque-number"
+                        type="text"
+                        value={chequeNo}
+                        onChange={(e) => setChequeNo(e.target.value)}
+                        placeholder="e.g. 000142"
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cheque-bank" className="text-xs font-bold text-gray-800 block mb-1">
+                        Bank Name <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="cheque-bank"
+                        type="text"
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        placeholder="e.g. State Bank of India"
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cheque-date" className="text-xs font-semibold text-gray-700 block mb-1">
+                        Cheque Date
+                      </label>
+                      <input
+                        id="cheque-date"
+                        type="date"
+                        value={chequeDate}
+                        onChange={(e) => setChequeDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cheque-branch" className="text-xs font-semibold text-gray-700 block mb-1">
+                        Branch Name
+                      </label>
+                      <input
+                        id="cheque-branch"
+                        type="text"
+                        value={branchName}
+                        onChange={(e) => setBranchName(e.target.value)}
+                        placeholder="e.g. MG Road Branch"
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
                     </div>
                   </div>
                 )}
+
+                {paymentMethod === "cash" && (
+                  <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+                    <div>
+                      <label htmlFor="cash-tendered-input" className="text-xs font-bold text-gray-700 block mb-1">
+                        Cash Tendered (Helper)
+                      </label>
+                      <input
+                        id="cash-tendered-input"
+                        type="number"
+                        placeholder="e.g. 5000"
+                        value={cashTendered}
+                        onChange={(e) => setCashTendered(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-bold text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+
+                    {cashChangePaise > 0 && (
+                      <div className="flex items-center justify-between text-xs font-bold text-emerald-800 bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
+                        <span>Change to Return:</span>
+                        <span className="text-sm">{formatPaise(cashChangePaise)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(paymentMethod === "card" || paymentMethod === "bank_transfer") && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label htmlFor="payment-ref-other" className="text-xs font-semibold text-gray-700 block mb-1">
+                        Transaction / Reference No.
+                      </label>
+                      <input
+                        id="payment-ref-other"
+                        type="text"
+                        value={referenceNo}
+                        onChange={(e) => setReferenceNo(e.target.value)}
+                        placeholder="e.g. TXN987291"
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="payment-bank-other" className="text-xs font-semibold text-gray-700 block mb-1">
+                        Bank Name
+                      </label>
+                      <input
+                        id="payment-bank-other"
+                        type="text"
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        placeholder="e.g. HDFC Bank"
+                        className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Date & Remarks */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label htmlFor="receipt-date-input" className="text-xs font-semibold text-gray-700 block mb-1">
+                      Receipt Date
+                    </label>
+                    <input
+                      id="receipt-date-input"
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="payment-notes" className="text-xs font-semibold text-gray-700 block mb-1">
+                      Internal Remarks / Notes
+                    </label>
+                    <input
+                      id="payment-notes"
+                      type="text"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Optional remarks"
+                      className="w-full px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Sticky collect button */}
-              <div className="px-4 sm:px-6 py-4 border-t border-slate-200 bg-white">
-                <div className="flex justify-between text-xs text-slate-500 mb-3">
-                  <span>Total paying</span>
-                  <span className="tabular-nums font-medium text-slate-800">₹{formatRupees(totalPaymentPaise)}</span>
+              {/* Right Column: Payment Review Card (w-full lg:w-96) */}
+              <div className="w-full lg:w-96 space-y-4 shrink-0">
+                <div className="bg-white border border-[#E6EAF3] rounded-2xl p-5 shadow-2xs space-y-4">
+                  <h3 className="text-sm font-bold text-[#141A2E] border-b border-[#E6EAF3] pb-2.5">
+                    Collection Confirmation Summary
+                  </h3>
+
+                  <div className="space-y-2.5 text-xs">
+                    <div className="flex justify-between items-center text-gray-600">
+                      <span>Student:</span>
+                      <span className="font-bold text-gray-900">{selectedStudent.name}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-gray-600">
+                      <span>Admission No:</span>
+                      <span className="font-mono font-semibold text-gray-800">{selectedStudent.admission_no}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-gray-600">
+                      <span>Class & Section:</span>
+                      <span className="text-gray-800 font-semibold">{selectedStudent.class_name || "—"}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-gray-600">
+                      <span>Payment Method:</span>
+                      <span className="font-bold text-[#2563EB] uppercase">{paymentMethod.replace("_", " ")}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-gray-600">
+                      <span>Date:</span>
+                      <span className="text-gray-800 font-medium">{paymentDate}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-gray-600 border-t border-gray-100 pt-2.5">
+                      <span>Selected Invoices:</span>
+                      <span className="font-bold text-gray-900">
+                        {isAdvancePayment ? "Advance Only" : `${selectedInvoiceIds.size} term invoices`}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-baseline border-t border-gray-200 pt-3">
+                      <span className="text-sm font-bold text-gray-800">Total Payable:</span>
+                      <span className="text-2xl font-black text-[#2563EB]">
+                        {formatPaise(enteredPaise)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={enteredPaise <= 0 || isSubmitting}
+                    onClick={() => setIsReviewOpen(true)}
+                    className="w-full py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold rounded-xl shadow-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer mt-4"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Review & Issue Official Receipt</span>
+                  </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 4: RECEIPT CONFIRMATION ── */}
+        {step === 4 && generatedReceipt && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Success Card */}
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-2xs">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-[#0B7B49] flex items-center justify-center mx-auto shadow-inner">
+                <Check className="w-9 h-9 stroke-[3]" />
+              </div>
+
+              <div>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 mb-2">
+                  Payment Recorded & Posted to Ledger
+                </span>
+                <h2 className="text-2xl font-black text-[#141A2E]">Official Fee Receipt Generated!</h2>
+                <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
+                  Receipt <span className="font-mono font-bold text-[#2563EB]">#{generatedReceipt.receipt_no}</span> has been issued and the student dues updated.
+                </p>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div className="flex items-center justify-center gap-3 flex-wrap pt-2">
                 <button
                   type="button"
-                  onClick={handleCollect}
-                  disabled={!canCollect}
-                  className={`w-full py-3 rounded-xl font-semibold text-sm transition cursor-pointer ${
-                    canCollect
-                      ? "bg-[#2158E0] text-white hover:bg-[#2158E0]/90 active:scale-[.98]"
-                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                  }`}
+                  onClick={handlePrintReceipt}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
                 >
-                  {collecting ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      Processing…
-                    </span>
-                  ) : (
-                    <>Collect {totalPaymentPaise > 0 ? `₹${formatRupees(totalPaymentPaise)}` : ""} <span className="text-white/70 text-xs">(Ctrl+Enter)</span></>
-                  )}
+                  <Printer className="w-4 h-4" />
+                  <span>Print Receipt (A4)</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadReceipt}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E6EAF3] hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-gray-500" />
+                  <span>Download PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSendToParent}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E6EAF3] hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4 text-gray-500" />
+                  <span>Send to Parent</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCollectAnother}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Collect Another Fee</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Live Receipt Document Preview Card */}
+            <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <h3 className="text-sm font-bold text-[#141A2E] flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#2563EB]" />
+                  <span>Official Receipt Preview (Formatted using School Theme)</span>
+                </h3>
+                <span className="text-xs text-gray-400">Zero QR Codes • Institutional Grade</span>
+              </div>
+
+              {/* Sandboxed iframe preview for perfect A4 rendering */}
+              <div className="w-full border border-gray-200 rounded-xl overflow-hidden bg-gray-50 flex justify-center p-4">
+                <iframe
+                  title="Receipt Preview"
+                  srcDoc={buildCurrentReceiptHTML()}
+                  className="w-full max-w-3xl min-h-[580px] bg-white shadow-md border border-gray-200 rounded-lg"
+                />
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Concession Modal with PIN override (B7.5) */}
-      {showConcessionModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-amber-600" />
-                <h3 className="font-bold text-slate-900 text-base">Add Counter Concession</h3>
-              </div>
-              <button aria-label="Close" type="button" onClick={() => setShowConcessionModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label htmlFor="feecollectpage-reason-basis" className="block text-xs font-semibold text-slate-700 mb-1">Reason / Basis</label>
-                <select id="feecollectpage-reason-basis" aria-label="Reason / Basis"
-                  value={concessionBasis}
-                  onChange={e => setConcessionBasis(e.target.value as any)}
-                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
-                >
-                  <option value="management">Management discretion</option>
-                  <option value="merit">Merit</option>
-                  <option value="staff_ward">Staff ward</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="feecollectpage-type" className="block text-xs font-semibold text-slate-700 mb-1">Type</label>
-                  <select id="feecollectpage-type" aria-label="Type"
-                    value={concessionType}
-                    onChange={e => setConcessionType(e.target.value as any)}
-                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-none focus:border-[#2158E0]"
-                  >
-                    <option value="percent">Percentage (%)</option>
-                    <option value="fixed">Fixed (₹)</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="feecollectpage-value-concessiontype-percent" className="block text-xs font-semibold text-slate-700 mb-1">
-                    Value {concessionType === "percent" ? "(%)" : "(₹)"}
-                  </label>
-                  <input id="feecollectpage-value-concessiontype-percent"
-                    type="number"
-                    value={typeof concessionVal === "number" && Number.isNaN(concessionVal) ? "" : (concessionVal ?? "")}
-                    onChange={e => setConcessionVal(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
-                    placeholder="10"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="feecollectpage-reason-required" className="block text-xs font-semibold text-slate-700 mb-1">Reason (Required)</label>
-                <input id="feecollectpage-reason-required"
-                  type="text"
-                  value={concessionReason}
-                  onChange={e => setConcessionReason(e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-[#2158E0]"
-                  placeholder="e.g. Approved by Principal on sports scholarship"
-                />
-              </div>
-
-              {/* Owner PIN check */}
-              {(parseFloat(concessionVal) > (settings?.discount_approval_threshold_percent ?? 10)) && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900">
-                    <KeyRound className="w-4 h-4 text-amber-700" />
-                    <span>Threshold Exceeded ({settings?.discount_approval_threshold_percent ?? 10}%)</span>
-                  </div>
-                  <p className="text-[11px] text-amber-700">
-                    Enter Owner PIN on the spot to override and approve immediately.
-                  </p>
-                  <input aria-label="Owner PIN"
-                    type="password"
-                    maxLength={6}
-                    value={ownerPin}
-                    onChange={e => setOwnerPin(e.target.value)}
-                    placeholder="Enter Owner PIN"
-                    className="w-full text-xs border border-amber-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono tracking-widest text-center"
-                  />
-                </div>
-              )}
-
-              {pinError && (
-                <p className="text-xs text-red-600">{pinError}</p>
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setShowConcessionModal(false)}
-                className="flex-1 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+      {/* ── 3. Content-Aligned Sticky Footer Actions (Requirement 8) ── */}
+      <div className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-[#E6EAF3] py-3.5 px-4 sm:px-6 lg:px-8 z-20 shadow-md">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          {/* Left: Back Action or Summary */}
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+            {step === 1 ? (
+              <Link
+                to="/admin/fees/collections"
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
-              </button>
+              </Link>
+            ) : step === 2 ? (
               <button
                 type="button"
-                onClick={handleApplyConcession}
-                className="flex-1 py-2 rounded-xl bg-[#2158E0] text-white text-xs font-semibold hover:bg-[#1A46B8] cursor-pointer"
+                onClick={handleBackToStudent}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
               >
-                Apply Concession
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Student</span>
               </button>
-            </div>
+            ) : step === 3 ? (
+              <button
+                type="button"
+                onClick={handleBackToInvoices}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Invoices</span>
+              </button>
+            ) : (
+              <Link
+                to="/admin/fees/collections"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                <Receipt className="w-3.5 h-3.5 text-gray-500" />
+                <span>Back to All Collections</span>
+              </Link>
+            )}
+
+            {/* Summary Text on Step 2 and 3 */}
+            {(step === 2 || step === 3) && (
+              <div className="sm:pl-3 border-l border-gray-200">
+                <span className="text-[11px] font-semibold text-gray-500 block">
+                  {step === 2 ? "Selected Amount" : "Total Collection"}
+                </span>
+                <span className="text-base font-extrabold text-[#2563EB]">
+                  {formatPaise(enteredPaise)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Step-specific primary action */}
+          <div className="w-full sm:w-auto flex justify-end">
+            {step === 1 && (
+              <button
+                type="button"
+                disabled={!selectedStudent}
+                onClick={handleProceedToInvoices}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <span>Continue to Invoices</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+
+            {step === 2 && (
+              <button
+                type="button"
+                disabled={
+                  (selectedInvoiceIds.size === 0 && !isAdvancePayment) ||
+                  enteredPaise <= 0
+                }
+                onClick={handleProceedToPayment}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <span>Continue to Payment</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+
+            {step === 3 && (
+              <button
+                type="button"
+                disabled={enteredPaise <= 0 || isSubmitting}
+                onClick={() => setIsReviewOpen(true)}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Record Payment & Issue Receipt</span>
+              </button>
+            )}
+
+            {step === 4 && (
+              <button
+                type="button"
+                onClick={handleCollectAnother}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gray-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Collect Another Fee</span>
+              </button>
+            )}
           </div>
         </div>
-      )}
+      </div>
+
+      {/* ── 4. Confirmation / Review Modal ── */}
+      <PaymentReviewModal
+        isOpen={isReviewOpen}
+        onClose={() => setIsReviewOpen(false)}
+        onConfirm={handleSubmitPayment}
+        isSubmitting={isSubmitting}
+        studentName={selectedStudent?.name}
+        admissionNo={selectedStudent?.admission_no}
+        invoicesCount={
+          invoices.filter((inv) => selectedInvoiceIds.has(inv.id)).length
+        }
+        paymentMethod={paymentMethod}
+        referenceNo={referenceNo}
+        chequeNo={chequeNo}
+        bankName={bankName}
+        paymentDate={paymentDate}
+        amountRupees={amountRupees}
+      />
     </div>
   );
 }

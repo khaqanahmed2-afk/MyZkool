@@ -377,7 +377,7 @@ export default function SchoolProfile() {
     let suggested: string | undefined;
     if (!isSubdomainManuallyEdited) {
       suggested = normalizeSubdomain(newName);
-      triggerSubdomainCheck(suggested, existingSchoolId);
+      triggerSubdomainCheck(suggested, existingSchoolIdRef.current || undefined);
     }
 
     setFormData((prev) => {
@@ -400,7 +400,7 @@ export default function SchoolProfile() {
     const rawVal = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 48);
 
     setFormData((prev) => ({ ...prev, subdomain: rawVal }));
-    triggerSubdomainCheck(rawVal, existingSchoolId);
+    triggerSubdomainCheck(rawVal, existingSchoolIdRef.current || undefined);
 
     const err = validateField("subdomain", rawVal);
     setFormErrors((prev) => ({ ...prev, subdomain: err }));
@@ -412,7 +412,7 @@ export default function SchoolProfile() {
     setIsSubdomainManuallyEdited(false);
     const suggested = normalizeSubdomain(formData.name);
     setFormData((prev) => ({ ...prev, subdomain: suggested }));
-    triggerSubdomainCheck(suggested, existingSchoolId);
+    triggerSubdomainCheck(suggested, existingSchoolIdRef.current || undefined);
     const err = validateField("subdomain", suggested);
     setFormErrors((prev) => ({ ...prev, subdomain: err }));
   };

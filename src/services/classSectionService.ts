@@ -1277,3 +1277,71 @@ export async function saveClassesSetupProgress({
     classes,
   });
 }
+
+/**
+ * Retrieves only sections belonging exclusively to a specific class and authorized school
+ */
+export async function getSectionsForClass(
+  schoolId: string,
+  classId: string,
+  signal?: AbortSignal
+): Promise<{ sections: SchoolSection[]; error?: string }> {
+  if (!schoolId || !classId) {
+    return { sections: [] };
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      let query = supabase
+        .from("sections")
+        .select("*")
+        .eq("school_id", schoolId)
+        .eq("class_id", classId)
+        .order("sort_order", { ascending: true });
+
+      if (signal) {
+        query = query.abortSignal(signal);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        return {
+          sections: data.map((s: any) => ({
+            id: s.id,
+            school_id: s.school_id,
+            academic_year_id: s.academic_year_id,
+            class_id: s.class_id,
+            name: s.name,
+            display_name: s.display_name,
+            sort_order: s.sort_order,
+            capacity: s.capacity !== undefined && s.capacity !== null ? Number(s.capacity) : 40,
+            status: s.status || "active",
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+          })),
+        };
+      }
+      if (error) {
+        console.warn("getSectionsForClass Supabase error, falling back to cache:", error.message);
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError" || signal?.aborted) {
+        return { sections: [], error: "aborted" };
+      }
+    }
+  }
+
+  // Local storage fallback
+  try {
+    const cachedSec = typeof localStorage !== "undefined" ? localStorage.getItem(`${SECTIONS_CACHE_PREFIX}${schoolId}`) : null;
+    if (cachedSec) {
+      const parsed: SchoolSection[] = JSON.parse(cachedSec);
+      const filtered = parsed
+        .filter((s) => s.class_id === classId)
+        .sort((a, b) => a.sort_order - b.sort_order);
+      return { sections: filtered };
+    }
+  } catch {}
+
+  return { sections: [] };
+}

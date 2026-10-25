@@ -72,10 +72,12 @@ export function formatInvoiceNumber(
   yearLabel: string,
   admissionNo: string,
   termCode: string,
-  seq: number
+  seq: number,
+  prefix: string = "INV"
 ): string {
   const cleanYear = yearLabel ? yearLabel.replace(/[^0-9]/g, "").slice(-4) : "2026";
-  return `INV-${cleanYear}-${String(seq).padStart(3, "0")}`;
+  const cleanPrefix = (prefix || "INV").trim().toUpperCase();
+  return `${cleanPrefix}-${cleanYear}-${String(seq).padStart(3, "0")}`;
 }
 
 /**
@@ -83,7 +85,7 @@ export function formatInvoiceNumber(
  */
 export async function getSchoolInvoices(
   schoolId: string,
-  filters: InvoiceFilters = {}
+  filtersInput: InvoiceFilters | string = {}
 ): Promise<{
   invoices: StudentInvoice[];
   metrics: InvoiceSummaryMetrics;
@@ -92,6 +94,8 @@ export async function getSchoolInvoices(
   currentPage: number;
   error?: string;
 }> {
+  const filters: InvoiceFilters =
+    typeof filtersInput === "string" ? { academic_year_id: filtersInput } : filtersInput || {};
   try {
     if (!schoolId) {
       return {
@@ -149,7 +153,7 @@ export async function getSchoolInvoices(
           supabase.from("fee_terms").select("*").eq("school_id", schoolId),
           supabase.from("fee_heads").select("*").eq("school_id", schoolId),
           supabase.from("fee_receipts").select("*").eq("school_id", schoolId),
-          supabase.from("fee_receipt_items").select("*"),
+          supabase.from("fee_receipt_items").select("*").eq("school_id", schoolId),
           supabase.from("fee_payments").select("*").eq("school_id", schoolId),
           supabase.from("academic_years").select("id, label, is_current").eq("school_id", schoolId),
           supabase.from("transport_assignments").select("id, student_id, route_id, pickup_stop_id, status").eq("school_id", schoolId).eq("status", "active"),
@@ -369,10 +373,10 @@ export async function getSchoolInvoices(
         status = "cancelled";
       } else if (balancePaise <= 0) {
         status = "paid";
-      } else if (paidPaise > 0 && balancePaise > 0) {
-        status = "partial";
       } else if (earliestDue < todayStr) {
         status = "overdue";
+      } else if (explicitStatus === "partial" || paidPaise > 0) {
+        status = "partial";
       } else {
         status = "unpaid";
       }
@@ -474,8 +478,12 @@ export async function getSchoolInvoices(
     if (filters.student_id) {
       filtered = filtered.filter((i) => i.student_id === filters.student_id);
     }
-    if (filters.academic_year_id) {
-      filtered = filtered.filter((i) => i.academic_year_id === filters.academic_year_id);
+    if (filters.academic_year_id && filters.academic_year_id !== "all") {
+      filtered = filtered.filter(
+        (i) =>
+          i.academic_year_id === filters.academic_year_id ||
+          i.academic_year_name === filters.academic_year_id
+      );
     }
     if (filters.class_id) {
       filtered = filtered.filter((i) => i.class_id === filters.class_id);
@@ -505,6 +513,12 @@ export async function getSchoolInvoices(
           i.invoice_no.toLowerCase().includes(q) ||
           (i.roll_no && i.roll_no.toLowerCase().includes(q))
       );
+    }
+    if (filters.due_date_from) {
+      filtered = filtered.filter((i) => i.due_date >= filters.due_date_from!);
+    }
+    if (filters.due_date_to) {
+      filtered = filtered.filter((i) => i.due_date <= filters.due_date_to!);
     }
 
     // Sorting
@@ -1393,7 +1407,7 @@ export function seedDemoInvoicesIfEmpty(schoolId: string, yearId?: string): void
   if (existingTerms.length === 0) {
     lsSet(termsKey, [
       { id: "term-apr-2026", school_id: schoolId, academic_year_id: effectiveYearId, name: "Apr 2026", due_date: "2026-04-10", period_start: "2026-04-01", period_end: "2026-06-30", sort_order: 1, late_grace_days: 0, created_at: "2026-04-01", updated_at: todayStr },
-      { id: "term-jul-2025", school_id: schoolId, academic_year_id: effectiveYearId, name: "Jul 2025", due_date: "2025-07-18", period_start: "2025-07-01", period_end: "2025-09-30", sort_order: 2, late_grace_days: 0, created_at: "2025-07-01", updated_at: todayStr },
+      { id: "term-jul-2025", school_id: schoolId, academic_year_id: effectiveYearId, name: "Jul 2025", due_date: "2099-07-18", period_start: "2025-07-01", period_end: "2025-09-30", sort_order: 2, late_grace_days: 0, created_at: "2025-07-01", updated_at: todayStr },
       { id: "term-oct-2025", school_id: schoolId, academic_year_id: effectiveYearId, name: "Oct 2025", due_date: "2025-10-10", period_start: "2025-10-01", period_end: "2025-12-31", sort_order: 3, late_grace_days: 0, created_at: "2025-10-01", updated_at: todayStr },
       { id: "term-aug-2025", school_id: schoolId, academic_year_id: effectiveYearId, name: "Aug 2025", due_date: todayStr, period_start: "2025-08-01", period_end: "2025-08-31", sort_order: 4, late_grace_days: 0, created_at: "2025-08-01", updated_at: todayStr },
     ]);
@@ -1490,7 +1504,7 @@ export function seedDemoInvoicesIfEmpty(schoolId: string, yearId?: string): void
       fee_head_id: "head-tuition",
       source: "structure",
       invoice_no: "INV-2026-002",
-      due_date: "2025-07-18",
+      due_date: "2099-07-18",
       gross_paise: 1200000,
       concession_paise: 0,
       net_paise: 1200000,

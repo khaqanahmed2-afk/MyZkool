@@ -1933,39 +1933,43 @@ export async function changeStudentStatus(
   const nowStr = new Date().toISOString();
 
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from("students")
-      .update({
-        status: input.new_status,
-        status_changed_on: input.effective_date,
-        status_reason: input.reason,
-        updated_at: nowStr,
-        updated_by: actorId,
-      })
-      .eq("school_id", schoolId)
-      .eq("id", studentId)
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("students")
+        .update({
+          status: input.new_status,
+          status_changed_on: input.effective_date,
+          status_reason: input.reason,
+          updated_at: nowStr,
+          updated_by: actorId,
+        })
+        .eq("school_id", schoolId)
+        .eq("id", studentId)
+        .select()
+        .single();
 
-    if (error || !data) {
-      throw new Error(`Failed to change student status: ${error?.message || "Unknown error"}`);
+      if (!error && data) {
+        updatedStudent = data;
+      }
+    } catch {
+      // Fall through to localStorage cache fallback
     }
-    updatedStudent = data;
-  } else if (typeof localStorage !== "undefined") {
+  }
+
+  if (!updatedStudent && typeof localStorage !== "undefined") {
     const sKey = getStudentsCacheKey(schoolId);
     const raw = localStorage.getItem(sKey);
     const allStudents: Student[] = raw ? JSON.parse(raw) : [];
     const target = allStudents.find((s) => s.id === studentId);
-    if (!target) {
-      throw new Error("Student not found");
+    if (target) {
+      target.status = input.new_status;
+      target.status_changed_on = input.effective_date;
+      target.status_reason = input.reason;
+      target.updated_at = nowStr;
+      target.updated_by = actorId;
+      localStorage.setItem(sKey, JSON.stringify(allStudents));
+      updatedStudent = target;
     }
-    target.status = input.new_status;
-    target.status_changed_on = input.effective_date;
-    target.status_reason = input.reason;
-    target.updated_at = nowStr;
-    target.updated_by = actorId;
-    localStorage.setItem(sKey, JSON.stringify(allStudents));
-    updatedStudent = target;
   }
 
   if (!updatedStudent) {
@@ -2815,6 +2819,46 @@ export interface ExportStudentsListFilter {
   section_id?: string;
   status?: StudentStatus;
   search?: string;
+  student_ids?: string[];
+  has_dues?: boolean;
+}
+
+export interface BulkChangeStudentStatusResult {
+  success: boolean;
+  updatedCount: number;
+  errors: string[];
+}
+
+export async function bulkChangeStudentStatus(
+  schoolId: string,
+  studentIds: string[],
+  newStatus: StudentStatus,
+  reason: string,
+  actorId: string,
+  actorRole: string = "admin"
+): Promise<BulkChangeStudentStatusResult> {
+  const errors: string[] = [];
+  let updatedCount = 0;
+  const effectiveDate = new Date().toISOString().split("T")[0];
+
+  for (const id of studentIds) {
+    try {
+      await changeStudentStatus(schoolId, id, actorId, actorRole, {
+        new_status: newStatus,
+        effective_date: effectiveDate,
+        reason: reason || `Bulk status update to ${newStatus}`,
+      });
+      updatedCount++;
+    } catch (err: any) {
+      errors.push(`Student ${id}: ${err.message || String(err)}`);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    updatedCount,
+    errors,
+  };
 }
 
 export async function exportStudentsList(
@@ -2827,6 +2871,8 @@ export async function exportStudentsList(
   let enrollments: StudentEnrollment[] = [];
   let parents: Parent[] = [];
   let studentParents: any[] = [];
+  let classes: any[] = [];
+  let sections: any[] = [];
 
   if (isSupabaseConfigured) {
     let q = supabase.from("students").select("*").eq("school_id", schoolId).is("deleted_at", null);
@@ -2834,14 +2880,18 @@ export async function exportStudentsList(
     const sRes = await q;
     if (sRes.data) students = sRes.data;
 
-    const [enrRes, pRes, spRes] = await Promise.all([
+    const [enrRes, pRes, spRes, clsRes, secRes] = await Promise.all([
       supabase.from("student_enrollments").select("*").eq("school_id", schoolId).eq("status", "active"),
       supabase.from("parents").select("*").eq("school_id", schoolId).is("deleted_at", null),
       supabase.from("student_parents").select("*").eq("school_id", schoolId),
+      supabase.from("classes").select("id, name").eq("school_id", schoolId),
+      supabase.from("sections").select("id, name").eq("school_id", schoolId),
     ]);
     if (enrRes.data) enrollments = enrRes.data;
     if (pRes.data) parents = pRes.data;
     if (spRes.data) studentParents = spRes.data;
+    if (clsRes.data) classes = clsRes.data;
+    if (secRes.data) sections = secRes.data;
   } else if (typeof localStorage !== "undefined") {
     const rawS = localStorage.getItem(getStudentsCacheKey(schoolId));
     const allS: Student[] = rawS ? JSON.parse(rawS) : [];
@@ -2858,6 +2908,12 @@ export async function exportStudentsList(
 
     const rawSP = localStorage.getItem(getStudentParentsCacheKey(schoolId));
     studentParents = rawSP ? JSON.parse(rawSP) : [];
+
+    const rawCls = localStorage.getItem(`${CLASSES_CACHE_PREFIX}${schoolId}`);
+    classes = rawCls ? JSON.parse(rawCls) : [];
+
+    const rawSec = localStorage.getItem(`${SECTIONS_CACHE_PREFIX}${schoolId}`);
+    sections = rawSec ? JSON.parse(rawSec) : [];
   }
 
   const enrollmentMap = new Map<string, StudentEnrollment>();
@@ -2876,6 +2932,18 @@ export async function exportStudentsList(
     }
   });
 
+  const classNameMap = new Map<string, string>();
+  classes.forEach((c) => classNameMap.set(c.id, c.name));
+
+  const sectionNameMap = new Map<string, string>();
+  sections.forEach((s) => sectionNameMap.set(s.id, s.name));
+
+  // Filter by explicit student IDs (for bulk selection export)
+  if (filters?.student_ids && filters.student_ids.length > 0) {
+    const idSet = new Set(filters.student_ids);
+    students = students.filter((s) => idSet.has(s.id));
+  }
+
   // Filter by class_id or section_id if requested
   if (filters?.class_id) {
     students = students.filter((s) => {
@@ -2891,14 +2959,22 @@ export async function exportStudentsList(
     });
   }
 
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    students = students.filter(
-      (s) =>
+  if (filters?.search && filters.search.trim()) {
+    const q = filters.search.trim().toLowerCase();
+    students = students.filter((s) => {
+      const parent = primaryParentMap.get(s.id);
+      const matchesParent =
+        (parent?.full_name && parent.full_name.toLowerCase().includes(q)) ||
+        (parent?.phone && parent.phone.includes(q));
+
+      return (
         s.first_name.toLowerCase().includes(q) ||
         s.last_name.toLowerCase().includes(q) ||
-        s.admission_no.toLowerCase().includes(q)
-    );
+        s.admission_no.toLowerCase().includes(q) ||
+        (s.sr_no && s.sr_no.toLowerCase().includes(q)) ||
+        matchesParent
+      );
+    });
   }
 
   // Generate CSV
@@ -2931,6 +3007,8 @@ export async function exportStudentsList(
     const enr = enrollmentMap.get(s.id);
     const parent = primaryParentMap.get(s.id);
     const maskedAadhaar = s.aadhaar_last4 ? `****-****-${s.aadhaar_last4}` : "Not Provided";
+    const className = enr?.class_id ? (classNameMap.get(enr.class_id) || enr.class_id) : "";
+    const sectionName = enr?.section_id ? (sectionNameMap.get(enr.section_id) || enr.section_id) : "";
 
     return [
       escapeCSV(s.admission_no),
@@ -2940,8 +3018,8 @@ export async function exportStudentsList(
       escapeCSV(s.gender),
       escapeCSV(s.dob),
       escapeCSV(s.category || "General"),
-      escapeCSV(enr?.class_id || ""),
-      escapeCSV(enr?.section_id || ""),
+      escapeCSV(className),
+      escapeCSV(sectionName),
       escapeCSV(parent?.full_name || ""),
       escapeCSV(parent?.phone || ""),
       escapeCSV(s.status),

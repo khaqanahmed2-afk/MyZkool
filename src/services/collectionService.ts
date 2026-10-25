@@ -20,6 +20,7 @@ import { computeAllocation, validateAllocation } from "../lib/feeAllocation";
 import { nextReceiptNo } from "./counterService";
 import { getFeeSettings } from "./feeSetupService";
 import { getStudentDues } from "./feeDuesService";
+export { getStudentDues };
 import type {
   CollectInput, CollectResult, CancelReceiptInput, CancelReceiptResult,
   FeeReceipt, FeeReceiptItem, FeePayment, CollectContext,
@@ -670,6 +671,13 @@ export async function searchStudentsForCounter(
           last_name,
           admission_no,
           ${enrollJoin},
+          student_parents!student_parents_student_id_fkey (
+            is_primary_contact,
+            parent:parents!student_parents_parent_id_fkey (
+              full_name,
+              phone
+            )
+          ),
           student_dues!student_dues_student_id_fkey (
             balance_paise,
             status
@@ -699,6 +707,10 @@ export async function searchStudentsForCounter(
             (d: any) => d.status === "pending" || d.status === "partial"
           );
           const balancePaise = pendingDues.reduce((acc: number, d: any) => acc + (d.balance_paise || 0), 0);
+          const primarySp: any = (s.student_parents || []).find((sp: any) => sp.is_primary_contact) || s.student_parents?.[0];
+          const parentObj = Array.isArray(primarySp?.parent) ? primarySp.parent[0] : primarySp?.parent;
+          const guardianName = parentObj?.full_name || (s as any).guardian_name || (s as any).father_name || (s as any).mother_name || "";
+          const guardianPhone = parentObj?.phone || (s as any).guardian_phone || (s as any).emergency_contact_phone || (s as any).phone || "";
 
           return {
             id: s.id,
@@ -709,6 +721,8 @@ export async function searchStudentsForCounter(
             section_id: activeEnroll?.section_id,
             section_name: activeEnroll?.section?.name || "",
             balance_paise: balancePaise,
+            guardian_name: guardianName,
+            guardian_phone: guardianPhone,
           };
         });
       }
@@ -754,6 +768,8 @@ export async function searchStudentsForCounter(
         section_id: enr?.section_id,
         section_name: sec?.name || s.section_name || "",
         balance_paise: balancePaise,
+        guardian_name: s.guardian_name || s.father_name || s.mother_name || "",
+        guardian_phone: s.guardian_phone || s.emergency_contact_phone || s.phone || "",
       };
     });
 }
@@ -768,6 +784,8 @@ export async function getStudentForCounter(
   class_name: string;
   section_name?: string;
   balance_paise: number;
+  guardian_name?: string;
+  guardian_phone?: string;
 } | null> {
   if (!schoolId || !studentId) return null;
 
@@ -785,6 +803,13 @@ export async function getStudentForCounter(
             class:classes!student_enrollments_class_id_fkey(name),
             section:sections(name)
           ),
+          student_parents!student_parents_student_id_fkey (
+            is_primary_contact,
+            parent:parents!student_parents_parent_id_fkey (
+              full_name,
+              phone
+            )
+          ),
           student_dues!student_dues_student_id_fkey (
             balance_paise,
             status
@@ -801,6 +826,10 @@ export async function getStudentForCounter(
           (d: any) => d.status === "pending" || d.status === "partial"
         );
         const balancePaise = pendingDues.reduce((acc: number, d: any) => acc + (d.balance_paise || 0), 0);
+        const primarySp: any = (data.student_parents || []).find((sp: any) => sp.is_primary_contact) || data.student_parents?.[0];
+        const parentObj = Array.isArray(primarySp?.parent) ? primarySp.parent[0] : primarySp?.parent;
+        const guardianName = parentObj?.full_name || (data as any).guardian_name || (data as any).father_name || (data as any).mother_name || "";
+        const guardianPhone = parentObj?.phone || (data as any).guardian_phone || (data as any).emergency_contact_phone || (data as any).phone || "";
 
         return {
           id: data.id,
@@ -809,6 +838,8 @@ export async function getStudentForCounter(
           class_name: (Array.isArray(activeEnroll?.class) ? activeEnroll.class[0]?.name : (activeEnroll?.class as any)?.name) || "—",
           section_name: (Array.isArray(activeEnroll?.section) ? activeEnroll.section[0]?.name : (activeEnroll?.section as any)?.name) || "",
           balance_paise: balancePaise,
+          guardian_name: guardianName,
+          guardian_phone: guardianPhone,
         };
       }
     } catch (err) {
@@ -831,6 +862,8 @@ export async function getStudentForCounter(
     class_name: found.class_name || "—",
     section_name: found.section_name || "",
     balance_paise: balancePaise,
+    guardian_name: found.guardian_name || found.father_name || found.mother_name || "",
+    guardian_phone: found.guardian_phone || found.emergency_contact_phone || found.phone || "",
   };
 }
 

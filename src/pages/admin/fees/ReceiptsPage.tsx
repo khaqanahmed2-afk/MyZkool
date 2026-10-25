@@ -116,17 +116,23 @@ function ReceiptDrawer({
   const [loading, setLoading] = useState(true);
   const [showCancel, setShowCancel] = useState(false);
 
+  const [feeSettings, setFeeSettings] = useState<any>(null);
+
   useEffect(() => {
     if (!schoolId) return;
     setLoading(true);
-    getReceiptById(schoolId, receiptId).then(r => {
+    Promise.all([
+      getReceiptById(schoolId, receiptId),
+      import("../../../services/feeSetupService").then(m => m.getFeeSettings(schoolId)).catch(() => ({ settings: null })),
+    ]).then(([r, sRes]) => {
       if (r.receipt) setReceipt(r.receipt);
       if (r.items) setItems(r.items);
       if (r.payments) setPayments(r.payments);
+      if (sRes?.settings) setFeeSettings(sRes.settings);
     }).finally(() => setLoading(false));
   }, [schoolId, receiptId]);
 
-  function printReceipt(paper: "a5" | "thermal80") {
+  function printReceipt(paper: "a4" | "a5" | "thermal80") {
     if (!receipt) return;
     const html = generateReceiptHTML(
       receipt,
@@ -137,10 +143,18 @@ function ReceiptDrawer({
         admission_no: "ADM",
       },
       {
-        name: "MyZkool School",
+        name: feeSettings?.receipt_header_title || "MyZkool School",
+        logo_url: feeSettings?.logo_url,
+        signature_url: feeSettings?.signature_url,
+        signatory_name: feeSettings?.signatory_name,
+        signatory_designation: feeSettings?.signatory_designation,
+        terms: feeSettings?.receipt_terms,
+        footer: feeSettings?.receipt_footer,
+        theme: feeSettings?.receipt_theme,
       },
       paper,
-      (receipt.print_count ?? 0) > 0
+      (receipt.print_count ?? 0) > 0,
+      feeSettings
     );
     const win = window.open("", "_blank");
     if (!win) return;

@@ -21,6 +21,7 @@ export interface StudentFeeSummary {
   avatar_url?: string;
   gender?: string;
   student_status?: string;
+  is_rte?: boolean;
 
   // Academic placement
   class_id?: string;
@@ -31,6 +32,7 @@ export interface StudentFeeSummary {
   academic_year_name?: string;
 
   // Applicable fee structure
+  applicable_fee_structure?: string;
   applicable_fee_structure_name?: string;
 
   // Guardian details
@@ -40,16 +42,24 @@ export interface StudentFeeSummary {
 
   // Transport details
   has_transport: boolean;
+  transport_opted?: boolean;
   transport_route?: string;
+  transport_zone_route?: string;
   transport_stop?: string;
 
   // Financial figures (in integer paise)
   total_billed_paise?: number; // Gross fees billed
+  total_charges_paise?: number; // Total assessed charges
   total_applicable_paise: number; // Net applicable fees
+  net_applicable_paise?: number; // Alias for total_applicable_paise
   total_concession_paise?: number; // Valid discounts & concessions
+  total_concessions_paise?: number; // Alias for total_concession_paise
   total_paid_paise: number;
+  paid_amount_paise?: number; // Alias for total_paid_paise
   total_pending_paise: number; // Outstanding balance
+  pending_amount_paise?: number; // Alias for total_pending_paise
   total_overdue_paise: number; // Overdue balance
+  overdue_amount_paise?: number; // Alias for total_overdue_paise
   advance_credit_paise?: number;
   net_pending_paise?: number;
 
@@ -59,8 +69,8 @@ export interface StudentFeeSummary {
   fee_status: StudentFeeStatus;
 
   // Internal counts & classification
-  total_invoices_count: number;
-  unpaid_invoices_count: number;
+  total_invoices_count?: number;
+  unpaid_invoices_count?: number;
   has_fee_structure?: boolean;
   is_transport_only?: boolean;
 }
@@ -173,6 +183,8 @@ export interface StudentLedgerDetails {
   };
   transactions: LedgerTransactionItem[];
   fee_breakdown?: FeeObligationBreakdownItem[];
+  dues?: StudentDue[];
+  receipts?: import('./collection').FeeReceipt[];
   invoices: StudentInvoice[];
   payments: Array<{
     id: string;
@@ -182,6 +194,12 @@ export interface StudentLedgerDetails {
     payment_mode: PaymentMode;
     collected_by_name?: string;
     remarks?: string;
+    allocations?: Array<{
+      due_id: string;
+      due_description: string;
+      amount_paise: number;
+      billing_period: string;
+    }>;
   }>;
   concessions: Array<{
     id: string;
@@ -199,8 +217,18 @@ export interface StudentLedgerDetails {
     stop_name?: string;
     monthly_fee_paise?: number;
     total_billed_paise?: number;
+    total_paid_paise?: number;
+    total_pending_paise?: number;
   };
   advance_credits?: Array<{
+    id: string;
+    amount_paise: number;
+    remaining_paise: number;
+    receipt_no?: string;
+    date?: string;
+    note?: string;
+  }>;
+  advanceCredits?: Array<{
     id: string;
     amount_paise: number;
     remaining_paise: number;

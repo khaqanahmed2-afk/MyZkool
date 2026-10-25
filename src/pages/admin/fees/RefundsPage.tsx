@@ -88,7 +88,7 @@ export default function RefundsPage() {
       setShowRequestModal(false);
       setAmountRs("");
       setReason("");
-      setStudentId("");
+      studentIdRef.current = "";
       await loadRefunds();
     } else {
       setErrorMsg(res.error || "Failed to submit refund request");

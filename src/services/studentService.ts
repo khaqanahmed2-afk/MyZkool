@@ -66,6 +66,7 @@ import {
   STUDENT_PERMISSIONS,
   STUDENT_ROLE_PERMISSIONS,
   ParentRelation,
+  StudentSummaryData,
 } from "../types/students";
 import type { AcademicYear } from "../types/academic";
 import type { SchoolClass, SchoolSection } from "../types/curriculum";
@@ -97,6 +98,8 @@ const COMMUNICATION_CONSENTS_CACHE_PREFIX = "myzkool_communication_consents_";
 const NOTIFICATION_OUTBOX_CACHE_PREFIX = "myzkool_notification_outbox_";
 const STUDENT_SENSITIVE_CACHE_PREFIX = "myzkool_student_sensitive_";
 const STUDENT_MEDICAL_CACHE_PREFIX = "myzkool_student_medical_";
+const CLASSES_CACHE_PREFIX = "myzkool_classes_";
+const SECTIONS_CACHE_PREFIX = "myzkool_sections_";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function isValidUuid(val: unknown): val is string {
@@ -579,6 +582,144 @@ export async function getStudentById(
 }
 
 /**
+ * Computes verified summary metrics for Students management page:
+ * - Total Students (all registered, non-deleted in school)
+ * - Active Students (enrolled, non-deleted in school)
+ * - New Admissions (admitted in active academic year or new admission type)
+ * - Pending Fees (canonical financial model: students with positive balance_paise in student_dues)
+ */
+export async function getStudentSummaryMetrics(
+  schoolId: string,
+  academicYearId?: string,
+  academicYearStartDate?: string
+): Promise<{ metrics?: StudentSummaryData; error?: string }> {
+  if (!schoolId) {
+    return { error: "school_id is required" };
+  }
+
+  // 1. Supabase Query
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Total Students
+      const totalPromise = supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .is("deleted_at", null);
+
+      // 2. Enrolled Students
+      const enrolledPromise = supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .eq("status", "enrolled")
+        .is("deleted_at", null);
+
+      // 3. New Admissions
+      let newAdmissionsQuery = supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .is("deleted_at", null);
+
+      if (academicYearStartDate) {
+        newAdmissionsQuery = newAdmissionsQuery.gte("admission_date", academicYearStartDate);
+      } else {
+        newAdmissionsQuery = newAdmissionsQuery.eq("admission_type", "new");
+      }
+
+      // 4. Pending Fees: unique students with balance_paise > 0 and status in ('pending', 'partial')
+      let duesQuery = supabase
+        .from("student_dues")
+        .select("student_id")
+        .eq("school_id", schoolId)
+        .in("status", ["pending", "partial"])
+        .gt("balance_paise", 0);
+
+      if (academicYearId) {
+        duesQuery = duesQuery.eq("academic_year_id", academicYearId);
+      }
+
+      const [totalRes, enrolledRes, newAdmRes, duesRes] = await Promise.all([
+        totalPromise,
+        enrolledPromise,
+        newAdmissionsQuery,
+        duesQuery,
+      ]);
+
+      const totalStudents = totalRes.count ?? 0;
+      const enrolledCount = enrolledRes.count ?? 0;
+      const newAdmissionsCount = newAdmRes.count ?? 0;
+
+      let feePendingCount = 0;
+      if (duesRes.data) {
+        const uniqueStudentIds = new Set(duesRes.data.map((d: any) => d.student_id));
+        feePendingCount = uniqueStudentIds.size;
+      }
+
+      return {
+        metrics: {
+          totalStudents,
+          enrolledCount,
+          newAdmissionsCount,
+          feePendingCount,
+        },
+      };
+    } catch (err: any) {
+      console.warn("Notice: Supabase getStudentSummaryMetrics error, falling back to cache:", err?.message);
+    }
+  }
+
+  // 2. Local storage fallback
+  try {
+    const sCacheKey = getStudentsCacheKey(schoolId);
+    const sCached = typeof localStorage !== "undefined" ? localStorage.getItem(sCacheKey) : null;
+    const allStudents: Student[] = sCached ? JSON.parse(sCached) : [];
+    const activeStudents = allStudents.filter((s) => !s.deleted_at);
+
+    const totalStudents = activeStudents.length;
+    const enrolledCount = activeStudents.filter((s) => s.status === "enrolled").length;
+    const newAdmissionsCount = activeStudents.filter((s) => {
+      if (academicYearStartDate) {
+        return s.admission_date >= academicYearStartDate;
+      }
+      return s.admission_type === "new";
+    }).length;
+
+    // Fees pending from student dues cache
+    const duesCacheKey = `myzkool_student_dues_${schoolId}`;
+    const duesCached = typeof localStorage !== "undefined" ? localStorage.getItem(duesCacheKey) : null;
+    let feePendingCount = 0;
+    if (duesCached) {
+      const allDues: any[] = JSON.parse(duesCached);
+      const pendingStudentIds = new Set<string>();
+      for (const d of allDues) {
+        if (
+          d &&
+          d.balance_paise > 0 &&
+          (d.status === "pending" || d.status === "partial") &&
+          (!academicYearId || d.academic_year_id === academicYearId)
+        ) {
+          if (d.student_id) pendingStudentIds.add(d.student_id);
+        }
+      }
+      feePendingCount = pendingStudentIds.size;
+    }
+
+    return {
+      metrics: {
+        totalStudents,
+        enrolledCount,
+        newAdmissionsCount,
+        feePendingCount,
+      },
+    };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to calculate summary metrics" };
+  }
+}
+
+/**
  * List students with filters, search, and pagination
  */
 export async function listStudents(
@@ -598,10 +739,12 @@ export async function listStudents(
     category,
     is_rte,
     has_dues,
-    uses_transport,
-    documents_pending,
-    admission_year,
+    is_new_admission,
+    academic_year_id,
+    academic_year_start_date,
     limit = 50,
+    page,
+    offset,
     cursor,
     sort_by = "created_at",
     sort_order = "desc",
@@ -609,6 +752,11 @@ export async function listStudents(
     teacherSectionIds,
     parentStudentIds,
   } = params;
+
+  // Strict Class-Section validation: cannot specify a section without selecting a class
+  if (section_id && !class_id) {
+    return { error: "A class must be selected before filtering by section." };
+  }
 
   // Check permission
   let canRead = true;
@@ -624,6 +772,82 @@ export async function listStudents(
 
   if (isSupabaseConfigured) {
     try {
+      // Validate section belongs to selected class and school
+      if (class_id && section_id) {
+        const { data: sectionRow } = await supabase
+          .from("sections")
+          .select("id")
+          .eq("id", section_id)
+          .eq("class_id", class_id)
+          .eq("school_id", schoolId)
+          .maybeSingle();
+
+        if (!sectionRow) {
+          return {
+            response: {
+              data: [],
+              total: 0,
+              total_estimate: 0,
+              page: page || 1,
+              limit,
+              total_pages: 0,
+            },
+          };
+        }
+      }
+
+      // Pre-query parent search matches if search term provided
+      let matchedParentStudentIds: string[] = [];
+      if (search && search.trim()) {
+        const sTerm = search.trim();
+        const { data: matchedParents } = await supabase
+          .from("parents")
+          .select("id, student_parents(student_id)")
+          .eq("school_id", schoolId)
+          .is("deleted_at", null)
+          .or(`full_name.ilike.%${sTerm}%,phone.ilike.%${sTerm}%`);
+
+        if (matchedParents) {
+          for (const p of matchedParents) {
+            if (p.student_parents) {
+              for (const sp of p.student_parents) {
+                if (sp.student_id) matchedParentStudentIds.push(sp.student_id);
+              }
+            }
+          }
+        }
+      }
+
+      // Pre-query due students if has_dues requested
+      let dueStudentIds: string[] | null = null;
+      if (has_dues) {
+        let duesQ = supabase
+          .from("student_dues")
+          .select("student_id")
+          .eq("school_id", schoolId)
+          .in("status", ["pending", "partial"])
+          .gt("balance_paise", 0);
+
+        if (academic_year_id) {
+          duesQ = duesQ.eq("academic_year_id", academic_year_id);
+        }
+
+        const { data: duesData } = await duesQ;
+        dueStudentIds = Array.from(new Set((duesData || []).map((d: any) => d.student_id)));
+        if (dueStudentIds.length === 0) {
+          return {
+            response: {
+              data: [],
+              total: 0,
+              total_estimate: 0,
+              page: page || 1,
+              limit,
+              total_pages: 0,
+            },
+          };
+        }
+      }
+
       const isEnrFiltered = Boolean(class_id || section_id || (userRole === "teacher" && teacherSectionIds));
       const enrollJoin = isEnrFiltered
         ? `student_enrollments!student_enrollments_student_id_fkey!inner (
@@ -650,9 +874,12 @@ export async function listStudents(
           )
         `)
         .eq("school_id", schoolId)
-        .is("deleted_at", null)
+        .is("deleted_at", null);
+
+      // Deterministic ordering with secondary stable sort key
+      query = query
         .order(sort_by, { ascending: sort_order === "asc" })
-        .limit(limit + 1); // +1 to check if there are more
+        .order("id", { ascending: true });
 
       // Role scoping (Spec A6 Rule 11)
       if (userRole === "teacher" && teacherSectionIds) {
@@ -662,8 +889,15 @@ export async function listStudents(
       }
 
       // Apply filters
-      if (search) {
-        query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,admission_no.ilike.%${search}%,sr_no.ilike.%${search}%`);
+      if (search && search.trim()) {
+        const sTerm = search.trim();
+        if (matchedParentStudentIds.length > 0) {
+          query = query.or(
+            `first_name.ilike.%${sTerm}%,last_name.ilike.%${sTerm}%,admission_no.ilike.%${sTerm}%,sr_no.ilike.%${sTerm}%,id.in.(${matchedParentStudentIds.join(",")})`
+          );
+        } else {
+          query = query.or(`first_name.ilike.%${sTerm}%,last_name.ilike.%${sTerm}%,admission_no.ilike.%${sTerm}%,sr_no.ilike.%${sTerm}%`);
+        }
       }
       if (status) {
         query = query.eq("status", status);
@@ -683,21 +917,39 @@ export async function listStudents(
       if (section_id) {
         query = query.eq("student_enrollments.section_id", section_id);
       }
+      if (dueStudentIds !== null) {
+        query = query.in("id", dueStudentIds);
+      }
+      if (is_new_admission) {
+        if (academic_year_start_date) {
+          query = query.gte("admission_date", academic_year_start_date);
+        } else {
+          query = query.eq("admission_type", "new");
+        }
+      }
 
-      // Cursor pagination
-      if (cursor) {
+      // Server-side page or cursor pagination
+      if (page !== undefined || offset !== undefined) {
+        const currentPage = page !== undefined ? Math.max(1, page) : 1;
+        const currentOffset = offset !== undefined ? offset : (currentPage - 1) * limit;
+        query = query.range(currentOffset, currentOffset + limit - 1);
+      } else if (cursor) {
         const cursorDate = new Date(cursor);
         if (sort_order === "desc") {
           query = query.lt("created_at", cursorDate.toISOString());
         } else {
           query = query.gt("created_at", cursorDate.toISOString());
         }
+        query = query.limit(limit + 1);
+      } else {
+        query = query.limit(limit + 1);
       }
 
       const { data, error } = await query;
 
       if (!error && data) {
-        const hasMore = data.length > limit;
+        const isOffsetMode = page !== undefined || offset !== undefined;
+        const hasMore = !isOffsetMode && data.length > limit;
         const items = hasMore ? data.slice(0, limit) : data;
 
         const mappedItems: StudentListItem[] = items.map((item: any) => ({
@@ -715,13 +967,13 @@ export async function listStudents(
           section_name: item.student_enrollments?.[0]?.section?.name,
           primary_parent_name: item.student_parents?.find((sp: any) => sp.is_primary_contact)?.parent?.full_name,
           primary_parent_phone: item.student_parents?.find((sp: any) => sp.is_primary_contact)?.parent?.phone,
-          fee_status: null, // Populated by FeeService
-          transport_route: null, // Populated by TransportService
+          fee_status: null,
+          transport_route: null,
           documents_pending_count: 0,
           status: item.status,
         }));
 
-        // Fetch real total count via a separate COUNT query (not capped by page limit)
+        // Fetch exact total count via COUNT query
         let totalCount = items.length;
         try {
           const countSelect = isEnrFiltered
@@ -732,50 +984,57 @@ export async function listStudents(
             .select(countSelect, { count: "exact", head: true })
             .eq("school_id", schoolId)
             .is("deleted_at", null);
+
           if (status) countQuery = countQuery.eq("status", status);
           if (gender) countQuery = countQuery.eq("gender", gender);
           if (category) countQuery = countQuery.eq("category", category);
           if (is_rte !== undefined) countQuery = countQuery.eq("is_rte", is_rte);
           if (class_id) countQuery = countQuery.eq("student_enrollments.class_id", class_id);
           if (section_id) countQuery = countQuery.eq("student_enrollments.section_id", section_id);
-          if (search) countQuery = (countQuery as any).or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,admission_no.ilike.%${search}%,sr_no.ilike.%${search}%`);
+          if (dueStudentIds !== null) countQuery = countQuery.in("id", dueStudentIds);
+          if (is_new_admission) {
+            if (academic_year_start_date) {
+              countQuery = countQuery.gte("admission_date", academic_year_start_date);
+            } else {
+              countQuery = countQuery.eq("admission_type", "new");
+            }
+          }
+          if (search && search.trim()) {
+            const sTerm = search.trim();
+            if (matchedParentStudentIds.length > 0) {
+              countQuery = (countQuery as any).or(
+                `first_name.ilike.%${sTerm}%,last_name.ilike.%${sTerm}%,admission_no.ilike.%${sTerm}%,sr_no.ilike.%${sTerm}%,id.in.(${matchedParentStudentIds.join(",")})`
+              );
+            } else {
+              countQuery = (countQuery as any).or(`first_name.ilike.%${sTerm}%,last_name.ilike.%${sTerm}%,admission_no.ilike.%${sTerm}%,sr_no.ilike.%${sTerm}%`);
+            }
+          }
+
           const { count } = await countQuery;
           if (count !== null && count !== undefined) totalCount = count;
         } catch {
-          // Non-fatal: fall back to page-size estimate
+          // Fall back to items.length
         }
+
+        const currentPage = page !== undefined ? page : 1;
+        const totalPages = Math.ceil(totalCount / limit);
 
         return {
           response: {
             data: mappedItems,
             next_cursor: hasMore ? items[items.length - 1].created_at : null,
             total_estimate: totalCount,
+            total: totalCount,
+            page: currentPage,
+            limit,
+            total_pages: totalPages,
           },
         };
       }
 
-      console.error("Supabase listStudents query error:", error);
-      // Fallback to local storage if available for resilient operation
-      try {
-        const cacheKey = getStudentsCacheKey(schoolId);
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          const cachedStudents = JSON.parse(cached);
-          if (Array.isArray(cachedStudents) && cachedStudents.length > 0) {
-            console.warn("Notice: falling back to localStorage cache after Supabase error:", error?.message);
-            // Will fall through to local storage handling below
-          } else {
-            return { error: error?.message || "Failed to list students" };
-          }
-        } else {
-          return { error: error?.message || "Failed to list students" };
-        }
-      } catch {
-        return { error: error?.message || "Failed to list students" };
-      }
-    } catch (err) {
-      console.error("Supabase listStudents exception:", err);
-      return { error: String(err) };
+      console.warn("Supabase listStudents query error, falling back to cache:", error?.message);
+    } catch (err: any) {
+      console.warn("Supabase listStudents exception, falling back to cache:", err?.message);
     }
   }
 
@@ -785,11 +1044,46 @@ export async function listStudents(
     const cached = localStorage.getItem(cacheKey);
     let students: Student[] = cached ? JSON.parse(cached) : [];
 
+    // Hydrate enrollments for class and section filtering
+    const enrKey = getStudentEnrollmentsCacheKey(schoolId);
+    const enrCached = localStorage.getItem(enrKey);
+    const enrollments: StudentEnrollment[] = enrCached ? JSON.parse(enrCached) : [];
+
+    const spKey = getStudentParentsCacheKey(schoolId);
+    const pKey = getParentsCacheKey(schoolId);
+    const spCached = localStorage.getItem(spKey);
+    const pCached = localStorage.getItem(pKey);
+    const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+    const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
+
+    // Curriculum classes and sections cache
+    const secKey = `${SECTIONS_CACHE_PREFIX}${schoolId}`;
+    const secCached = localStorage.getItem(secKey);
+    const allSections: SchoolSection[] = secCached ? JSON.parse(secCached) : [];
+
+    const clsKey = `${CLASSES_CACHE_PREFIX}${schoolId}`;
+    const clsCached = localStorage.getItem(clsKey);
+    const allClasses: SchoolClass[] = clsCached ? JSON.parse(clsCached) : [];
+
+    // Validate section belongs to class
+    if (class_id && section_id && allSections.length > 0) {
+      const matchSec = allSections.find((s) => s.id === section_id && s.class_id === class_id);
+      if (!matchSec) {
+        return {
+          response: {
+            data: [],
+            total: 0,
+            total_estimate: 0,
+            page: page || 1,
+            limit,
+            total_pages: 0,
+          },
+        };
+      }
+    }
+
     // Role scoping (Spec A6 Rule 11)
     if (userRole === "teacher") {
-      const enrollmentsKey = getStudentEnrollmentsCacheKey(schoolId);
-      const enrCached = localStorage.getItem(enrollmentsKey);
-      const enrollments: StudentEnrollment[] = enrCached ? JSON.parse(enrCached) : [];
       const teacherSectionIdSet = teacherSectionIds ? new Set(teacherSectionIds) : null;
       const allowedStudentIdSet = new Set(
         enrollments
@@ -802,33 +1096,45 @@ export async function listStudents(
       students = students.filter(s => parentStudentIdSet ? parentStudentIdSet.has(s.id) : false);
     }
 
-    // Apply filters
+    // Filter deleted
     students = students.filter(s => !s.deleted_at);
-    if (search) {
-      const searchLower = search.toLowerCase();
-      // Also check parent phone numbers
-      const spKey = getStudentParentsCacheKey(schoolId);
-      const pKey = getParentsCacheKey(schoolId);
-      const spCached = localStorage.getItem(spKey);
-      const pCached = localStorage.getItem(pKey);
-      const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
-      const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
 
-      const phoneMatchingStudentIds = new Set<string>();
+    // Apply class and section filters
+    if (class_id) {
+      const classStudentIds = new Set(
+        enrollments.filter((e) => e.class_id === class_id && (!section_id || e.section_id === section_id)).map((e) => e.student_id)
+      );
+      students = students.filter((s) => classStudentIds.has(s.id));
+    } else if (section_id) {
+      const sectionStudentIds = new Set(
+        enrollments.filter((e) => e.section_id === section_id).map((e) => e.student_id)
+      );
+      students = students.filter((s) => sectionStudentIds.has(s.id));
+    }
+
+    // Search across student name, admission no, parent name, parent phone
+    if (search && search.trim()) {
+      const searchLower = search.trim().toLowerCase();
+      const parentMatchedStudentIds = new Set<string>();
+
       for (const p of parents) {
-        if (p.phone && p.phone.includes(searchLower)) {
-          studentParents.filter(sp => sp.parent_id === p.id).forEach(sp => phoneMatchingStudentIds.add(sp.student_id));
+        const matchesName = p.full_name && p.full_name.toLowerCase().includes(searchLower);
+        const matchesPhone = p.phone && p.phone.includes(searchLower);
+        if (matchesName || matchesPhone) {
+          studentParents.filter((sp) => sp.parent_id === p.id).forEach((sp) => parentMatchedStudentIds.add(sp.student_id));
         }
       }
 
-      students = students.filter(s =>
-        s.first_name.toLowerCase().includes(searchLower) ||
-        s.last_name.toLowerCase().includes(searchLower) ||
-        s.admission_no.toLowerCase().includes(searchLower) ||
-        (s.sr_no && s.sr_no.toLowerCase().includes(searchLower)) ||
-        phoneMatchingStudentIds.has(s.id)
+      students = students.filter(
+        (s) =>
+          s.first_name.toLowerCase().includes(searchLower) ||
+          s.last_name.toLowerCase().includes(searchLower) ||
+          s.admission_no.toLowerCase().includes(searchLower) ||
+          (s.sr_no && s.sr_no.toLowerCase().includes(searchLower)) ||
+          parentMatchedStudentIds.has(s.id)
       );
     }
+
     if (status) {
       students = students.filter(s => s.status === status);
     }
@@ -842,46 +1148,74 @@ export async function listStudents(
       students = students.filter(s => s.is_rte === is_rte);
     }
 
-    // Sort
+    // Has dues filter
+    if (has_dues) {
+      const duesKey = `myzkool_student_dues_${schoolId}`;
+      const duesCached = localStorage.getItem(duesKey);
+      const dues: any[] = duesCached ? JSON.parse(duesCached) : [];
+      const dueStudentSet = new Set<string>();
+      for (const d of dues) {
+        if (
+          d &&
+          d.balance_paise > 0 &&
+          (d.status === "pending" || d.status === "partial") &&
+          (!academic_year_id || d.academic_year_id === academic_year_id)
+        ) {
+          if (d.student_id) dueStudentSet.add(d.student_id);
+        }
+      }
+      students = students.filter((s) => dueStudentSet.has(s.id));
+    }
+
+    // New admissions filter
+    if (is_new_admission) {
+      students = students.filter((s) => {
+        if (academic_year_start_date) {
+          return s.admission_date >= academic_year_start_date;
+        }
+        return s.admission_type === "new";
+      });
+    }
+
+    // Deterministic Sort
     students.sort((a, b) => {
       const aVal = a[sort_by as keyof Student];
       const bVal = b[sort_by as keyof Student];
       if (aVal < bVal) return sort_order === "asc" ? -1 : 1;
       if (aVal > bVal) return sort_order === "asc" ? 1 : -1;
-      return 0;
+      // Secondary stable key
+      return a.id.localeCompare(b.id);
     });
 
-    // Record total matching students count before cursor pagination
     const totalMatchingCount = students.length;
 
-    // Cursor pagination
-    if (cursor) {
-      const cursorDate = new Date(cursor);
-      students = students.filter(s => {
-        const createdAt = new Date(s.created_at);
-        return sort_order === "desc" ? createdAt < cursorDate : createdAt > cursorDate;
-      });
+    // Server-side page or cursor pagination
+    let items: Student[] = [];
+    let hasMore = false;
+    const isOffsetMode = page !== undefined || offset !== undefined;
+
+    if (isOffsetMode) {
+      const currentPage = page !== undefined ? Math.max(1, page) : 1;
+      const start = offset !== undefined ? offset : (currentPage - 1) * limit;
+      items = students.slice(start, start + limit);
+    } else {
+      if (cursor) {
+        const cursorDate = new Date(cursor);
+        students = students.filter((s) => {
+          const createdAt = new Date(s.created_at);
+          return sort_order === "desc" ? createdAt < cursorDate : createdAt > cursorDate;
+        });
+      }
+      hasMore = students.length > limit;
+      items = hasMore ? students.slice(0, limit) : students;
     }
 
-    const hasMore = students.length > limit;
-    const items = hasMore ? students.slice(0, limit) : students;
-
-    // Hydrate enrollment and parent info
-    const enrKey = getStudentEnrollmentsCacheKey(schoolId);
-    const enrCached = localStorage.getItem(enrKey);
-    const enrollments: StudentEnrollment[] = enrCached ? JSON.parse(enrCached) : [];
-
-    const spKey = getStudentParentsCacheKey(schoolId);
-    const pKey = getParentsCacheKey(schoolId);
-    const spCached = localStorage.getItem(spKey);
-    const pCached = localStorage.getItem(pKey);
-    const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
-    const parents: Parent[] = pCached ? JSON.parse(pCached) : [];
-
-    const mappedItems: StudentListItem[] = items.map(item => {
-      const enr = enrollments.find(e => e.student_id === item.id && e.status === "active");
-      const sp = studentParents.find(p => p.student_id === item.id && p.is_primary_contact);
-      const parent = sp ? parents.find(p => p.id === sp.parent_id) : null;
+    const mappedItems: StudentListItem[] = items.map((item) => {
+      const enr = enrollments.find((e) => e.student_id === item.id && e.status === "active");
+      const sp = studentParents.find((p) => p.student_id === item.id && p.is_primary_contact);
+      const parent = sp ? parents.find((p) => p.id === sp.parent_id) : null;
+      const cls = enr?.class_id ? allClasses.find((c) => c.id === enr.class_id) : null;
+      const sec = enr?.section_id ? allSections.find((s) => s.id === enr.section_id) : null;
 
       return {
         id: item.id,
@@ -893,9 +1227,9 @@ export async function listStudents(
         gender: item.gender,
         photo_path: item.photo_path,
         class_id: enr?.class_id || null,
-        class_name: null,
+        class_name: cls?.name || null,
         section_id: enr?.section_id || null,
-        section_name: null,
+        section_name: sec?.name || null,
         primary_parent_name: parent?.full_name || null,
         primary_parent_phone: parent?.phone || null,
         fee_status: null,
@@ -905,11 +1239,18 @@ export async function listStudents(
       };
     });
 
+    const currentPage = page !== undefined ? page : 1;
+    const totalPages = Math.ceil(totalMatchingCount / limit);
+
     return {
       response: {
         data: mappedItems,
         next_cursor: hasMore ? items[items.length - 1].created_at : null,
         total_estimate: totalMatchingCount,
+        total: totalMatchingCount,
+        page: currentPage,
+        limit,
+        total_pages: totalPages,
       },
     };
   } catch {
@@ -1612,27 +1953,27 @@ export async function createStudentEnrollment(
  */
 export async function logAudit(input: Omit<AuditLog, "id" | "created_at">): Promise<{ success: boolean; error?: string }> {
   const cleanActorId = isValidUuid(input.actor_id) ? input.actor_id : null;
-  const cleanEntityId = isValidUuid(input.entity_id) ? input.entity_id : crypto.randomUUID();
+  const cleanEntityId = isValidUuid(input.entity_id) ? input.entity_id : null;
 
   const auditLog: AuditLog = {
     id: crypto.randomUUID(),
     ...input,
-    actor_id: cleanActorId,
-    entity_id: cleanEntityId,
+    actor_id: input.actor_id || null,
+    entity_id: input.entity_id,
     created_at: new Date().toISOString(),
   };
 
-  if (isSupabaseConfigured) {
+  if (isSupabaseConfigured && cleanEntityId) {
     try {
       const { error } = await supabase
         .from("audit_logs")
         .insert({
           id: auditLog.id,
           school_id: auditLog.school_id,
-          actor_id: auditLog.actor_id,
+          actor_id: cleanActorId,
           actor_role: auditLog.actor_role || null,
           entity_type: auditLog.entity_type,
-          entity_id: auditLog.entity_id,
+          entity_id: cleanEntityId,
           action: auditLog.action,
           before: auditLog.before || null,
           after: auditLog.after || null,
@@ -1641,13 +1982,20 @@ export async function logAudit(input: Omit<AuditLog, "id" | "created_at">): Prom
         });
 
       if (!error) {
+        try {
+          const cacheKey = getAuditLogsCacheKey(auditLog.school_id);
+          const cached = typeof localStorage !== "undefined" ? localStorage.getItem(cacheKey) : null;
+          const logs: AuditLog[] = cached ? JSON.parse(cached) : [];
+          logs.push(auditLog);
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem(cacheKey, JSON.stringify(logs));
+          }
+        } catch {}
         return { success: true };
       }
-      console.warn("Audit log insert skipped:", error.message);
-      return { success: false, error: error.message };
+      console.warn("Audit log Supabase insert failed, falling back to cache:", error.message);
     } catch (err) {
-      console.warn("Audit log insert error:", err);
-      return { success: false, error: String(err) };
+      console.warn("Audit log Supabase insert error, falling back to cache:", err);
     }
   }
 

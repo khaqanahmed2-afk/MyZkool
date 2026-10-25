@@ -365,7 +365,7 @@ export default function DuesRemindersPage() {
           <button
             type="button"
             onClick={() => handleOpenSendDrawer()}
-            className="flex items-center gap-2 px-4 py-2 bg-[#0B7B49] hover:bg-[#096a3e] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Send Reminders</span>
@@ -465,7 +465,7 @@ export default function DuesRemindersPage() {
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#2563EB] focus:border-[#2563EB]"
           />
         </div>
 
@@ -480,7 +480,7 @@ export default function DuesRemindersPage() {
                 setSelectedYearId(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-[#2563EB] focus:border-[#2563EB]"
             >
               <option value="">All Academic Years</option>
               {academicYears.map((y) => (
@@ -500,7 +500,7 @@ export default function DuesRemindersPage() {
                 setSelectedClass(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-[#2563EB] focus:border-[#2563EB]"
             >
               <option value="all">All Classes</option>
               {classesList.map((c) => (
@@ -528,7 +528,7 @@ export default function DuesRemindersPage() {
                 setSelectedSection(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-[#2563EB] focus:border-[#2563EB]"
             >
               <option value="all">All Sections</option>
               {sectionsList.map((s) => (
@@ -553,7 +553,7 @@ export default function DuesRemindersPage() {
                 setSelectedDueStatus(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-[#2563EB] focus:border-[#2563EB]"
             >
               <option value="all">All Status</option>
               <option value="overdue">Overdue</option>
@@ -574,7 +574,7 @@ export default function DuesRemindersPage() {
                 setSelectedPeriod(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full px-2.5 py-1.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-[#2563EB] focus:border-[#2563EB]"
             >
               <option value="all">All Periods</option>
               <option value="Apr 2025">Apr 2025</option>
@@ -622,7 +622,7 @@ export default function DuesRemindersPage() {
                 }}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
                   isActive
-                    ? "bg-[#0B7B49] text-white shadow-2xs font-semibold"
+                    ? "bg-[#2563EB] text-white shadow-2xs font-semibold"
                     : chip.key === "overdue"
                     ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
                     : chip.key === "due_today"
@@ -678,7 +678,7 @@ export default function DuesRemindersPage() {
                     type="checkbox"
                     checked={paginatedRows.length > 0 && selectedRowIds.size === paginatedRows.length}
                     onChange={handleToggleSelectAll}
-                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    className="rounded border-gray-300 text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
                   />
                 </th>
                 <th className="py-3 px-3">Student</th>
@@ -708,7 +708,7 @@ export default function DuesRemindersPage() {
                     <button
                       type="button"
                       onClick={handleClearFilters}
-                      className="text-emerald-700 font-semibold hover:underline"
+                      className="text-[#2563EB] font-semibold hover:underline"
                     >
                       Clear all filters
                     </button>
@@ -722,7 +722,7 @@ export default function DuesRemindersPage() {
                     <tr
                       key={row.id}
                       className={`hover:bg-slate-50/80 transition-colors ${
-                        isSelected ? "bg-emerald-50/30" : ""
+                        isSelected ? "bg-blue-50/30" : ""
                       }`}
                     >
                       {/* Checkbox */}
@@ -731,7 +731,7 @@ export default function DuesRemindersPage() {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelectRow(row.id)}
-                          className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          className="rounded border-gray-300 text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
                         />
                       </td>
 
@@ -841,9 +841,9 @@ export default function DuesRemindersPage() {
                                 setOpenActionMenuId(null);
                                 handleOpenSendDrawer([row.id]);
                               }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-emerald-700 hover:bg-emerald-50 font-medium"
+                              className="w-full flex items-center gap-2 px-3 py-2 text-[#2563EB] hover:bg-blue-50 font-medium"
                             >
-                              <Send className="w-3.5 h-3.5 text-emerald-600" />
+                              <Send className="w-3.5 h-3.5 text-[#2563EB]" />
                               <span>Send Reminder</span>
                             </button>
 
@@ -948,7 +948,7 @@ export default function DuesRemindersPage() {
                   onClick={() => setCurrentPage(pg)}
                   className={`w-7 h-7 flex items-center justify-center rounded-lg text-xs font-semibold transition-colors ${
                     currentPage === pg
-                      ? "border border-emerald-500 text-[#0B7B49] bg-emerald-50/50"
+                      ? "border border-blue-600 text-[#2563EB] bg-blue-50/50"
                       : "border border-[#E6EAF3] text-[#5B6478] hover:bg-slate-50"
                   }`}
                 >
@@ -964,7 +964,7 @@ export default function DuesRemindersPage() {
                     onClick={() => setCurrentPage(totalPages)}
                     className={`w-7 h-7 flex items-center justify-center rounded-lg text-xs font-semibold border ${
                       currentPage === totalPages
-                        ? "border-emerald-500 text-[#0B7B49] bg-emerald-50/50"
+                        ? "border-blue-600 text-[#2563EB] bg-blue-50/50"
                         : "border-[#E6EAF3] text-[#5B6478] hover:bg-slate-50"
                     }`}
                   >
@@ -992,7 +992,7 @@ export default function DuesRemindersPage() {
                   setPageSize(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="px-2 py-1 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                className="px-2 py-1 bg-white border border-[#E6EAF3] rounded-lg text-xs text-[#141A2E] focus:outline-none focus:ring-1 focus:ring-[#2563EB] cursor-pointer"
               >
                 <option value={8}>8 per page</option>
                 <option value={15}>15 per page</option>

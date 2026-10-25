@@ -13,6 +13,7 @@ export interface StudentFilterState {
   is_rte?: boolean;
   documents_pending?: boolean;
   has_dues?: boolean;
+  is_new_admission?: boolean;
   uses_transport?: boolean;
   saved_view?: string;
 }
@@ -21,6 +22,7 @@ interface StudentFilterChipsProps {
   filters: StudentFilterState;
   classes: SchoolClass[];
   sections: SchoolSection[];
+  isLoadingSections?: boolean;
   onFilterChange: (newFilters: StudentFilterState) => void;
   onClearFilters: () => void;
   savedView?: string;
@@ -31,18 +33,25 @@ export function StudentFilterChips({
   filters,
   classes,
   sections,
+  isLoadingSections = false,
   onFilterChange,
   onClearFilters,
 }: StudentFilterChipsProps) {
-  const availableSections = filters.class_id
+  // Derive sections exclusively belonging to the selected class
+  const classIsSelected = Boolean(filters.class_id);
+  const availableSections = classIsSelected
     ? sections.filter((s) => s.class_id === filters.class_id)
-    : sections;
+    : [];
+
+  const isSectionDisabled =
+    !classIsSelected || isLoadingSections || availableSections.length === 0;
 
   const hasActiveFilters = Boolean(
     filters.class_id ||
     filters.section_id ||
     (filters.status && filters.status !== "enrolled") ||
-    filters.has_dues
+    filters.has_dues ||
+    filters.is_new_admission
   );
 
   return (
@@ -55,13 +64,14 @@ export function StudentFilterChips({
       {/* Class Filter */}
       <select
         value={filters.class_id || ""}
-        onChange={(e) =>
+        onChange={(e) => {
+          const newClassId = e.target.value || undefined;
           onFilterChange({
             ...filters,
-            class_id: e.target.value || undefined,
-            section_id: undefined,
-          })
-        }
+            class_id: newClassId,
+            section_id: undefined, // Immediately clear selected section on class change/clear
+          });
+        }}
         aria-label="Filter by class"
         className="bg-white border border-[#E6EAF3] rounded-xl px-3 py-1.5 text-xs text-slate-700 font-medium hover:border-slate-300 focus:ring-2 focus:ring-[#2158E0] focus:outline-none cursor-pointer shadow-2xs transition-colors"
       >
@@ -73,7 +83,7 @@ export function StudentFilterChips({
         ))}
       </select>
 
-      {/* Section Filter */}
+      {/* Section Filter - Strictly dependent on Class Filter */}
       <select
         value={filters.section_id || ""}
         onChange={(e) =>
@@ -83,15 +93,29 @@ export function StudentFilterChips({
           })
         }
         aria-label="Filter by section"
-        disabled={availableSections.length === 0}
-        className="bg-white border border-[#E6EAF3] rounded-xl px-3 py-1.5 text-xs text-slate-700 font-medium hover:border-slate-300 focus:ring-2 focus:ring-[#2158E0] focus:outline-none cursor-pointer shadow-2xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={isSectionDisabled}
+        className={`border rounded-xl px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-[#2158E0] focus:outline-none transition-colors shadow-2xs ${
+          isSectionDisabled
+            ? "bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed opacity-75"
+            : "bg-white border-[#E6EAF3] text-slate-700 hover:border-slate-300 cursor-pointer"
+        }`}
       >
-        <option value="">All Sections</option>
-        {availableSections.map((s) => (
-          <option key={s.id} value={s.id}>
-            Section {s.name}
-          </option>
-        ))}
+        {!classIsSelected ? (
+          <option value="">Select a class first</option>
+        ) : isLoadingSections ? (
+          <option value="">Loading sections...</option>
+        ) : availableSections.length === 0 ? (
+          <option value="">No sections in this class</option>
+        ) : (
+          <>
+            <option value="">All Sections</option>
+            {availableSections.map((s) => (
+              <option key={s.id} value={s.id}>
+                Section {s.name}
+              </option>
+            ))}
+          </>
+        )}
       </select>
 
       {/* Status Filter */}
@@ -120,6 +144,7 @@ export function StudentFilterChips({
           type="button"
           onClick={onClearFilters}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition-colors"
+          title="Reset all filters"
         >
           <RotateCcw className="w-3 h-3 text-slate-500" />
           <span>Reset Filters</span>

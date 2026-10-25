@@ -106,6 +106,19 @@ export interface OutstandingInvoiceItem {
   due_ids: string[];
   status: "pending" | "partial" | "overdue";
   is_overdue: boolean;
+  particulars: string[];
+  items?: Array<{
+    due_id?: string;
+    fee_head_id?: string;
+    name: string;
+    amount_paise: number;
+    balance_paise: number;
+    gross_paise?: number;
+    concession_paise?: number;
+    net_paise?: number;
+    paid_paise?: number;
+    due_date?: string;
+  }>;
 }
 
 /**
@@ -680,8 +693,25 @@ export async function getStudentOutstandingInvoices(
 ): Promise<OutstandingInvoiceItem[]> {
   if (!schoolId || !studentId) return [];
 
-  const { dues } = await getStudentDues(schoolId, studentId, yearId);
-  const pendingDues = dues.filter((d) => d.status === "pending" || d.status === "partial");
+  const cleanYearId = yearId && yearId !== "all" && yearId !== "" ? yearId : undefined;
+
+  const { dues, error } = await getStudentDues(schoolId, studentId, cleanYearId);
+  if (error) {
+    throw new Error(error);
+  }
+
+  let pendingDues = dues.filter((d) => d.status === "pending" || d.status === "partial");
+
+  // If filtered by specific year and none found, check if student has pending dues in other years
+  if (pendingDues.length === 0 && cleanYearId) {
+    const allYearsResult = await getStudentDues(schoolId, studentId);
+    if (!allYearsResult.error) {
+      const anyPending = allYearsResult.dues.filter((d) => d.status === "pending" || d.status === "partial");
+      if (anyPending.length > 0) {
+        pendingDues = anyPending;
+      }
+    }
+  }
 
   if (pendingDues.length === 0) return [];
 
@@ -715,9 +745,27 @@ export async function getStudentOutstandingInvoices(
 
     const termDisplayName = list[0]?.term_name || monthStr;
 
+    // Fee particulars
+    const particulars = Array.from(
+      new Set(list.map((d) => d.fee_head_name || d.description || "Tuition Fee").filter(Boolean))
+    );
+    const lineItems = list.map((d) => ({
+      due_id: d.id,
+      fee_head_id: d.fee_head_id,
+      name: d.fee_head_name || d.description || "Fee Item",
+      gross_paise: d.gross_paise || d.net_paise || 0,
+      concession_paise: d.concession_paise || 0,
+      net_paise: d.net_paise || 0,
+      amount_paise: d.net_paise || 0,
+      paid_paise: d.paid_paise || 0,
+      balance_paise: d.balance_paise || 0,
+      due_date: d.due_date,
+    }));
+
+    const existingInvNo = list.find((d) => d.invoice_no)?.invoice_no;
     result.push({
       id: termKey,
-      invoice_number: `INV-2026-${String(seq).padStart(3, "0")}`,
+      invoice_number: existingInvNo || `INV-2026-${String(seq).padStart(3, "0")}`,
       term_id: termKey === "general" ? undefined : termKey,
       term_name: termDisplayName,
       billing_period: termDisplayName,
@@ -728,6 +776,8 @@ export async function getStudentOutstandingInvoices(
       due_ids: list.map((d) => d.id),
       status: isOverdue ? "overdue" : paidPaise > 0 ? "partial" : "pending",
       is_overdue: isOverdue,
+      particulars,
+      items: lineItems,
     });
     seq++;
   }

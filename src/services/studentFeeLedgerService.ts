@@ -26,7 +26,7 @@ import type {
   FeeObligationBreakdownItem,
   StudentFeeStatus,
 } from "../types/studentFeeLedger";
-import type { StudentInvoice, StudentDue, FeeTerm, FeeHead } from "../types/fees";
+import type { StudentInvoice, StudentDue, FeeTerm, FeeHead, InvoiceStatus, InvoiceLineItem } from "../types/fees";
 import type { FeeReceipt, FeeReceiptItem, FeePayment, PaymentMode } from "../types/collection";
 
 // Cache keys for local storage fallback
@@ -412,8 +412,8 @@ export async function getStudentFeeSummaries(
     if (s.is_transport_only) transportOnlyCount++;
     if (s.total_invoices_count > 0 || (s.total_billed_paise || 0) > 0) {
       studentsWithInvoicesCount++;
-      totalStudentsWithRecords++;
     }
+    totalStudentsWithRecords++;
 
     if (s.fee_status === "fully_paid") fullyPaidCount++;
     if (s.net_pending_paise > 0) withDuesCount++;
@@ -1201,7 +1201,6 @@ export async function getStudentLedgerDetails(
   try {
     const invResp = await getSchoolInvoices(schoolId, {
       student_id: effectiveStudent.student_id,
-      academic_year_id: effectiveStudent.academic_year_id,
       pageSize: 100,
     });
     studentInvoices = (invResp.invoices || []).filter(
@@ -1210,6 +1209,94 @@ export async function getStudentLedgerDetails(
   } catch (err) {
     console.warn("Failed to fetch student invoices in getStudentLedgerDetails:", err);
     studentInvoices = [];
+  }
+
+  // Robust Fallback: If no invoices were returned from getSchoolInvoices but student has valid dues,
+  // compile term fee invoices directly from student dues so "Issued Term Fee Invoices" is never blank.
+  if (studentInvoices.length === 0 && dues.length > 0) {
+    const termGroups = new Map<string, StudentDue[]>();
+    for (const d of dues) {
+      if (d.status === "cancelled") continue;
+      const termKey = d.term_id || "general";
+      const arr = termGroups.get(termKey) || [];
+      arr.push(d);
+      termGroups.set(termKey, arr);
+    }
+
+    let seq = 1;
+    for (const [termKey, dueList] of termGroups.entries()) {
+      const grossPaise = dueList.reduce((s, d) => s + (d.gross_paise || (d.net_paise + (d.concession_paise || 0)) || 0), 0);
+      const concessionPaise = dueList.reduce((s, d) => s + (d.concession_paise || 0), 0);
+      const netPaise = dueList.reduce((s, d) => s + (d.net_paise !== undefined ? d.net_paise : Math.max(0, (d.gross_paise || 0) - (d.concession_paise || 0))), 0);
+      const paidPaise = dueList.reduce((s, d) => s + (d.paid_paise || 0), 0);
+      const balancePaise = Math.max(0, netPaise - paidPaise);
+
+      const dueDates = dueList.map((d) => d.due_date).filter(Boolean).sort();
+      const earliestDue = dueDates[0] || todayStr;
+      const firstDue = dueList[0];
+      const termObj = (firstDue as any).fee_terms || {};
+      const termName = termObj.name || (firstDue as any).term_name || "Annual Term Fee";
+      const invoiceNo = firstDue.invoice_no || `INV-2026-${String(seq).padStart(3, "0")}`;
+
+      let invStatus: InvoiceStatus = "unpaid";
+      if (balancePaise <= 0) {
+        invStatus = "paid";
+      } else if (earliestDue < todayStr) {
+        invStatus = "overdue";
+      } else if (paidPaise > 0) {
+        invStatus = "partial";
+      } else {
+        invStatus = "unpaid";
+      }
+
+      studentInvoices.push({
+        id: `inv_${studentId}_${termKey}`,
+        invoice_no: invoiceNo,
+        school_id: schoolId,
+        academic_year_id: firstDue.academic_year_id || effectiveStudent.academic_year_id || "2026-2027",
+        academic_year_name: effectiveStudent.academic_year_name || "2026–2027",
+        student_id: studentId,
+        student_name: effectiveStudent.student_name,
+        admission_no: effectiveStudent.admission_no,
+        roll_no: "-",
+        class_id: effectiveStudent.class_id || "",
+        class_name: effectiveStudent.class_name || "",
+        section_id: effectiveStudent.section_id || "",
+        section_name: effectiveStudent.section_name || "",
+        guardian_name: effectiveStudent.parent_name || "Guardian",
+        guardian_phone: effectiveStudent.parent_phone || "",
+        term_id: termKey === "general" ? "" : termKey,
+        billing_period: termName,
+        invoice_date: firstDue.created_at?.split("T")[0] || todayStr,
+        due_date: earliestDue,
+        total_paise: netPaise,
+        gross_paise: grossPaise,
+        concession_paise: concessionPaise,
+        late_fee_paise: 0,
+        transport_paise: dueList.filter((d) => d.source === "transport").reduce((s, d) => s + (d.net_paise || 0), 0),
+        tuition_paise: dueList.filter((d) => d.source !== "transport").reduce((s, d) => s + (d.net_paise || 0), 0),
+        paid_paise: paidPaise,
+        balance_paise: balancePaise,
+        status: invStatus,
+        line_items: dueList.map((d) => ({
+          due_id: d.id,
+          fee_head_id: d.fee_head_id,
+          fee_head_name: (d as any).fee_heads?.name || (d as any).fee_head_name || "Fee Particular",
+          source: d.source,
+          gross_paise: d.gross_paise || (d.net_paise + (d.concession_paise || 0)) || 0,
+          concession_paise: d.concession_paise || 0,
+          net_paise: d.net_paise,
+          paid_paise: d.paid_paise || 0,
+          balance_paise: d.balance_paise || 0,
+          due_date: d.due_date,
+          status: d.status,
+          is_transport: d.source === "transport",
+        })),
+        payments: [],
+        created_at: firstDue.created_at || todayStr,
+      });
+      seq++;
+    }
   }
 
   // Payments list derived from student's genuine receipts
@@ -1221,6 +1308,7 @@ export async function getStudentLedgerDetails(
     payment_mode: ((r as any).payment_mode || (r.source === "online" ? "online" : "cash")) as PaymentMode,
     collected_by_name: (r as any).collected_by_name || "Accounts Office",
     remarks: r.remarks || "",
+    allocations: allocationsByReceipt.get(r.id) || [],
   }));
 
   // Concessions list derived from student's genuine dues
@@ -1259,15 +1347,19 @@ export async function getStudentLedgerDetails(
 
   // Transport details for student
   let transportDetails = undefined;
-  if (effectiveStudent.has_transport) {
-    const transDues = dues.filter((d) => d.source === "transport");
+  const transDues = dues.filter((d) => d.source === "transport" || (d as any).fee_heads?.code === "transport_fee");
+  if (effectiveStudent.has_transport || transDues.length > 0) {
     const totalTransBilled = transDues.reduce((s, d) => s + (d.gross_paise || d.net_paise), 0);
+    const totalTransPaid = transDues.reduce((s, d) => s + (d.paid_paise || 0), 0);
+    const totalTransPending = transDues.reduce((s, d) => s + (d.balance_paise || 0), 0);
     transportDetails = {
-      has_transport: true,
-      route_name: effectiveStudent.transport_route || "Route A",
-      stop_name: effectiveStudent.transport_stop || "Designated Stop",
+      has_transport: Boolean(effectiveStudent.has_transport),
+      route_name: effectiveStudent.transport_route || (effectiveStudent.has_transport ? "Route A" : undefined),
+      stop_name: effectiveStudent.transport_stop || (effectiveStudent.has_transport ? "Designated Stop" : undefined),
       monthly_fee_paise: transDues[0]?.gross_paise || 120000,
       total_billed_paise: totalTransBilled,
+      total_paid_paise: totalTransPaid,
+      total_pending_paise: totalTransPending,
     };
   } else {
     transportDetails = {
@@ -1573,6 +1665,7 @@ export function exportStudentFeeCSV(students: StudentFeeSummary[]): string {
     "Student Name",
     "Class",
     "Section",
+    "Fee Structure",
     "Parent Name",
     "Parent Phone",
     "Transport Enrolled",
@@ -1589,6 +1682,7 @@ export function exportStudentFeeCSV(students: StudentFeeSummary[]): string {
     `"${s.student_name}"`,
     `"${s.class_name}"`,
     `"${s.section_name}"`,
+    `"${s.applicable_fee_structure_name || (s.has_transport ? 'Transport Only' : 'None')}"`,
     `"${s.parent_name}"`,
     `"${s.parent_phone}"`,
     s.has_transport ? "Yes" : "No",

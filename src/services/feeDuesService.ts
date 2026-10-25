@@ -83,6 +83,10 @@ export async function getStudentDues(
   studentId: string,
   yearId?: string
 ): Promise<{ dues: StudentDue[]; error?: string }> {
+  if (!schoolId || !studentId) return { dues: [] };
+
+  const cleanYearId = yearId && yearId !== "all" && yearId !== "" ? yearId : undefined;
+
   if (isSupabaseConfigured) {
     try {
       let q = supabase.from("student_dues").select(`
@@ -90,22 +94,76 @@ export async function getStudentDues(
         fee_heads(name),
         fee_terms(name)
       `).eq("school_id", schoolId).eq("student_id", studentId).order("due_date");
-      if (yearId) q = q.eq("academic_year_id", yearId);
+      if (cleanYearId) q = q.eq("academic_year_id", cleanYearId);
       const { data, error } = await q;
-      if (error) throw error;
-      return {
-        dues: ((data || []) as any[]).map(d => ({
-          ...d,
-          fee_head_name: d.fee_heads?.name,
-          term_name: d.fee_terms?.name,
-        })) as StudentDue[],
-      };
-    } catch (e: any) { return { dues: [], error: e.message }; }
+
+      if (!error && data && data.length > 0) {
+        return {
+          dues: ((data || []) as any[]).map(d => ({
+            ...d,
+            fee_head_name: d.fee_heads?.name || d.fee_head_name,
+            term_name: d.fee_terms?.name || d.term_name,
+          })) as StudentDue[],
+        };
+      }
+
+      // If embedded query failed or returned empty, attempt flat select with manual enrichment
+      if (error) {
+        console.warn("Supabase getStudentDues embedded query error, trying flat query:", error.message);
+        let flatQ = supabase
+          .from("student_dues")
+          .select("*")
+          .eq("school_id", schoolId)
+          .eq("student_id", studentId)
+          .order("due_date");
+        if (cleanYearId) flatQ = flatQ.eq("academic_year_id", cleanYearId);
+        const { data: flatData, error: flatError } = await flatQ;
+
+        if (!flatError && flatData && flatData.length > 0) {
+          const [{ data: headsData }, { data: termsData }] = await Promise.all([
+            supabase.from("fee_heads").select("id, name").eq("school_id", schoolId),
+            supabase.from("fee_terms").select("id, name").eq("school_id", schoolId),
+          ]);
+          const headMap = new Map((headsData || []).map((h: any) => [h.id, h.name]));
+          const termMap = new Map((termsData || []).map((t: any) => [t.id, t.name]));
+
+          return {
+            dues: (flatData as any[]).map(d => ({
+              ...d,
+              fee_head_name: headMap.get(d.fee_head_id) || d.fee_head_name || "Fee Due",
+              term_name: termMap.get(d.term_id) || d.term_name || "Term Fee",
+            })) as StudentDue[],
+          };
+        }
+      }
+    } catch (e: any) {
+      console.warn("Supabase getStudentDues notice, falling back to local storage:", e.message);
+    }
   }
+
+  // Fallback to local storage (for offline, demo schools, mock testing, or cached records)
   let dues = lsGet<StudentDue>(DUES_KEY(schoolId)).filter(d => d.student_id === studentId);
-  if (yearId) dues = dues.filter(d => d.academic_year_id === yearId);
-  dues.sort((a, b) => a.due_date.localeCompare(b.due_date));
-  return { dues };
+  if (cleanYearId) {
+    const yearFiltered = dues.filter(d => d.academic_year_id === cleanYearId);
+    if (yearFiltered.length > 0) {
+      dues = yearFiltered;
+    }
+  }
+  dues.sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
+
+  // Enrich with cached head and term names
+  const cachedHeads = lsGet<any>(`myzkool_fee_heads_${schoolId}`);
+  const cachedTerms = lsGet<any>(`myzkool_fee_terms_${schoolId}`);
+  const headMap = new Map(cachedHeads.map((h: any) => [h.id, h.name]));
+  const termMap = new Map(cachedTerms.map((t: any) => [t.id, t.name]));
+
+  const enrichedDues = dues.map(d => ({
+    ...d,
+    fee_head_name: d.fee_head_name || headMap.get(d.fee_head_id) || d.fee_head_id || "Fee Due",
+    term_name: d.term_name || termMap.get(d.term_id) || "Regular Term",
+  }));
+
+  return { dues: enrichedDues };
 }
 
 export async function getStudentBalance(

@@ -67,7 +67,7 @@ export default function ConcessionRulesPage() {
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   const [isPoliciesDrawerOpen, setIsPoliciesDrawerOpen] = useState(false);
   const [selectedConcessionForDetail, setSelectedConcessionForDetail] = useState<StudentConcession | null>(null);
-  const selectedConcessionForEditRef = useRef<StudentConcession | null>(null);
+  const [selectedConcessionForEdit, setSelectedConcessionForEdit] = useState<StudentConcession | null>(null);
 
   // Feedback Toasts
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -391,7 +391,7 @@ export default function ConcessionRulesPage() {
         loading={loading}
         onViewDetails={(c) => setSelectedConcessionForDetail(c)}
         onEdit={(c) => {
-          selectedConcessionForEditRef.current = c;
+          setSelectedConcessionForEdit(c);
           setIsAddDrawerOpen(true);
         }}
         onApprove={(c) => handleApprove(c.id)}

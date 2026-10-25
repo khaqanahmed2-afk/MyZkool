@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import {
   Wallet,
   Calendar,
@@ -22,6 +22,10 @@ import {
   RotateCcw,
   SlidersHorizontal,
   FileSpreadsheet,
+  CheckSquare,
+  Lock,
+  Undo2,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import {
@@ -31,7 +35,6 @@ import {
   CollectionSummaryMetrics,
 } from "../../../services/feeCollectionsQueryService";
 import { formatPaise } from "../../../lib/amountInWords";
-import { CollectFeeDrawer } from "../../../components/admin/fees/CollectFeeDrawer";
 import { ReceiptDetailsModal } from "../../../components/admin/fees/ReceiptDetailsModal";
 import type { PaymentMode } from "../../../types/collection";
 
@@ -51,6 +54,7 @@ const PAYMENT_METHOD_TABS = [
 export default function FeeCollectionsPage() {
   const { schoolId, school } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // Filters state
   const [search, setSearch] = useState("");
@@ -87,20 +91,19 @@ export default function FeeCollectionsPage() {
   // Table row selection state
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
 
-  // Drawers & Modals
-  const [isCollectDrawerOpen, setIsCollectDrawerOpen] = useState(false);
+  // Modals & Popovers
   const [selectedTransactionForModal, setSelectedTransactionForModal] = useState<EnrichedTransaction | null>(null);
   const [isCancelModalMode, setIsCancelModalMode] = useState(false);
   const [activeMenuRowId, setActiveMenuRowId] = useState<string | null>(null);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
-  // Check URL query parameters on mount (e.g. ?student=...)
+  // Check URL query parameters on mount (e.g. ?student=...) and forward to full page
   useEffect(() => {
     const studentParam = searchParams.get("student") || searchParams.get("studentId");
     if (studentParam) {
-      setIsCollectDrawerOpen(true);
+      navigate(`/admin/fees/collect?student=${encodeURIComponent(studentParam)}`, { replace: true });
     }
-  }, [searchParams]);
+  }, [searchParams, navigate]);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -251,54 +254,94 @@ export default function FeeCollectionsPage() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5">
-          {/* Quick Date Selector */}
-          <div className="relative">
-            <button
-              onClick={() => setDateRange(dateRange === "today" ? "all" : "today")}
-              className={`flex items-center gap-2 px-3.5 py-2 border rounded-xl text-xs font-semibold transition-colors ${
-                dateRange === "today"
-                  ? "bg-[#E8F7EE] border-emerald-300 text-[#0B7B49]"
-                  : "bg-white border-[#E6EAF3] text-gray-700 hover:bg-gray-50"
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 1. Quick Date Selector: Today */}
+          <button
+            type="button"
+            onClick={() => setDateRange(dateRange === "today" ? "all" : "today")}
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-2xs shrink-0 ${dateRange === "today"
+                ? "bg-[#EBF2FE] border-blue-200 text-[#2563EB]"
+                : "bg-white border-[#E6EAF3] text-gray-700 hover:bg-gray-50 hover:border-gray-300"
               }`}
-            >
-              <Calendar className="w-4 h-4 text-gray-500" />
-              <span>Today</span>
-            </button>
-          </div>
+          >
+            <Calendar className={`w-3.5 h-3.5 ${dateRange === "today" ? "text-[#2563EB]" : "text-gray-500"}`} />
+            <span>Today</span>
+          </button>
 
-          {/* Export Dropdown */}
+          {/* 2. Cheque Register Shortcut */}
+          <Link
+            to="/admin/fees/cheques"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
+            title="Manage Cheques & Clearances"
+          >
+            <CheckSquare className="w-3.5 h-3.5 text-gray-500" />
+            <span>Cheque Register</span>
+          </Link>
+
+          {/* 3. Day Close Shortcut */}
+          <Link
+            to="/admin/fees/day-close"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
+            title="Day Close & Cash Reconciliation"
+          >
+            <Lock className="w-3.5 h-3.5 text-gray-500" />
+            <span>Day Close</span>
+          </Link>
+
+          {/* 4. Refunds Register Shortcut */}
+          <Link
+            to="/admin/fees/refunds"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
+            title="Refunds Register & Reversals"
+          >
+            <Undo2 className="w-3.5 h-3.5 text-gray-500" />
+            <span>Refunds Register</span>
+          </Link>
+
+          {/* 5. Fee & Receipt Settings Shortcut */}
+          <Link
+            to="/admin/fees/setup/settings"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
+            title="Configure Billing Preferences, Receipt Templates, Branding & Payment Options"
+          >
+            <Settings className="w-3.5 h-3.5 text-gray-500" />
+            <span>Fee & Receipt Settings</span>
+          </Link>
+
+          {/* 6. Export Dropdown */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
             >
-              <Download className="w-4 h-4 text-gray-500" />
+              <Download className="w-3.5 h-3.5 text-gray-500" />
               <span>Export</span>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExportDropdownOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isExportDropdownOpen && (
               <div className="absolute right-0 mt-1.5 w-44 bg-white border border-[#E6EAF3] rounded-xl shadow-lg z-30 py-1 divide-y divide-gray-100">
                 <button
+                  type="button"
                   onClick={handleExportCSV}
-                  className="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-emerald-50/60 flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-blue-50/70 hover:text-[#2563EB] flex items-center gap-2 cursor-pointer"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
                   <span>Export as CSV</span>
                 </button>
               </div>
             )}
           </div>
 
-          {/* Primary Green Action Button */}
-          <button
-            onClick={() => setIsCollectDrawerOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#0B7B49] text-white rounded-xl text-xs font-bold hover:bg-[#09663c] transition-colors shadow-sm"
+          {/* 7. Primary Blue Collect Fee Action */}
+          <Link
+            to="/admin/fees/collect"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-bold hover:bg-[#1D4ED8] transition-colors shadow-sm cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>Collect Fee</span>
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -306,7 +349,7 @@ export default function FeeCollectionsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Today's Collection */}
         <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 sm:p-5 flex items-start gap-4 shadow-2xs hover:shadow-sm transition-shadow">
-          <div className="w-11 h-11 rounded-xl bg-[#E8F7EE] text-[#0B7B49] flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-xl bg-[#EBF2FE] text-[#2563EB] flex items-center justify-center shrink-0">
             <Wallet className="w-5 h-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -379,7 +422,7 @@ export default function FeeCollectionsPage() {
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search by student name, admission no., receipt no. or transaction id..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#0B7B49] focus:ring-1 focus:ring-[#0B7B49] transition-colors"
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors"
           />
         </div>
 
@@ -391,7 +434,7 @@ export default function FeeCollectionsPage() {
             <select id="feecollectionspage-academic-year" aria-label="Academic Year"
               value={academicYearId}
               onChange={(e) => setAcademicYearId(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
+              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               {yearsList.map((y) => (
                 <option key={y.id} value={y.id}>
@@ -407,7 +450,7 @@ export default function FeeCollectionsPage() {
             <select id="feecollectionspage-class" aria-label="Class"
               value={selectedClassId}
               onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
+              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="all">All Classes</option>
               {classesList.map((c) => (
@@ -424,7 +467,7 @@ export default function FeeCollectionsPage() {
             <select id="feecollectionspage-payment-method" aria-label="Payment Method"
               value={selectedPaymentMethod}
               onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
+              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="all">All Methods</option>
               <option value="cash">Cash</option>
@@ -441,7 +484,7 @@ export default function FeeCollectionsPage() {
             <select id="feecollectionspage-date-range" aria-label="Date Range"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value as any)}
-              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
+              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="today">Today</option>
               <option value="yesterday">Yesterday</option>
@@ -457,7 +500,7 @@ export default function FeeCollectionsPage() {
             <select id="feecollectionspage-status" aria-label="Status"
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#0B7B49]"
+              className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="all">All Statuses</option>
               <option value="successful">Successful</option>
@@ -473,7 +516,7 @@ export default function FeeCollectionsPage() {
           <div className="flex items-end">
             <button
               onClick={handleClearFilters}
-              className="w-full py-2 px-3 border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              className="w-full py-2 px-3 border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
             >
               Clear Filters
             </button>
@@ -489,11 +532,10 @@ export default function FeeCollectionsPage() {
                 key={tab.id}
                 type="button"
                 onClick={() => handleTabChange(tab.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors shrink-0 cursor-pointer ${
-                  isActive
-                    ? "bg-[#0B7B49] text-white shadow-2xs font-bold"
-                    : "bg-[#F8FAFC] text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-[#E6EAF3]"
-                }`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors shrink-0 cursor-pointer ${isActive
+                    ? "bg-[#2563EB] text-white shadow-2xs font-bold"
+                    : "bg-[#F8FAFC] text-gray-600 hover:bg-blue-50 hover:text-[#2563EB] border border-[#E6EAF3]"
+                  }`}
               >
                 {tab.label}
               </button>
@@ -510,7 +552,7 @@ export default function FeeCollectionsPage() {
             Payment Transactions ({totalCount})
           </h2>
           {selectedRowIds.size > 0 && (
-            <span className="text-xs text-[#0B7B49] font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+            <span className="text-xs text-[#2563EB] font-semibold bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
               {selectedRowIds.size} selected
             </span>
           )}
@@ -526,7 +568,7 @@ export default function FeeCollectionsPage() {
                     type="checkbox"
                     checked={selectedRowIds.size === transactions.length && transactions.length > 0}
                     onChange={handleToggleSelectAll}
-                    className="w-4 h-4 rounded text-[#0B7B49] focus:ring-[#0B7B49] border-gray-300 cursor-pointer"
+                    className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB] accent-[#2563EB] border-gray-300 cursor-pointer"
                   />
                 </th>
                 <th className="py-3 px-4 font-semibold text-gray-600">Receipt No.</th>
@@ -546,7 +588,7 @@ export default function FeeCollectionsPage() {
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2">
-                      <RefreshCw className="w-5 h-5 animate-spin text-[#0B7B49]" />
+                      <RefreshCw className="w-5 h-5 animate-spin text-[#2563EB]" />
                       <span>Loading payment transactions...</span>
                     </div>
                   </td>
@@ -559,8 +601,8 @@ export default function FeeCollectionsPage() {
                       Try clearing filters or click Collect Fee to record a new payment.
                     </p>
                     <button
-                      onClick={() => setIsCollectDrawerOpen(true)}
-                      className="mt-3 px-4 py-2 bg-[#0B7B49] text-white rounded-xl text-xs font-semibold hover:bg-[#09663c] transition-colors"
+                      onClick={() => navigate("/admin/fees/collect")}
+                      className="mt-3 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors cursor-pointer"
                     >
                       Collect Fee
                     </button>
@@ -572,9 +614,8 @@ export default function FeeCollectionsPage() {
                   return (
                     <tr
                       key={tx.id}
-                      className={`hover:bg-[#F8FAFC] transition-colors ${
-                        isRowSelected ? "bg-emerald-50/30" : ""
-                      }`}
+                      className={`hover:bg-[#F8FAFC] transition-colors ${isRowSelected ? "bg-blue-50/40" : ""
+                        }`}
                     >
                       {/* Checkbox */}
                       <td className="py-3.5 px-4 text-center">
@@ -582,11 +623,11 @@ export default function FeeCollectionsPage() {
                           type="checkbox"
                           checked={isRowSelected}
                           onChange={() => handleToggleRow(tx.id)}
-                          className="w-4 h-4 rounded text-[#0B7B49] focus:ring-[#0B7B49] border-gray-300 cursor-pointer"
+                          className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB] accent-[#2563EB] border-gray-300 cursor-pointer"
                         />
                       </td>
 
-                      {/* Receipt No (Clickable Green Link) */}
+                      {/* Receipt No (Clickable Blue Link) */}
                       <td className="py-3.5 px-4">
                         <button
                           type="button"
@@ -594,7 +635,7 @@ export default function FeeCollectionsPage() {
                             setSelectedTransactionForModal(tx);
                             setIsCancelModalMode(false);
                           }}
-                          className="font-bold text-[#0B7B49] hover:underline cursor-pointer"
+                          className="font-bold text-[#2563EB] hover:underline cursor-pointer"
                         >
                           {tx.receipt_no}
                         </button>
@@ -738,11 +779,10 @@ export default function FeeCollectionsPage() {
                 <button
                   key={p}
                   onClick={() => setCurrentPage(p)}
-                  className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors ${
-                    isActive
-                      ? "bg-[#0B7B49] text-white"
+                  className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${isActive
+                      ? "bg-[#2563EB] text-white"
                       : "border border-[#E6EAF3] text-gray-700 hover:bg-gray-50"
-                  }`}
+                    }`}
                 >
                   {p}
                 </button>
@@ -754,9 +794,8 @@ export default function FeeCollectionsPage() {
                 <span className="px-1 text-gray-400">...</span>
                 <button
                   onClick={() => setCurrentPage(totalPages)}
-                  className={`w-7 h-7 rounded-lg text-xs font-semibold border border-[#E6EAF3] text-gray-700 hover:bg-gray-50 ${
-                    currentPage === totalPages ? "bg-[#0B7B49] text-white" : ""
-                  }`}
+                  className={`w-7 h-7 rounded-lg text-xs font-semibold border border-[#E6EAF3] text-gray-700 hover:bg-gray-50 cursor-pointer ${currentPage === totalPages ? "bg-[#2563EB] text-white" : ""
+                    }`}
                 >
                   {totalPages}
                 </button>
@@ -766,7 +805,7 @@ export default function FeeCollectionsPage() {
             <button aria-label="Next"
               disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -780,7 +819,7 @@ export default function FeeCollectionsPage() {
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              className="px-2.5 py-1 bg-white border border-[#E6EAF3] rounded-lg text-xs text-gray-700 focus:outline-none focus:border-[#0B7B49]"
+              className="px-2.5 py-1 bg-white border border-[#E6EAF3] rounded-lg text-xs text-gray-700 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value={8}>8 per page</option>
               <option value={15}>15 per page</option>
@@ -791,15 +830,7 @@ export default function FeeCollectionsPage() {
         </div>
       </div>
 
-      {/* Collect Fee Side Drawer */}
-      <CollectFeeDrawer
-        isOpen={isCollectDrawerOpen}
-        onClose={() => setIsCollectDrawerOpen(false)}
-        onSuccess={() => {
-          fetchData();
-        }}
-        academicYearId={academicYearId}
-      />
+
 
       {/* Receipt Details Modal */}
       <ReceiptDetailsModal

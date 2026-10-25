@@ -621,12 +621,17 @@ export interface StudentListParams {
   documents_pending?: boolean;
   admission_year?: number;
   limit?: number;
+  page?: number;
+  offset?: number;
   cursor?: string;
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
   userRole?: string;
   teacherSectionIds?: string[];
   parentStudentIds?: string[];
+  is_new_admission?: boolean;
+  academic_year_id?: string;
+  academic_year_start_date?: string;
 }
 
 /**
@@ -636,6 +641,10 @@ export interface StudentListResponse {
   data: StudentListItem[];
   next_cursor?: string | null;
   total_estimate?: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  total_pages?: number;
 }
 
 /**
@@ -1118,5 +1127,16 @@ export interface BulkDeleteStudentsResult {
   deletedCount: number;
   mode: "purged" | "soft_deleted";
   errors: string[];
+}
+
+export interface StudentSummaryData {
+  totalStudents: number;
+  enrolledCount: number;
+  newAdmissionsCount: number;
+  feePendingCount: number;
+  boysCount?: number;
+  girlsCount?: number;
+  documentsPending?: number;
+  transportCount?: number;
 }
 

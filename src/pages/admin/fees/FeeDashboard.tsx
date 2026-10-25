@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { getReceipts, getReceiptById } from "../../../services/collectionService";
-import { getFeeHeads, getFeeTerms, getFeeStructures } from "../../../services/feeSetupService";
+import { getFeeHeads, getFeeTerms, getFeeStructures, getFeeSettings } from "../../../services/feeSetupService";
 import { getCurrentAcademicYear } from "../../../services/academicService";
 import { computeAuthoritativeFinancialSummary, getTodayIST } from "../../../services/feeCalculationService";
 import { generateReceiptHTML } from "../../../lib/receiptTemplate";
@@ -297,7 +297,8 @@ function DonutChart({
 
   const cpct = Math.round(cf * 100);
   const ppct = Math.round(pf * 100);
-  const opct = Math.round(of * 100);
+  // Reconcile percentages to strictly sum to 100%
+  const opct = total > 0 ? Math.max(0, 100 - cpct - ppct) : 0;
 
   return (
     <div className="flex items-center gap-5">
@@ -462,92 +463,106 @@ export default function FeeDashboard() {
       const sMap: Record<string, { name: string; admission_no: string; class_name: string }> = {};
       const mMap: Record<string, string> = {};
 
-      if (isSupabaseConfigured && sids.length > 0) {
-        try {
-          const { data: sd } = await supabase
-            .from("students")
-            .select("id, first_name, last_name, admission_no, classes(name)")
-            .eq("school_id", schoolId)
-            .in("id", sids);
-          if (sd) {
-            for (const s of sd as any[]) {
-              sMap[s.id] = {
-                name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || "Student",
-                admission_no: s.admission_no || "—",
-                class_name: s.classes?.name || "Class",
-              };
-            }
-          }
-          if (rids.length > 0) {
-            const { data: pd } = await supabase
-              .from("fee_payments").select("receipt_id, mode").eq("school_id", schoolId).in("receipt_id", rids);
-            if (pd) for (const p of pd as any[]) { if (p.receipt_id && !mMap[p.receipt_id]) mMap[p.receipt_id] = p.mode; }
-          }
-        } catch (e) { console.warn("Student lookup:", e); }
-      }
-      // localStorage fallback
-      try {
-        const ls = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
-        const lc = JSON.parse(localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]");
-        const lp = JSON.parse(localStorage.getItem(`myzkool_fee_payments_${schoolId}`) || "[]");
-        const lcMap = new Map<string, any>((lc as any[]).map((c: any) => [c.id, c]));
-        for (const s of ls) {
-          if (!sMap[s.id]) {
-            const cls = lcMap.get(s.class_id);
-            sMap[s.id] = { name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || "Student", admission_no: s.admission_no || "—", class_name: cls?.name || "Class" };
-          }
-        }
-        for (const p of lp) { if (p.receipt_id && !mMap[p.receipt_id]) mMap[p.receipt_id] = p.mode; }
-      } catch { /* ignore */ }
-
-      setRecentTransactions(slice.map((r) => {
-        const s = sMap[r.student_id] || { name: "Student", admission_no: "—", class_name: "Class" };
-        return {
-          id: r.id, receipt_no: r.receipt_no, student_id: r.student_id,
-          student_name: s.name, admission_no: s.admission_no, class_name: s.class_name,
-          total_paise: r.total_paise,
-          payment_mode: mMap[r.id] || r.source || "Cash",
-          receipt_date: r.receipt_date, status: r.status,
-        };
-      }));
-
-
       // 4. Authoritative Financial Aggregation (Dues, Credits & Student Counts)
       let allDues: any[] = [];
       let creditsData: any[] = [];
       let studentsData: any[] = [];
+      let classesList: any[] = [];
+      let enrollmentsList: any[] = [];
 
       if (isSupabaseConfigured) {
         try {
-          const [dRes, cRes, sRes] = await Promise.all([
+          const [dRes, cRes, sRes, clsRes, enrRes] = await Promise.all([
             supabase.from("student_dues").select("*").eq("school_id", schoolId),
             supabase.from("fee_credits").select("student_id, remaining_paise").eq("school_id", schoolId),
-            supabase.from("students").select("id, first_name, last_name, admission_no, class_id, classes(name)").eq("school_id", schoolId).is("deleted_at", null),
+            supabase
+              .from("students")
+              .select("id, first_name, last_name, admission_no, admission_class_id")
+              .eq("school_id", schoolId)
+              .is("deleted_at", null),
+            supabase.from("classes").select("id, name").eq("school_id", schoolId),
+            supabase.from("student_enrollments").select("student_id, class_id").eq("school_id", schoolId).eq("status", "active"),
           ]);
           allDues = dRes.data || [];
           creditsData = cRes.data || [];
           studentsData = sRes.data || [];
+          classesList = clsRes.data || [];
+          enrollmentsList = enrRes.data || [];
+
+          if (rids.length > 0) {
+            const { data: pd } = await supabase
+              .from("fee_payments")
+              .select("receipt_id, mode")
+              .eq("school_id", schoolId)
+              .in("receipt_id", rids);
+            if (pd) {
+              for (const p of pd as any[]) {
+                if (p.receipt_id && !mMap[p.receipt_id]) mMap[p.receipt_id] = p.mode;
+              }
+            }
+          }
         } catch (e) {
           console.warn("DB queries in FeeDashboard:", e);
         }
       }
 
-      if (allDues.length === 0) {
-        allDues = JSON.parse(localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]");
-        creditsData = JSON.parse(localStorage.getItem(`myzkool_fee_credits_${schoolId}`) || "[]");
-        studentsData = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
+      // localStorage fallback if needed
+      try {
+        if (allDues.length === 0) {
+          allDues = JSON.parse(localStorage.getItem(`myzkool_student_dues_${schoolId}`) || "[]");
+        }
+        if (creditsData.length === 0) {
+          creditsData = JSON.parse(localStorage.getItem(`myzkool_fee_credits_${schoolId}`) || "[]");
+        }
+        if (studentsData.length === 0) {
+          studentsData = JSON.parse(localStorage.getItem(`myzkool_students_${schoolId}`) || "[]");
+        }
+        if (classesList.length === 0) {
+          classesList = JSON.parse(localStorage.getItem(`myzkool_classes_${schoolId}`) || "[]");
+        }
+        if (enrollmentsList.length === 0) {
+          enrollmentsList = JSON.parse(localStorage.getItem(`myzkool_student_enrollments_${schoolId}`) || "[]");
+        }
+        const lp = JSON.parse(localStorage.getItem(`myzkool_fee_payments_${schoolId}`) || "[]");
+        for (const p of lp) {
+          if (p.receipt_id && !mMap[p.receipt_id]) mMap[p.receipt_id] = p.mode;
+        }
+      } catch { /* ignore */ }
+
+      // Build class resolution maps
+      const classIdToName = new Map<string, string>(
+        classesList.map((c: any) => [c.id, c.name || "Class"])
+      );
+      const studentIdToClassId = new Map<string, string>(
+        enrollmentsList.map((e: any) => [e.student_id, e.class_id])
+      );
+
+      // Hydrate student map
+      for (const s of studentsData) {
+        const enrolledClassId = studentIdToClassId.get(s.id) || s.class_id || s.admission_class_id;
+        const resolvedClassName = (enrolledClassId && classIdToName.get(enrolledClassId)) || s.class_name || "—";
+        sMap[s.id] = {
+          name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || s.name || "Student",
+          admission_no: s.admission_no || "—",
+          class_name: resolvedClassName,
+        };
       }
 
-      // Ensure sMap has student details for all loaded students
-      for (const s of studentsData) {
-        if (!sMap[s.id]) {
-          sMap[s.id] = {
-            name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || s.name || "Student",
-            admission_no: s.admission_no || "—",
-            class_name: s.classes?.name || s.class_name || "Class",
-          };
-        }
-      }
+      setRecentTransactions(slice.map((r) => {
+        const s = sMap[r.student_id] || { name: "Student", admission_no: "—", class_name: "Class" };
+        return {
+          id: r.id,
+          receipt_no: r.receipt_no,
+          student_id: r.student_id,
+          student_name: s.name,
+          admission_no: s.admission_no,
+          class_name: s.class_name,
+          total_paise: r.total_paise,
+          payment_mode: mMap[r.id] || r.source || "Cash",
+          receipt_date: r.receipt_date,
+          status: r.status,
+        };
+      }));
 
       const authSummary = computeAuthoritativeFinancialSummary({
         dues: allDues,
@@ -646,13 +661,30 @@ export default function FeeDashboard() {
   const handleCloseDrawer = () => {
     setSelectedTx(null); drawerReceiptRef.current = null; setDrawerItems([]); drawerPaymentsRef.current = [];
   };
-  const handlePrintReceipt = (paper: "a5" | "thermal80" = "a5") => {
+  const handlePrintReceipt = async (paper: "a4" | "a5" | "thermal80" = "a5") => {
     if (!drawerReceiptRef.current || !selectedTx) return;
     try {
+      let feeSettings = null;
+      if (schoolId) {
+        const sRes = await getFeeSettings(schoolId).catch(() => ({ settings: null }));
+        feeSettings = sRes.settings;
+      }
       const html = generateReceiptHTML(
         drawerReceiptRef.current, drawerItems, drawerPaymentsRef.current,
         { student_name: selectedTx.student_name, admission_no: selectedTx.admission_no },
-        { name: "MyZkool School" }, paper, (drawerReceiptRef.current.print_count ?? 0) > 0
+        {
+          name: feeSettings?.receipt_header_title || "MyZkool School",
+          logo_url: feeSettings?.logo_url,
+          signature_url: feeSettings?.signature_url,
+          signatory_name: feeSettings?.signatory_name,
+          signatory_designation: feeSettings?.signatory_designation,
+          terms: feeSettings?.receipt_terms,
+          footer: feeSettings?.receipt_footer,
+          theme: feeSettings?.receipt_theme,
+        },
+        paper,
+        (drawerReceiptRef.current.print_count ?? 0) > 0,
+        feeSettings
       );
       const w = window.open("", "_blank");
       if (!w) return;
@@ -792,20 +824,20 @@ export default function FeeDashboard() {
           )}
         </div>
 
-        {/* Pending Dues */}
+        {/* Total Outstanding Dues */}
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center mb-3">
             <Clock className="w-5 h-5 text-blue-500" />
           </div>
           {loading
             ? <div className="h-7 w-28 bg-slate-100 rounded animate-pulse mb-1" />
-            : <div className="text-2xl font-bold text-[#141A2E] tabular-nums">{fmt(Math.max(0, outstandingPaise - overduePaise))}</div>
+            : <div className="text-2xl font-bold text-[#141A2E] tabular-nums">{fmt(outstandingPaise)}</div>
           }
-          <p className="text-xs text-slate-400 mt-1">Pending Dues</p>
-          {!loading && outstandingPaise > 0 && (
-            <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-amber-600">
-              <TrendingUp className="w-3.5 h-3.5" /> Needs follow-up
-            </div>
+          <p className="text-xs text-slate-400 mt-1">Total Outstanding Dues</p>
+          {!loading && (
+            <p className="text-[11px] text-slate-500 mt-2 font-medium">
+              {fmt(Math.max(0, outstandingPaise - overduePaise))} current • {fmt(overduePaise)} overdue
+            </p>
           )}
         </div>
 
@@ -818,11 +850,11 @@ export default function FeeDashboard() {
             ? <div className="h-7 w-24 bg-slate-100 rounded animate-pulse mb-1" />
             : <div className="text-2xl font-bold text-red-500 tabular-nums">{fmt(overduePaise)}</div>
           }
-          <p className="text-xs text-slate-400 mt-1">Overdue (30+ days)</p>
-          {!loading && overduePaise > 0 && (
-            <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-red-500">
-              <TrendingUp className="w-3.5 h-3.5" /> Immediate action needed
-            </div>
+          <p className="text-xs text-slate-400 mt-1">Overdue Dues</p>
+          {!loading && (
+            <p className={`text-[11px] mt-2 font-semibold ${overduePaise > 0 ? "text-red-500" : "text-emerald-600"}`}>
+              {overduePaise > 0 ? "Immediate action needed (subset of outstanding)" : "No overdue fees"}
+            </p>
           )}
         </div>
 
@@ -1013,14 +1045,21 @@ export default function FeeDashboard() {
                       }}
                       className="hover:bg-slate-50/80 cursor-pointer transition-colors">
                       <td className="py-2.5 px-2">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
-                            {due.studentName.charAt(0)}
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 border border-blue-100">
+                            {due.studentName.charAt(0) || "S"}
                           </div>
-                          <span className="font-semibold text-slate-800 truncate max-w-[80px] block">{due.studentName}</span>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-slate-800 truncate max-w-[140px] sm:max-w-[180px] block" title={due.studentName}>
+                              {due.studentName}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono block">
+                              {due.admissionNo}
+                            </span>
+                          </div>
                         </div>
                       </td>
-                      <td className="py-2.5 px-2 text-slate-500 whitespace-nowrap">{due.className}</td>
+                      <td className="py-2.5 px-2 text-slate-600 font-medium whitespace-nowrap">{due.className}</td>
                       <td className="py-2.5 px-2 font-bold text-slate-900 tabular-nums text-right whitespace-nowrap">{fmt(due.balancePaise)}</td>
                       <td className="py-2.5 px-2 text-center">
                         {due.daysPastDue > 0

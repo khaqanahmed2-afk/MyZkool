@@ -38,7 +38,7 @@ export default function StudentLedgerPage() {
         </div>
       </div>
 
-      <div className="bg-white border border-[#E6EAF3] rounded-2xl p-6 shadow-2xs">
+      <div>
         <StudentLedgerTab studentId={id} studentName={studentName} />
       </div>
     </div>

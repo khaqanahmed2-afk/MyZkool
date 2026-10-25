@@ -199,7 +199,7 @@ export interface StudentDue {
   status: DueStatus;
   invoice_no?: string | null;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
   created_by?: string | null;
   // Joined fields
   fee_head_name?: string;
@@ -311,11 +311,22 @@ export interface LateFeeRule {
   updated_at: string;
 }
 
+export type ReceiptTheme = 'myzkool_blue' | 'mint_pastel' | 'lavender_pastel';
+
 export interface FeeSettings {
   school_id: string;
+  receipt_theme?: ReceiptTheme;
   receipt_prefix: string;
-  receipt_paper: 'a5' | 'thermal80';
+  receipt_paper: 'a4' | 'a5' | 'thermal80';
   receipt_language: 'en' | 'hi' | 'both';
+  signature_url?: string | null;
+  signatory_name?: string | null;
+  signatory_designation?: string | null;
+  logo_url?: string | null;
+  receipt_header_title?: string | null;
+  receipt_terms?: string[] | null;
+  receipt_footer?: string | null;
+  refund_policy_note?: string | null;
   allow_partial: boolean;
   min_partial_paise: number;
   allow_advance: boolean;
@@ -329,6 +340,10 @@ export interface FeeSettings {
   parent_pay_enabled: boolean;
   gateway_fee_bearer: 'school' | 'parent';
   auto_print_receipt: boolean;
+  enable_cash_reconciliation?: boolean;
+  invoice_prefix?: string;
+  invoice_due_days?: number;
+  invoice_notes?: string;
   owner_pin_hash?: string | null;
   created_at: string;
   updated_at: string;
@@ -480,9 +495,18 @@ export interface LateFeeRuleInput {
 }
 
 export interface FeeSettingsInput {
+  receipt_theme?: ReceiptTheme;
   receipt_prefix?: string;
-  receipt_paper?: 'a5' | 'thermal80';
+  receipt_paper?: 'a4' | 'a5' | 'thermal80';
   receipt_language?: 'en' | 'hi' | 'both';
+  signature_url?: string | null;
+  signatory_name?: string | null;
+  signatory_designation?: string | null;
+  logo_url?: string | null;
+  receipt_header_title?: string | null;
+  receipt_terms?: string[] | null;
+  receipt_footer?: string | null;
+  refund_policy_note?: string | null;
   allow_partial?: boolean;
   min_partial_paise?: number;
   allow_advance?: boolean;
@@ -496,6 +520,10 @@ export interface FeeSettingsInput {
   parent_pay_enabled?: boolean;
   gateway_fee_bearer?: 'school' | 'parent';
   auto_print_receipt?: boolean;
+  enable_cash_reconciliation?: boolean;
+  invoice_prefix?: string;
+  invoice_due_days?: number;
+  invoice_notes?: string;
   new_pin?: string;           // plaintext; service hashes before storing
 }
 
@@ -678,6 +706,8 @@ export interface InvoiceFilters {
   term_id?: string;
   status?: 'all' | InvoiceStatus | string;
   search?: string;
+  due_date_from?: string;
+  due_date_to?: string;
   page?: number;
   pageSize?: number;
   sortBy?: 'date' | 'due_date' | 'amount' | 'student' | 'invoice_no';

@@ -64,7 +64,6 @@ import {
 } from "../../../services/feeReportsService";
 import { formatPaiseCompact } from "../../../lib/amountInWords";
 import { ReceiptDetailsModal } from "../../../components/admin/fees/ReceiptDetailsModal";
-import { CollectFeeDrawer } from "../../../components/admin/fees/CollectFeeDrawer";
 import type { EnrichedTransaction } from "../../../services/feeCollectionsQueryService";
 
 // ─── Format Currency Helper ───────────────────────────────────────────────────
@@ -299,10 +298,9 @@ export default function FeeReportsPage() {
     setSelectedTransactionForModal(enriched);
   };
 
-  // Open Collect Drawer for student
+  // Open Collect Fee Counter for student (Full-page counter)
   const handleOpenCollectForStudent = (studentId: string) => {
-    setCollectInitialStudentId(studentId);
-    setCollectDrawerOpen(true);
+    navigate(`/admin/fees/collect?student=${encodeURIComponent(studentId)}`);
   };
 
   // Reset all filters
@@ -1547,22 +1545,6 @@ export default function FeeReportsPage() {
           setSelectedTransactionForModal(null);
           loadReports(true);
         }}
-      />
-
-      {/* ─── 10. Collect Fee Drawer ───────────────────────────────────────── */}
-      <CollectFeeDrawer
-        isOpen={collectDrawerOpen}
-        onClose={() => {
-          setCollectDrawerOpen(false);
-          setCollectInitialStudentId(undefined);
-        }}
-        onSuccess={(rcpNo) => {
-          showToast(`Fee receipt ${rcpNo} successfully generated!`);
-          setCollectDrawerOpen(false);
-          loadReports(true);
-        }}
-        initialStudentId={collectInitialStudentId}
-        academicYearId={academicYearId}
       />
     </div>
   );

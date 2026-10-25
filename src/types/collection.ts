@@ -54,6 +54,13 @@ export interface FeeReceiptItem {
   fee_head_id: string;
   amount_paise: number;
   concession_paise?: number;
+  fee_head_name?: string;
+  gross_paise?: number;
+  net_paise?: number;
+  paid_paise?: number;
+  outstanding_paise?: number;
+  balance_paise?: number;
+  invoice_no?: string;
 }
 
 export interface FeePayment {

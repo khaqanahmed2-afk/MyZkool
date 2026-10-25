@@ -9,9 +9,11 @@ import {
 import { formatPaise } from "../../../lib/amountInWords";
 import { generateReceiptHTML } from "../../../lib/receiptTemplate";
 import { cancelReceipt, getReceiptById } from "../../../services/collectionService";
+import { getFeeSettings } from "../../../services/feeSetupService";
 import { useAuth } from "../../../context/AuthContext";
 import type { EnrichedTransaction } from "../../../services/feeCollectionsQueryService";
 import type { FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
+import type { FeeSettings } from "../../../types/fees";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. RECEIPT STATUS BADGE
@@ -140,7 +142,7 @@ const ReceiptDetailsGrid: React.FC<{ transaction: EnrichedTransaction }> = ({ tr
     <div className="grid grid-cols-2 gap-4 text-xs">
       <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
         <span className="text-gray-400 block mb-1">Amount Received</span>
-        <span className="text-base font-extrabold text-[#0B7B49]">
+        <span className="text-base font-extrabold text-[#2563EB]">
           {transaction.formatted_amount}
         </span>
       </div>
@@ -262,7 +264,7 @@ const ReceiptModalFooter: React.FC<ReceiptModalFooterProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="px-4 py-2 bg-[#0B7B49] text-white rounded-xl text-xs font-bold hover:bg-[#09663c]"
+          className="px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-bold hover:bg-[#1D4ED8]"
         >
           Close
         </button>
@@ -280,8 +282,9 @@ function executeReceiptPrint(
   realItems: FeeReceiptItem[],
   realPayments: FeePayment[],
   schoolId: string | null | undefined,
-  school: { name?: string; address?: string; contact_phone?: string } | null,
-  isCancelled: boolean
+  school: { name?: string; address?: string; contact_phone?: string; logo_url?: string } | null,
+  isCancelled: boolean,
+  feeSettings?: FeeSettings | null
 ) {
   const receiptToUse: FeeReceipt = realReceipt || {
     id: transaction.receipt_id,
@@ -347,13 +350,28 @@ function executeReceiptPrint(
       student_name: transaction.student_name,
       admission_no: transaction.admission_no,
       class_name: transaction.class_name,
+      section_name: transaction.section_name,
+      balance_remaining_paise: 0,
     },
     {
-      name: school?.name || "Peace Convent School",
-      address: school?.address || "Main Campus, Education City",
+      name: school?.name || feeSettings?.receipt_header_title || "School",
+      address: school?.address || "Main Campus",
       phone: school?.contact_phone || "+91 98765 43210",
+      logo_url: feeSettings?.logo_url || school?.logo_url,
+      signature_url: feeSettings?.signature_url,
+      signatory_name: feeSettings?.signatory_name,
+      signatory_designation: feeSettings?.signatory_designation,
+      terms: feeSettings?.receipt_terms,
+      footer: feeSettings?.receipt_footer,
+      refund_policy_note: feeSettings?.refund_policy_note,
+      theme: feeSettings?.receipt_theme,
     },
-    "a5"
+    (feeSettings?.receipt_paper || "a4") as any,
+    isCancelled,
+    feeSettings,
+    {
+      invoiceNo: transaction.invoice_numbers.join(", "),
+    }
   );
 
   const printWin = window.open("", "_blank");
@@ -367,33 +385,109 @@ function executeReceiptPrint(
 
 function executeReceiptDownload(
   transaction: EnrichedTransaction,
-  schoolName?: string
+  realReceipt: FeeReceipt | null,
+  realItems: FeeReceiptItem[],
+  realPayments: FeePayment[],
+  schoolId: string | null | undefined,
+  school: { name?: string; address?: string; contact_phone?: string; logo_url?: string } | null,
+  isCancelled: boolean,
+  feeSettings?: FeeSettings | null
 ) {
-  const content = `========================================
-FEE RECEIPT: ${transaction.receipt_no}
-========================================
-School: ${schoolName || "Sunrise International School"}
-Date: ${transaction.formatted_date_time}
-Status: ${transaction.status.toUpperCase()}
+  const receiptToUse: FeeReceipt = realReceipt || {
+    id: transaction.receipt_id,
+    school_id: schoolId || "",
+    receipt_no: transaction.receipt_no,
+    student_id: transaction.student_id,
+    academic_year_id: transaction.academic_year_id || "2026-2027",
+    receipt_date: transaction.receipt_date,
+    total_paise: transaction.amount_paise,
+    status: isCancelled ? "cancelled" : "active",
+    source: transaction.payment_method === "online" ? "online" : "counter",
+    payment_group_id: null,
+    collected_by: transaction.collected_by_name || null,
+    remarks: transaction.remarks || null,
+    idempotency_key: null,
+    print_count: 1,
+    whatsapp_sent_at: null,
+    cancelled_by: null,
+    cancelled_at: null,
+    cancel_reason: null,
+    created_at: transaction.created_at,
+    updated_at: transaction.created_at,
+  };
 
-Student: ${transaction.student_name}
-Admission No: ${transaction.admission_no}
-Class: ${transaction.class_name}
+  const itemsToUse: FeeReceiptItem[] =
+    realItems.length > 0
+      ? realItems
+      : transaction.invoice_numbers.map((_, idx) => ({
+          id: `it-${idx}`,
+          receipt_id: transaction.receipt_id,
+          due_id: `due-${idx}`,
+          fee_head_id: "Tuition / Term Fee",
+          amount_paise: Math.round(transaction.amount_paise / (transaction.invoice_numbers.length || 1)),
+          concession_paise: 0,
+        }));
 
-Linked Invoice(s): ${transaction.invoice_numbers.join(", ")}
-Payment Method: ${transaction.payment_method.toUpperCase()}
-Reference No: ${transaction.reference_no || "N/A"}
+  const paymentsToUse: FeePayment[] =
+    realPayments.length > 0
+      ? realPayments
+      : [
+          {
+            id: `pay-${transaction.id}`,
+            school_id: schoolId || "",
+            receipt_id: transaction.receipt_id,
+            mode: transaction.payment_method,
+            amount_paise: transaction.amount_paise,
+            reference_no: transaction.reference_no || null,
+            bank_name: null,
+            instrument_no: null,
+            instrument_date: null,
+            cheque_status: null,
+            gateway_order_id: null,
+            gateway_payment_id: null,
+            created_at: transaction.created_at,
+          },
+        ];
 
-Total Amount Paid: ${transaction.formatted_amount}
-========================================`;
+  const html = generateReceiptHTML(
+    receiptToUse,
+    itemsToUse,
+    paymentsToUse,
+    {
+      student_name: transaction.student_name,
+      admission_no: transaction.admission_no,
+      class_name: transaction.class_name,
+      section_name: transaction.section_name,
+      balance_remaining_paise: 0,
+    },
+    {
+      name: school?.name || feeSettings?.receipt_header_title || "School",
+      address: school?.address || "Main Campus",
+      phone: school?.contact_phone || "+91 98765 43210",
+      logo_url: feeSettings?.logo_url || school?.logo_url,
+      signature_url: feeSettings?.signature_url,
+      signatory_name: feeSettings?.signatory_name,
+      signatory_designation: feeSettings?.signatory_designation,
+      terms: feeSettings?.receipt_terms,
+      footer: feeSettings?.receipt_footer,
+      refund_policy_note: feeSettings?.refund_policy_note,
+      theme: feeSettings?.receipt_theme,
+    },
+    (feeSettings?.receipt_paper || "a4") as any,
+    isCancelled,
+    feeSettings,
+    {
+      invoiceNo: transaction.invoice_numbers.join(", "),
+    }
+  );
 
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Receipt_${transaction.receipt_no}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const printWin = window.open("", "_blank");
+  if (printWin) {
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => printWin.print(), 350);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -413,6 +507,7 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
   initialCancelOpen = false,
 }) => {
   const { schoolId, user, school } = useAuth();
+  const [feeSettings, setFeeSettings] = useState<FeeSettings | null>(null);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(initialCancelOpen);
   const [cancelReason, setCancelReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
@@ -423,6 +518,13 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
   const [realReceipt, setRealReceipt] = useState<FeeReceipt | null>(null);
   const [realItems, setRealItems] = useState<FeeReceiptItem[]>([]);
   const realPaymentsRef = useRef<FeePayment[]>([]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    getFeeSettings(schoolId).then(({ settings }) => {
+      setFeeSettings(settings);
+    }).catch(() => {});
+  }, [schoolId]);
 
   useEffect(() => {
     if (!schoolId || !transaction?.receipt_id) return;
@@ -464,12 +566,22 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
       realPaymentsRef.current,
       schoolId,
       school,
-      isCancelled
+      isCancelled,
+      feeSettings
     );
   };
 
   const handleDownload = () => {
-    executeReceiptDownload(transaction, school?.name);
+    executeReceiptDownload(
+      transaction,
+      realReceipt,
+      realItems,
+      realPaymentsRef.current,
+      schoolId,
+      school,
+      isCancelled,
+      feeSettings
+    );
   };
 
   const handleCancelReceipt = async () => {
@@ -527,7 +639,7 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-5">
           {/* Student Profile Card */}
           <div className="p-4 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-full bg-[#E8F7EE] text-[#0B7B49] font-black text-sm flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-full bg-[#EBF2FE] text-[#2563EB] font-black text-sm flex items-center justify-center shrink-0">
               {transaction.initials}
             </div>
             <div className="min-w-0 flex-1">

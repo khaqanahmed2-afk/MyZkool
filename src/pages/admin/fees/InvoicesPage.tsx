@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
@@ -19,7 +20,6 @@ import {
   ChevronDown,
   Users,
   IndianRupee,
-  Receipt,
   Wallet,
   Filter,
   MessageSquare,
@@ -44,7 +44,6 @@ import type { FeeTerm } from "../../../types/fees";
 // Modals and Drawers
 import { BulkGenerateModal } from "../../../components/admin/fees/BulkGenerateModal";
 import { ImportInvoicesModal } from "../../../components/admin/fees/ImportInvoicesModal";
-import { CollectFeeDrawer } from "../../../components/admin/fees/CollectFeeDrawer";
 import { SendRemindersDrawer } from "../../../components/admin/fees/SendRemindersDrawer";
 import { StudentFeeLedgerDrawer } from "../../../components/admin/fees/StudentFeeLedgerDrawer";
 
@@ -102,11 +101,13 @@ function getAvatarColor(name: string): string {
 }
 
 export default function InvoicesPage() {
-  const { school, profile } = useAuth() as any;
+  const navigate = useNavigate();
+  const { school } = useAuth() as any;
   const schoolId = school?.id || "";
   const schoolName = school?.name || "School";
+
   // ───────────────────────────────────────────────────────────────────────────
-  // STUDENT-WISE STATE
+  // STUDENT-WISE FEE MANAGEMENT STATE
   // ───────────────────────────────────────────────────────────────────────────
   const [students, setStudents] = useState<StudentFeeSummary[]>([]);
   const allFilteredStudentsRef = useRef<StudentFeeSummary[]>([]);
@@ -130,7 +131,7 @@ export default function InvoicesPage() {
   });
   const [studentLoading, setStudentLoading] = useState<boolean>(true);
 
-  // Student Filtering Controls
+  // Filtering Controls
   const [studentSearch, setStudentSearch] = useState<string>("");
   const [studentClassId, setStudentClassId] = useState<string>("all");
   const [studentSectionId, setStudentSectionId] = useState<string>("all");
@@ -141,27 +142,27 @@ export default function InvoicesPage() {
   const [dueDateFrom, setDueDateFrom] = useState<string>("");
   const [dueDateTo, setDueDateTo] = useState<string>("");
 
-  // Student Table Pagination
+  // Pagination
   const [studentPage, setStudentPage] = useState<number>(1);
   const [studentPageSize, setStudentPageSize] = useState<number>(8);
   const [studentTotalCount, setStudentTotalCount] = useState<number>(0);
   const [studentTotalPages, setStudentTotalPages] = useState<number>(1);
 
-  // Student Row Selection
+  // Row Selection
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
 
   // Active Dropdown Menus
   const [activeStudentMenuId, setActiveStudentMenuId] = useState<string | null>(null);
   const [isBulkActionsDropdownOpen, setIsBulkActionsDropdownOpen] = useState(false);
 
-  // Modal / Drawer state for Student-wise
+  // Modals / Drawers state
   const [drawerStudentId, setDrawerStudentId] = useState<string | null>(null);
   const [isCollectDrawerOpen, setIsCollectDrawerOpen] = useState(false);
   const [collectStudentId, setCollectStudentId] = useState<string | undefined>(undefined);
   const [isSendRemindersOpen, setIsSendRemindersOpen] = useState(false);
   const [reminderRows, setReminderRows] = useState<any[]>([]);
 
-  // Modals
+  // Bulk Modals
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
@@ -190,7 +191,7 @@ export default function InvoicesPage() {
     if (!schoolId) return;
 
     // Academic Years
-    let storedYears = typeof localStorage !== "undefined"
+    const storedYears = typeof localStorage !== "undefined"
       ? JSON.parse(localStorage.getItem(`myzkool_academic_years_${schoolId}`) || "[]")
       : [];
     setAcademicYears(storedYears);
@@ -272,7 +273,7 @@ export default function InvoicesPage() {
       const data = await loadDuesAndRemindersData(schoolId, { academicYearId: selectedYearId });
       setReminderRows(data.rows || []);
       setIsSendRemindersOpen(true);
-    } catch (e) {
+    } catch {
       setIsSendRemindersOpen(true);
     }
   };
@@ -296,7 +297,7 @@ export default function InvoicesPage() {
   };
 
   // CSV Export for Student Dues
-  const handleExportStudentCSV = () => {
+  const handleExportCSV = () => {
     const targetList =
       selectedStudentIds.size > 0
         ? allFilteredStudentsRef.current.filter((s) => selectedStudentIds.has(s.student_id))
@@ -314,11 +315,11 @@ export default function InvoicesPage() {
     link.click();
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    setAlertSuccess(`Exported fee ledger for ${targetList.length} students.`);
+    setAlertSuccess(`Exported fee records for ${targetList.length} students.`);
     setTimeout(() => setAlertSuccess(null), 3000);
   };
 
-  // Status Badge Rendering for Student-wise
+  // Status Badge Rendering
   const renderStudentStatusBadge = (status: StudentFeeStatus) => {
     switch (status) {
       case "fully_paid":
@@ -361,10 +362,13 @@ export default function InvoicesPage() {
     }
   };
 
-  // Open Collect Drawer for specific student
+  // Open Collect Fee Counter for specific student (Full-page counter)
   const handleOpenCollect = (studentId?: string) => {
-    setCollectStudentId(studentId);
-    setIsCollectDrawerOpen(true);
+    if (studentId) {
+      navigate(`/admin/fees/collect?student=${encodeURIComponent(studentId)}`);
+    } else {
+      navigate("/admin/fees/collect");
+    }
   };
 
   if (!schoolId) {
@@ -375,7 +379,7 @@ export default function InvoicesPage() {
         </div>
         <h2 className="text-xl font-bold text-slate-900 mb-1">School Context Required</h2>
         <p className="text-sm text-slate-500 max-w-md">
-          Please select or log into an authenticated school context to view and manage invoices.
+          Please select or log into an authenticated school context to view and manage student fees.
         </p>
       </div>
     );
@@ -383,22 +387,23 @@ export default function InvoicesPage() {
 
   return (
     <div className="max-w-[1440px] mx-auto py-6 px-4 sm:px-6 space-y-5">
-      {/* ── 1. Top Bar: Breadcrumb, Academic Year, Notifications, Profile ──────── */}
+      {/* ── 1. Page Header: Breadcrumb, Title & Primary Actions ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        {/* Breadcrumb & Title */}
         <div>
+          {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1 font-medium">
             <span>Admin</span>
             <span className="text-slate-400">/</span>
             <span>Fees</span>
             <span className="text-slate-400">/</span>
-            <span className="text-slate-800 font-semibold">Invoices</span>
+            <span className="text-slate-800 font-semibold">Student Fee Management</span>
           </div>
+          {/* Main Title & Description */}
           <h1 className="text-2xl font-bold text-slate-900 font-display tracking-tight">Student Fee Management</h1>
-          <p className="text-xs text-slate-500 mt-0.5">View student-wise fee status, collect payments, and manage dues.</p>
+          <p className="text-xs text-slate-500 mt-0.5">Manage student fee dues, generate term invoices, track payments, and issue receipts.</p>
         </div>
 
-        {/* Action Buttons */}
+        {/* Primary Action Buttons */}
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
@@ -457,7 +462,7 @@ export default function InvoicesPage() {
                     type="button"
                     onClick={() => {
                       setIsBulkActionsDropdownOpen(false);
-                      handleExportStudentCSV();
+                      handleExportCSV();
                     }}
                     className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                   >
@@ -480,13 +485,14 @@ export default function InvoicesPage() {
             )}
           </div>
 
+          {/* Primary Blue Collect Fee Button */}
           <button
             type="button"
             onClick={() => handleOpenCollect()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#047857] text-white rounded-xl text-xs font-semibold hover:bg-emerald-800 transition-colors shadow-xs cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Collect Payment</span>
+            <span>Collect Fee</span>
           </button>
         </div>
       </div>
@@ -504,730 +510,780 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* ─── STUDENT-WISE FEE MANAGEMENT ───────────────────────── */}
-      <div className="space-y-5">
-          {/* ── 7 Financial Summary Cards ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {/* Card 1: Total Enrolled Students */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
-                <Users className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {studentMetrics.total_enrolled_count ?? studentMetrics.total_students_count}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Enrolled</div>
-              <div className="text-[11px] text-slate-400">across all classes</div>
-            </div>
-
-            {/* Card 2: Structure Assigned (Fee-Eligible) */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2">
-                <Layers className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {studentMetrics.structure_assigned_count ?? 0}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Structure Assigned</div>
-              <div className="text-[11px] text-indigo-600 font-medium">active fee structures</div>
-            </div>
-
-            {/* Card 3: Total Billed / Fees */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-2">
-                <IndianRupee className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {formatINR(studentMetrics.total_fees_paise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Billed</div>
-              <div className="text-[11px] text-slate-400">
-                {studentMetrics.students_with_invoices_count ?? studentMetrics.total_students_with_records} with invoices
-              </div>
-            </div>
-
-            {/* Card 4: Total Collected */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mb-2">
-                <Receipt className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {formatINR(studentMetrics.total_collected_paise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Collected</div>
-              <div className="text-[11px] text-emerald-600 font-medium">
-                {studentMetrics.collection_percentage}% collection
-              </div>
-            </div>
-
-            {/* Card 5: Total Pending */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-2">
-                <Wallet className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {formatINR(studentMetrics.total_pending_paise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Total Pending</div>
-              <div className="text-[11px] text-amber-600 font-medium">
-                {studentMetrics.with_dues_count} with dues
-              </div>
-            </div>
-
-            {/* Card 6: Overdue Amount */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-2">
-                <Clock className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {formatINR(studentMetrics.total_overdue_paise)}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Overdue Amount</div>
-              <div className="text-[11px] text-rose-600 font-medium">
-                {studentMetrics.overdue_count} overdue
-              </div>
-            </div>
-
-            {/* Card 7: Students with Dues */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
-              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-2">
-                <AlertCircle className="w-4 h-4" />
-              </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
-                {studentMetrics.with_dues_count}
-              </div>
-              <div className="text-xs font-semibold text-slate-800">Students with Dues</div>
-              <div className="text-[11px] text-purple-600 font-medium">
-                {studentMetrics.with_dues_percentage}% of total
-              </div>
-            </div>
+      {/* ── 2. 7 Financial Summary KPI Cards Directly Below Header ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {/* Card 1: Total Enrolled Students */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
+            <Users className="w-4 h-4" />
           </div>
-
-          {/* ── Filters Bar ── */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
-              {/* Search Input */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input aria-label="Search students"
-                  type="text"
-                  placeholder="Search by student name, admission no., parent name or phone..."
-                  value={studentSearch}
-                  onChange={(e) => {
-                    setStudentSearch(e.target.value);
-                    setStudentPage(1);
-                  }}
-                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors placeholder:text-slate-400"
-                />
-                {studentSearch && (
-                  <button aria-label="Close"
-                    onClick={() => setStudentSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Class Filter */}
-              <div className="flex items-center gap-2">
-                <select aria-label="Class Filter"
-                  value={studentClassId}
-                  onChange={(e) => {
-                    setStudentClassId(e.target.value);
-                    setStudentPage(1);
-                  }}
-                  className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                >
-                  <option value="all">All Classes</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Section Filter */}
-                <select aria-label="Section Filter"
-                  value={studentSectionId}
-                  onChange={(e) => {
-                    setStudentSectionId(e.target.value);
-                    setStudentPage(1);
-                  }}
-                  className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                >
-                  <option value="all">All Sections</option>
-                  {sections
-                    .filter((s) => studentClassId === "all" || s.class_id === studentClassId)
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                </select>
-
-                {/* Fee Status Filter */}
-                <select aria-label="Fee Status Filter"
-                  value={studentFeeStatus}
-                  onChange={(e) => {
-                    setStudentFeeStatus(e.target.value);
-                    setStudentPage(1);
-                  }}
-                  className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                >
-                  <option value="all">All Status</option>
-                  <option value="overdue">Overdue</option>
-                  <option value="pending">Pending</option>
-                  <option value="partially_paid">Partially Paid</option>
-                  <option value="fully_paid">Fully Paid</option>
-                  <option value="upcoming">Upcoming</option>
-                  <option value="with_dues">With Dues</option>
-                </select>
-
-                {/* Transport Filter */}
-                <select aria-label="Transport Filter"
-                  value={studentTransport}
-                  onChange={(e) => {
-                    setStudentTransport(e.target.value as any);
-                    setStudentPage(1);
-                  }}
-                  className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                >
-                  <option value="all">All Students</option>
-                  <option value="transport_only">Transport Users</option>
-                  <option value="non_transport">Non-Transport</option>
-                </select>
-
-                {/* More Filters Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setIsMoreFiltersOpen(!isMoreFiltersOpen)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${isMoreFiltersOpen || dueDateFrom || dueDateTo
-                      ? "bg-blue-50 border-blue-200 text-blue-700"
-                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                >
-                  <Filter className="w-3.5 h-3.5" />
-                  <span>More Filters</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Extended More Filters Popover / Bar */}
-            {isMoreFiltersOpen && (
-              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-4 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">Due Date From:</span>
-                  <input aria-label="Select date"
-                    type="date"
-                    value={dueDateFrom}
-                    onChange={(e) => setDueDateFrom(e.target.value)}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">To:</span>
-                  <input aria-label="Select date"
-                    type="date"
-                    value={dueDateTo}
-                    onChange={(e) => setDueDateTo(e.target.value)}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
-                  />
-                </div>
-                {(dueDateFrom || dueDateTo) && (
-                  <button
-                    onClick={() => {
-                      setDueDateFrom("");
-                      setDueDateTo("");
-                    }}
-                    className="text-xs text-rose-600 font-medium hover:underline"
-                  >
-                    Reset Date Filters
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Quick Status Pills Matching Reference */}
-            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 overflow-x-auto no-scrollbar">
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("with_invoices");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "with_invoices"
-                    ? "bg-blue-50 text-blue-700 border border-blue-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>With Invoices</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold">
-                  {studentMetrics.students_with_invoices_count || studentMetrics.total_students_with_records}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("structure_assigned");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "structure_assigned"
-                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>Structure Assigned</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold text-indigo-700">
-                  {studentMetrics.structure_assigned_count}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("transport_only");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "transport_only"
-                    ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>Transport Only</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold text-amber-700">
-                  {studentMetrics.transport_only_count}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("with_dues");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "with_dues"
-                    ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>With Dues</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold">
-                  {studentMetrics.with_dues_count}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("overdue");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "overdue"
-                    ? "bg-rose-50 text-rose-700 border border-rose-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>Overdue</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold text-rose-600">
-                  {studentMetrics.overdue_count}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("fully_paid");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "fully_paid"
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>Fully Paid</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold text-emerald-700">
-                  {studentMetrics.fully_paid_count}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPill("all");
-                  setStudentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  quickPill === "all"
-                    ? "bg-slate-200 text-slate-800 border border-slate-300 font-bold"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
-                }`}
-              >
-                <span>All Enrolled</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-white/80 text-[11px] font-bold">
-                  {studentMetrics.total_enrolled_count || studentMetrics.total_students_count}
-                </span>
-              </button>
-            </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {studentMetrics.total_enrolled_count ?? studentMetrics.total_students_count}
           </div>
+          <div className="text-xs font-semibold text-slate-800">Total Enrolled</div>
+          <div className="text-[11px] text-slate-400">across all classes</div>
+        </div>
 
-          {/* ── Student Summary Table ── */}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#F8FAFC] border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
-                  <tr>
-                    <th className="py-3.5 px-3 w-10">
-                      <input aria-label="Select all"
-                        type="checkbox"
-                        checked={students.length > 0 && selectedStudentIds.size === students.length}
-                        onChange={(e) => handleSelectAllStudents(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                    </th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600">Student</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600">Class / Section</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600">Academic Year & Structure</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Total Billed</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Discounts</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Amount Paid</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Outstanding</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Overdue</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-center">Next Due Date</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-center">Current Status</th>
-                    <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Actions</th>
-                  </tr>
-                </thead>
+        {/* Card 2: Structure Assigned (Fee-Eligible) */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2">
+            <Layers className="w-4 h-4" />
+          </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {studentMetrics.structure_assigned_count ?? 0}
+          </div>
+          <div className="text-xs font-semibold text-slate-800">Structure Assigned</div>
+          <div className="text-[11px] text-indigo-600 font-medium">active fee structures</div>
+        </div>
 
-                <tbody className="divide-y divide-slate-100">
-                  {studentLoading ? (
-                    <tr>
-                      <td colSpan={12} className="py-12 text-center text-slate-400">
-                        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
-                        <span>Loading student fee records...</span>
-                      </td>
-                    </tr>
-                  ) : students.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="py-12 text-center text-slate-500">
-                        <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                        <div className="font-semibold text-slate-700">No students found matching your criteria.</div>
-                        <p className="text-xs text-slate-400 mt-1">Try modifying your search or clearing active filters.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    students.map((std) => {
-                      const isSelected = selectedStudentIds.has(std.student_id);
-                      const avatarCls = getAvatarColor(std.student_name);
-                      const grossBilled = std.total_billed_paise || std.total_applicable_paise;
-                      const discounts = std.total_concession_paise || 0;
-
-                      return (
-                        <tr
-                          key={std.student_id}
-                          className={`hover:bg-slate-50/70 transition-colors group ${isSelected ? "bg-blue-50/40" : ""
-                            }`}
-                        >
-                          {/* Checkbox */}
-                          <td className="py-3.5 px-3">
-                            <input aria-label="Select item"
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleToggleSelectStudent(std.student_id)}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          </td>
-
-                          {/* Student Info */}
-                          <td className="py-3.5 px-3">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-8 h-8 rounded-full font-bold flex items-center justify-center text-xs shrink-0 ${avatarCls}`}
-                              >
-                                {std.avatar_url ? (
-                                  <img
-                                    src={std.avatar_url}
-                                    alt={std.student_name}
-                                    className="w-full h-full rounded-full object-cover"
-                                  />
-                                ) : (
-                                  getInitials(std.student_name)
-                                )}
-                              </div>
-                              <div>
-                                <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { (e.currentTarget as HTMLElement).click(); } }}
-                                  onClick={() => setDrawerStudentId(std.student_id)}
-                                  className="font-bold text-slate-900 hover:text-blue-600 cursor-pointer transition-colors"
-                                >
-                                  {std.student_name}
-                                </div>
-                                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                                  {std.admission_no}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Class / Section */}
-                          <td className="py-3.5 px-3">
-                            <div className="font-semibold text-slate-800">{std.class_name}</div>
-                            <div className="text-[11px] text-slate-500">{std.section_name}</div>
-                          </td>
-
-                          {/* Academic Year & Fee Structure */}
-                          <td className="py-3.5 px-3">
-                            <div className="font-semibold text-slate-800 text-[11px]">{std.academic_year_name || "2026–2027"}</div>
-                            {std.has_fee_structure ? (
-                              <div className="text-[11px] text-blue-700 font-medium truncate max-w-[170px]" title={std.applicable_fee_structure_name}>
-                                {std.applicable_fee_structure_name}
-                              </div>
-                            ) : std.is_transport_only ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                Transport Only
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">
-                                {std.applicable_fee_structure_name || "No Structure"}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Total Billed */}
-                          <td className="py-3.5 px-3 font-bold text-slate-900 tabular-nums text-right">
-                            {formatINR(grossBilled)}
-                          </td>
-
-                          {/* Discounts & Adjustments */}
-                          <td className="py-3.5 px-3 font-semibold text-purple-700 tabular-nums text-right">
-                            {discounts > 0 ? (
-                              <span>-{formatINR(discounts)}</span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">—</span>
-                            )}
-                          </td>
-
-                          {/* Amount Paid */}
-                          <td className="py-3.5 px-3 font-semibold text-emerald-600 tabular-nums text-right">
-                            {formatINR(std.total_paid_paise)}
-                          </td>
-
-                          {/* Outstanding Balance */}
-                          <td className="py-3.5 px-3 tabular-nums text-right">
-                            <div className={`font-bold ${std.total_pending_paise > 0 ? "text-amber-700" : "text-slate-600"}`}>
-                              {formatINR(std.total_pending_paise)}
-                            </div>
-                            {(std.advance_credit_paise || 0) > 0 && (
-                              <div className="text-[10px] text-sky-600 font-semibold" title="Unallocated advance credit available">
-                                -{formatINR(std.advance_credit_paise || 0)} credit
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Overdue Balance */}
-                          <td className="py-3.5 px-3 tabular-nums text-right">
-                            {std.total_overdue_paise > 0 ? (
-                              <span className="font-bold text-rose-600">
-                                {formatINR(std.total_overdue_paise)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-medium">₹0</span>
-                            )}
-                          </td>
-
-                          {/* Next Due Date */}
-                          <td className="py-3.5 px-3 text-slate-700 whitespace-nowrap text-center">
-                            {std.total_pending_paise === 0 ? (
-                              <span className="text-[11px] text-emerald-600 font-semibold">Cleared</span>
-                            ) : (
-                              formatDateDisplay(std.next_due_date)
-                            )}
-                          </td>
-
-                          {/* Current Status */}
-                          <td className="py-3.5 px-3 whitespace-nowrap text-center">
-                            {renderStudentStatusBadge(std.fee_status)}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5 relative">
-                              <button
-                                type="button"
-                                onClick={() => setDrawerStudentId(std.student_id)}
-                                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                                title="Open Student Fee Ledger"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>View</span>
-                              </button>
-
-                              {/* Three-dots menu */}
-                              <div className="relative">
-                                <button aria-label="Three-dots menu"
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveStudentMenuId(
-                                      activeStudentMenuId === std.student_id ? null : std.student_id
-                                    );
-                                  }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                                >
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </button>
-
-                                {activeStudentMenuId === std.student_id && (
-                                  <div
-                                    className="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 divide-y divide-slate-100 text-left animate-in fade-in zoom-in-95 duration-100"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <div className="py-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setActiveStudentMenuId(null);
-                                          handleOpenCollect(std.student_id);
-                                        }}
-                                        className="w-full px-3 py-1.5 text-xs text-blue-600 font-semibold hover:bg-blue-50 flex items-center gap-2"
-                                      >
-                                        <CreditCard className="w-3.5 h-3.5" />
-                                        Collect Fee
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setActiveStudentMenuId(null);
-                                          setDrawerStudentId(std.student_id);
-                                        }}
-                                        className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                      >
-                                        <Eye className="w-3.5 h-3.5 text-slate-400" />
-                                        View Full Ledger
-                                      </button>
-                                    </div>
-                                    <div className="py-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setActiveStudentMenuId(null);
-                                          const encoded = getWhatsAppFeeMessage(std, schoolName);
-                                          const cleanPhone = std.parent_phone.replace(/[^0-9]/g, "");
-                                          window.open(
-                                            cleanPhone
-                                              ? `https://wa.me/91${cleanPhone}?text=${encoded}`
-                                              : `https://wa.me/?text=${encoded}`,
-                                            "_blank"
-                                          );
-                                        }}
-                                        className="w-full px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
-                                      >
-                                        <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                                        WhatsApp Reminder
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Footer Matching Mockup */}
-            <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t border-slate-200 text-xs text-slate-500 gap-3">
-              <div>
-                Showing {(studentPage - 1) * studentPageSize + 1}–
-                {Math.min(studentPage * studentPageSize, studentTotalCount)} of {studentTotalCount} students
-              </div>
-
-              <div className="flex items-center gap-2">
-                {/* Previous */}
-                <button aria-label="Previous"
-                  type="button"
-                  disabled={studentPage <= 1}
-                  onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                {/* Page Number Chips */}
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((p) => {
-                    if (p > studentTotalPages) return null;
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setStudentPage(p)}
-                        className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${studentPage === p
-                            ? "bg-blue-600 text-white font-bold"
-                            : "hover:bg-slate-100 text-slate-700"
-                          }`}
-                      >
-                        {p}
-                      </button>
-                    );
-                  })}
-                  {studentTotalPages > 5 && (
-                    <>
-                      <span className="px-1 text-slate-400">...</span>
-                      <button
-                        type="button"
-                        onClick={() => setStudentPage(studentTotalPages)}
-                        className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${studentPage === studentTotalPages
-                            ? "bg-blue-600 text-white font-bold"
-                            : "hover:bg-slate-100 text-slate-700"
-                          }`}
-                      >
-                        {studentTotalPages}
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {/* Next */}
-                <button aria-label="Next"
-                  type="button"
-                  disabled={studentPage >= studentTotalPages}
-                  onClick={() => setStudentPage((p) => Math.min(studentTotalPages, p + 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-
-                {/* Page Size Select */}
-                <select aria-label="Page Size Select"
-                  value={studentPageSize}
-                  onChange={(e) => {
-                    setStudentPageSize(Number(e.target.value));
-                    setStudentPage(1);
-                  }}
-                  className="ml-2 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none"
-                >
-                  <option value={8}>8 per page</option>
-                  <option value={15}>15 per page</option>
-                  <option value={25}>25 per page</option>
-                  <option value={50}>50 per page</option>
-                </select>
-              </div>
-            </div>
+        {/* Card 3: Total Billed / Fees */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-2">
+            <IndianRupee className="w-4 h-4" />
+          </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {formatINR(studentMetrics.total_fees_paise)}
+          </div>
+          <div className="text-xs font-semibold text-slate-800">Total Billed</div>
+          <div className="text-[11px] text-slate-400">
+            {studentMetrics.students_with_invoices_count ?? studentMetrics.total_students_with_records} with invoices
           </div>
         </div>
 
-      {/* ── Slide-over Drawer: Student Fee Ledger ─────────────────────────────── */}
+        {/* Card 4: Total Collected */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-2">
+            <Wallet className="w-4 h-4" />
+          </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {formatINR(studentMetrics.total_collected_paise)}
+          </div>
+          <div className="text-xs font-semibold text-slate-800">Total Collected</div>
+          <div className="text-[11px] text-emerald-600 font-medium">
+            {studentMetrics.collection_percentage}% collection
+          </div>
+        </div>
+
+        {/* Card 5: Total Pending */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-2">
+            <AlertCircle className="w-4 h-4" />
+          </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {formatINR(studentMetrics.total_pending_paise)}
+          </div>
+          <div className="text-xs font-semibold text-slate-800">Total Pending</div>
+          <div className="text-[11px] text-amber-600 font-medium">
+            {studentMetrics.with_dues_count} with dues
+          </div>
+        </div>
+
+        {/* Card 6: Overdue Amount */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-2">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {formatINR(studentMetrics.total_overdue_paise)}
+          </div>
+          <div className="text-xs font-semibold text-slate-800">Overdue Amount</div>
+          <div className="text-[11px] text-rose-600 font-medium">
+            {studentMetrics.overdue_count} overdue
+          </div>
+        </div>
+
+        {/* Card 7: Students with Dues */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-2">
+            <Users className="w-4 h-4" />
+          </div>
+          <div className="text-xl font-bold text-slate-900 tabular-nums font-display">
+            {studentMetrics.with_dues_count}
+          </div>
+          <div className="text-xs font-semibold text-slate-800">Students with Dues</div>
+          <div className="text-[11px] text-purple-600 font-medium">
+            {studentMetrics.with_dues_percentage}% of total
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Filters Bar ── */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              aria-label="Search students"
+              type="text"
+              placeholder="Search by student name, admission no., parent name or phone..."
+              value={studentSearch}
+              onChange={(e) => {
+                setStudentSearch(e.target.value);
+                setStudentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors placeholder:text-slate-400"
+            />
+            {studentSearch && (
+              <button
+                aria-label="Clear search"
+                onClick={() => {
+                  setStudentSearch("");
+                  setStudentPage(1);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Class, Section, Status, Transport Selectors & Filters button */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Class Filter */}
+            <select
+              aria-label="Class Filter"
+              value={studentClassId}
+              onChange={(e) => {
+                setStudentClassId(e.target.value);
+                setStudentPage(1);
+              }}
+              className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="all">All Classes</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Section Filter */}
+            <select
+              aria-label="Section Filter"
+              value={studentSectionId}
+              onChange={(e) => {
+                setStudentSectionId(e.target.value);
+                setStudentPage(1);
+              }}
+              className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="all">All Sections</option>
+              {sections
+                .filter((s) => studentClassId === "all" || s.class_id === studentClassId)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+
+            {/* Fee Status Filter */}
+            <select
+              aria-label="Fee Status Filter"
+              value={studentFeeStatus}
+              onChange={(e) => {
+                setStudentFeeStatus(e.target.value);
+                setStudentPage(1);
+              }}
+              className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="all">All Status</option>
+              <option value="overdue">Overdue</option>
+              <option value="pending">Pending</option>
+              <option value="partially_paid">Partially Paid</option>
+              <option value="fully_paid">Fully Paid</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="with_dues">With Dues</option>
+            </select>
+
+            {/* Transport Filter */}
+            <select
+              aria-label="Transport Filter"
+              value={studentTransport}
+              onChange={(e) => {
+                setStudentTransport(e.target.value as any);
+                setStudentPage(1);
+              }}
+              className="px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="all">All Students</option>
+              <option value="transport_only">Transport Users</option>
+              <option value="non_transport">Non-Transport</option>
+            </select>
+
+            {/* More Filters Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsMoreFiltersOpen(!isMoreFiltersOpen)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${isMoreFiltersOpen || dueDateFrom || dueDateTo
+                  ? "bg-blue-50 border-blue-200 text-blue-700"
+                  : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Extended More Filters Popover / Bar */}
+        {isMoreFiltersOpen && (
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-medium">Due Date From:</span>
+              <input
+                aria-label="Select date from"
+                type="date"
+                value={dueDateFrom}
+                onChange={(e) => {
+                  setDueDateFrom(e.target.value);
+                  setStudentPage(1);
+                }}
+                className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-medium">To:</span>
+              <input
+                aria-label="Select date to"
+                type="date"
+                value={dueDateTo}
+                onChange={(e) => {
+                  setDueDateTo(e.target.value);
+                  setStudentPage(1);
+                }}
+                className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+              />
+            </div>
+            {(dueDateFrom || dueDateTo) && (
+              <button
+                onClick={() => {
+                  setDueDateFrom("");
+                  setDueDateTo("");
+                  setStudentPage(1);
+                }}
+                className="text-xs text-rose-600 font-medium hover:underline"
+              >
+                Reset Date Filters
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Quick Status Pills Matching Reference UI */}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("with_invoices");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "with_invoices"
+                ? "bg-blue-50 text-blue-700 border border-blue-200 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>With Invoices</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "with_invoices" ? "bg-white text-blue-700 shadow-2xs" : "bg-white/80 text-slate-600"
+                }`}
+            >
+              {studentMetrics.students_with_invoices_count || studentMetrics.total_students_with_records}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("structure_assigned");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "structure_assigned"
+                ? "bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>Structure Assigned</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "structure_assigned" ? "bg-white text-indigo-700 shadow-2xs" : "bg-white/80 text-indigo-700"
+                }`}
+            >
+              {studentMetrics.structure_assigned_count}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("transport_only");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "transport_only"
+                ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>Transport Only</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "transport_only" ? "bg-white text-amber-700 shadow-2xs" : "bg-white/80 text-amber-700"
+                }`}
+            >
+              {studentMetrics.transport_only_count}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("with_dues");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "with_dues"
+                ? "bg-amber-50 text-amber-700 border border-amber-200 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>With Dues</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "with_dues" ? "bg-white text-amber-700 shadow-2xs" : "bg-white/80 text-rose-600"
+                }`}
+            >
+              {studentMetrics.with_dues_count}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("overdue");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "overdue"
+                ? "bg-rose-50 text-rose-700 border border-rose-200 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>Overdue</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "overdue" ? "bg-white text-rose-700 shadow-2xs" : "bg-white/80 text-rose-600"
+                }`}
+            >
+              {studentMetrics.overdue_count}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("fully_paid");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "fully_paid"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>Fully Paid</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "fully_paid" ? "bg-white text-emerald-700 shadow-2xs" : "bg-white/80 text-emerald-700"
+                }`}
+            >
+              {studentMetrics.fully_paid_count}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPill("all");
+              setStudentPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${quickPill === "all"
+                ? "bg-slate-200 text-slate-800 border border-slate-300 font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent"
+              }`}
+          >
+            <span>All Enrolled</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-md text-[11px] font-bold ${quickPill === "all" ? "bg-white text-slate-800 shadow-2xs" : "bg-white/80 text-slate-600"
+                }`}
+            >
+              {studentMetrics.total_enrolled_count || studentMetrics.total_students_count}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── 4. Student Summary Table ── */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#F8FAFC] border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+              <tr>
+                <th className="py-3.5 px-3 w-10">
+                  <input
+                    aria-label="Select all students"
+                    type="checkbox"
+                    checked={students.length > 0 && selectedStudentIds.size === students.length}
+                    onChange={(e) => handleSelectAllStudents(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
+                <th className="py-3.5 px-3 font-bold text-slate-600">Student</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600">Class / Section</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600">Academic Year & Structure</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Total Billed</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Discounts</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Amount Paid</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Outstanding</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Overdue</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-center">Next Due Date</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-center">Status</th>
+                <th className="py-3.5 px-3 font-bold text-slate-600 text-right">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {studentLoading ? (
+                <tr>
+                  <td colSpan={12} className="py-12 text-center text-slate-400">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+                    <span>Loading student fee records...</span>
+                  </td>
+                </tr>
+              ) : students.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="py-12 text-center text-slate-500">
+                    <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <div className="font-semibold text-slate-700">No students found matching your criteria.</div>
+                    <p className="text-xs text-slate-400 mt-1">Try modifying your search or clearing active filters.</p>
+                  </td>
+                </tr>
+              ) : (
+                students.map((std) => {
+                  const isSelected = selectedStudentIds.has(std.student_id);
+                  const avatarCls = getAvatarColor(std.student_name);
+                  const grossBilled = std.total_billed_paise || std.total_applicable_paise;
+                  const discounts = std.total_concession_paise || 0;
+
+                  return (
+                    <tr
+                      key={std.student_id}
+                      className={`hover:bg-slate-50/70 transition-colors group ${isSelected ? "bg-blue-50/40" : ""
+                        }`}
+                    >
+                      {/* Checkbox */}
+                      <td className="py-3.5 px-3">
+                        <input
+                          aria-label="Select student"
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectStudent(std.student_id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+
+                      {/* Student Info */}
+                      <td className="py-3.5 px-3">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`w-8 h-8 rounded-full font-bold flex items-center justify-center text-xs shrink-0 ${avatarCls}`}
+                          >
+                            {std.avatar_url ? (
+                              <img
+                                src={std.avatar_url}
+                                alt={std.student_name}
+                                className="w-full h-full rounded-full object-cover"
+                              />
+                            ) : (
+                              getInitials(std.student_name)
+                            )}
+                          </div>
+                          <div>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  (e.currentTarget as HTMLElement).click();
+                                }
+                              }}
+                              onClick={() => setDrawerStudentId(std.student_id)}
+                              className="font-bold text-slate-900 hover:text-blue-600 cursor-pointer transition-colors"
+                            >
+                              {std.student_name}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              {std.admission_no}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Class / Section */}
+                      <td className="py-3.5 px-3">
+                        <div className="font-semibold text-slate-800">{std.class_name}</div>
+                        <div className="text-[11px] text-slate-500">{std.section_name}</div>
+                      </td>
+
+                      {/* Academic Year & Fee Structure */}
+                      <td className="py-3.5 px-3">
+                        <div className="font-semibold text-slate-800 text-[11px]">
+                          {std.academic_year_name || "2026–2027"}
+                        </div>
+                        {std.has_fee_structure ? (
+                          <div
+                            className="text-[11px] text-blue-700 font-medium truncate max-w-[170px]"
+                            title={std.applicable_fee_structure_name}
+                          >
+                            {std.applicable_fee_structure_name}
+                          </div>
+                        ) : std.is_transport_only ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            Transport Only
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">
+                            {std.applicable_fee_structure_name || "No Structure"}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Total Billed */}
+                      <td className="py-3.5 px-3 font-bold text-slate-900 tabular-nums text-right">
+                        {formatINR(grossBilled)}
+                      </td>
+
+                      {/* Discounts & Adjustments */}
+                      <td className="py-3.5 px-3 font-semibold text-purple-700 tabular-nums text-right">
+                        {discounts > 0 ? (
+                          <span>-{formatINR(discounts)}</span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">—</span>
+                        )}
+                      </td>
+
+                      {/* Amount Paid */}
+                      <td className="py-3.5 px-3 font-semibold text-emerald-600 tabular-nums text-right">
+                        {formatINR(std.total_paid_paise)}
+                      </td>
+
+                      {/* Outstanding Balance */}
+                      <td className="py-3.5 px-3 tabular-nums text-right">
+                        <div
+                          className={`font-bold ${std.total_pending_paise > 0 ? "text-amber-700" : "text-slate-600"
+                            }`}
+                        >
+                          {formatINR(std.total_pending_paise)}
+                        </div>
+                        {(std.advance_credit_paise || 0) > 0 && (
+                          <div
+                            className="text-[10px] text-sky-600 font-semibold"
+                            title="Unallocated advance credit available"
+                          >
+                            -{formatINR(std.advance_credit_paise || 0)} credit
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Overdue Balance */}
+                      <td className="py-3.5 px-3 tabular-nums text-right">
+                        {std.total_overdue_paise > 0 ? (
+                          <span className="font-bold text-rose-600">
+                            {formatINR(std.total_overdue_paise)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-medium">₹0</span>
+                        )}
+                      </td>
+
+                      {/* Next Due Date */}
+                      <td className="py-3.5 px-3 text-slate-700 whitespace-nowrap text-center">
+                        {std.total_pending_paise === 0 ? (
+                          <span className="text-[11px] text-emerald-600 font-semibold">Cleared</span>
+                        ) : (
+                          formatDateDisplay(std.next_due_date)
+                        )}
+                      </td>
+
+                      {/* Current Status */}
+                      <td className="py-3.5 px-3 whitespace-nowrap text-center">
+                        {renderStudentStatusBadge(std.fee_status)}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5 relative">
+                          <button
+                            type="button"
+                            onClick={() => setDrawerStudentId(std.student_id)}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1 border border-blue-100/60"
+                            title="Open Student Fee Ledger"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </button>
+
+                          {/* Three-dots menu */}
+                          <div className="relative">
+                            <button
+                              aria-label="More actions"
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveStudentMenuId(
+                                  activeStudentMenuId === std.student_id ? null : std.student_id
+                                );
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+
+                            {activeStudentMenuId === std.student_id && (
+                              <div
+                                className="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 divide-y divide-slate-100 text-left animate-in fade-in zoom-in-95 duration-100"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveStudentMenuId(null);
+                                      handleOpenCollect(std.student_id);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-blue-600 font-semibold hover:bg-blue-50 flex items-center gap-2"
+                                  >
+                                    <CreditCard className="w-3.5 h-3.5" />
+                                    Collect Fee
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveStudentMenuId(null);
+                                      setDrawerStudentId(std.student_id);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                                    View Full Ledger
+                                  </button>
+                                </div>
+                                <div className="py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveStudentMenuId(null);
+                                      const encoded = getWhatsAppFeeMessage(std, schoolName);
+                                      const cleanPhone = std.parent_phone.replace(/[^0-9]/g, "");
+                                      window.open(
+                                        cleanPhone
+                                          ? `https://wa.me/91${cleanPhone}?text=${encoded}`
+                                          : `https://wa.me/?text=${encoded}`,
+                                        "_blank"
+                                      );
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                                    WhatsApp Reminder
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Footer */}
+        <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t border-slate-200 text-xs text-slate-500 gap-3">
+          <div>
+            Showing {(studentPage - 1) * studentPageSize + 1}–
+            {Math.min(studentPage * studentPageSize, studentTotalCount)} of {studentTotalCount} students
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              aria-label="Previous page"
+              type="button"
+              disabled={studentPage <= 1}
+              onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((p) => {
+                if (p > studentTotalPages) return null;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setStudentPage(p)}
+                    className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${studentPage === p
+                        ? "bg-blue-600 text-white font-bold"
+                        : "hover:bg-slate-100 text-slate-700"
+                      }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              {studentTotalPages > 5 && (
+                <>
+                  <span className="px-1 text-slate-400">...</span>
+                  <button
+                    type="button"
+                    onClick={() => setStudentPage(studentTotalPages)}
+                    className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${studentPage === studentTotalPages
+                        ? "bg-blue-600 text-white font-bold"
+                        : "hover:bg-slate-100 text-slate-700"
+                      }`}
+                  >
+                    {studentTotalPages}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <button
+              aria-label="Next page"
+              type="button"
+              disabled={studentPage >= studentTotalPages}
+              onClick={() => setStudentPage((p) => Math.min(studentTotalPages, p + 1))}
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            <select
+              aria-label="Page Size Select"
+              value={studentPageSize}
+              onChange={(e) => {
+                setStudentPageSize(Number(e.target.value));
+                setStudentPage(1);
+              }}
+              className="ml-2 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none"
+            >
+              <option value={8}>8 per page</option>
+              <option value={15}>15 per page</option>
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Slide-over Drawer: Student Fee Ledger ── */}
       <StudentFeeLedgerDrawer
         isOpen={!!drawerStudentId}
         onClose={() => setDrawerStudentId(null)}
@@ -1240,24 +1296,9 @@ export default function InvoicesPage() {
         }}
       />
 
-      {/* ── Collect Fee Drawer (Quick Payment Workflow) ────────────────────────── */}
-      <CollectFeeDrawer
-        isOpen={isCollectDrawerOpen}
-        onClose={() => {
-          setIsCollectDrawerOpen(false);
-          setCollectStudentId(undefined);
-        }}
-        onSuccess={(rcptNo) => {
-          setIsCollectDrawerOpen(false);
-          setCollectStudentId(undefined);
-          setAlertSuccess(`Payment recorded successfully! Receipt #${rcptNo} generated.`);
-          loadStudentFeeSummaries();
-        }}
-        initialStudentId={collectStudentId}
-        academicYearId={selectedYearId}
-      />
 
-      {/* ── Send Reminders Drawer ────────────────────────────────────────────── */}
+
+      {/* ── Send Reminders Drawer ── */}
       <SendRemindersDrawer
         isOpen={isSendRemindersOpen}
         onClose={() => setIsSendRemindersOpen(false)}
@@ -1273,7 +1314,7 @@ export default function InvoicesPage() {
         onOpenTemplates={() => { }}
       />
 
-      {/* ── Modals: Bulk Generate, Import ───────────────────────────────────── */}
+      {/* ── Bulk Actions Modals ── */}
       <BulkGenerateModal
         isOpen={isBulkModalOpen}
         onClose={() => setIsBulkModalOpen(false)}

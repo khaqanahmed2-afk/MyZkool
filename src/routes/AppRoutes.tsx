@@ -64,6 +64,7 @@ const FeeStructuresPage = lazy(() => import("../pages/admin/fees/FeeStructuresPa
 const ConcessionRulesPage = lazy(() => import("../pages/admin/fees/ConcessionRulesPage"));
 const LateFeeRulesPage = lazy(() => import("../pages/admin/fees/LateFeeRulesPage"));
 const FeeSettingsPage = lazy(() => import("../pages/admin/fees/FeeSettingsPage"));
+const ReceiptPreviewPage = lazy(() => import("../pages/admin/fees/ReceiptPreviewPage"));
 const DuesGenerationPage = lazy(() => import("../pages/admin/fees/DuesGenerationPage"));
 const InvoicesPage = lazy(() => import("../pages/admin/fees/InvoicesPage"));
 const ApprovalsPage = lazy(() => import("../pages/admin/approvals/ApprovalsPage"));
@@ -153,6 +154,16 @@ export default function AppRoutes() {
             }
           />
 
+          {/* Standalone Receipt Preview for Print & Verification in separate tab */}
+          <Route
+            path="/admin/fees/receipt-preview"
+            element={
+              <ProtectedRoute allowedRoles={["school_admin", "super_admin"]} requireCompletedOnboarding={true}>
+                <ReceiptPreviewPage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Admin Dashboard (protected, requires completed onboarding) */}
           <Route
             path="/admin"
@@ -182,11 +193,14 @@ export default function AppRoutes() {
             <Route path="fees/setup/concessions" element={<ConcessionRulesPage />} />
             <Route path="fees/setup/late-fees" element={<LateFeeRulesPage />} />
             <Route path="fees/setup/settings" element={<FeeSettingsPage />} />
+            <Route path="fees/receipt-preview" element={<ReceiptPreviewPage />} />
+            <Route path="fees/settings" element={<Navigate to="/admin/fees/setup/settings" replace />} />
+            <Route path="fees/invoice-settings" element={<Navigate to="/admin/fees/setup/settings" replace />} />
             <Route path="fees/dues" element={<InvoicesPage />} />
             <Route path="fees/invoices" element={<InvoicesPage />} />
             <Route path="fees/assign" element={<InvoicesPage />} />
             <Route path="fees/collections" element={<FeeCollectionsPage />} />
-            <Route path="fees/collect" element={<FeeCollectionsPage />} />
+            <Route path="fees/collect" element={<FeeCollectPage />} />
             <Route path="fees/receipts" element={<Navigate to="/admin/fees/collections" replace />} />
             <Route path="fees/students/:id" element={<StudentLedgerPage />} />
             <Route path="fees/reminders" element={<DuesRemindersPage />} />

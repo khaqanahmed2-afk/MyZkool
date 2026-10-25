@@ -69,8 +69,8 @@ const CHECKLIST: ChecklistItem[] = [
   },
   {
     id: "settings",
-    label: "Receipt & Settings",
-    description: "Prefix, paper size, owner PIN, partial payment options.",
+    label: "Fee & Receipt Settings",
+    description: "Configure billing preferences, receipt templates, school branding, payment options, and print settings.",
     href: "/admin/fees/setup/settings",
     icon: Settings2,
     required: false,

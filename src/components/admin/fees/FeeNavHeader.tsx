@@ -35,7 +35,7 @@ const SETUP_LINKS: NavDropdownItem[] = [
   { label: "Class Fee Structures", href: "/admin/fees/setup/structures", icon: Grid3X3, desc: "Class-wise amounts per term" },
   { label: "Discounts & Concessions", href: "/admin/fees/setup/concessions", icon: Percent, desc: "Sibling, RTE, staff-ward rules" },
   { label: "Late Fee Rules", href: "/admin/fees/setup/late-fees", icon: Clock, desc: "Daily, monthly, percent penalties" },
-  { label: "Fee & Receipt Settings", href: "/admin/fees/setup/settings", icon: Sliders, desc: "Prefixes, paper size, PIN policy" },
+  { label: "Fee & Receipt Settings", href: "/admin/fees/setup/settings", icon: Sliders, desc: "Branding, themes, receipt & invoice rules" },
 ];
 
 const MORE_LINKS: NavDropdownItem[] = [
@@ -45,12 +45,12 @@ const MORE_LINKS: NavDropdownItem[] = [
 ];
 
 const SECONDARY_MENU_ACTIONS: NavDropdownItem[] = [
-  { label: "Assign Dues", href: "/admin/fees/dues", icon: PlusCircle, desc: "Generate class fees" },
+  { label: "Assign Dues", href: "/admin/fees/dues", icon: PlusCircle, desc: "Assign dues and fee structure" },
+  { label: "Generate Class Fees", href: "/admin/fees/dues", icon: FileCheck2, desc: "Generate class fees in bulk" },
   { label: "Fee Structures", href: "/admin/fees/setup/structures", icon: Grid3X3, desc: "Configure class fee matrix" },
-  { label: "Cheque Register", href: "/admin/fees/cheques", icon: CheckSquare, desc: "Manage pending cheques" },
   { label: "Day Close", href: "/admin/fees/day-close", icon: Lock, desc: "Daily cash & collection reconciliation" },
   { label: "Refunds Register", href: "/admin/fees/refunds", icon: Undo2, desc: "Process fee refunds" },
-  { label: "Fee Settings", href: "/admin/fees/setup/settings", icon: Settings, desc: "Receipt prefixes & preferences" },
+  { label: "Fee & Receipt Settings", href: "/admin/fees/setup/settings", icon: Settings, desc: "Configure billing preferences, receipt templates, school branding, and payment options." },
 ];
 
 interface FeeNavDropdownProps {

@@ -2535,9 +2535,22 @@ export function describeLateFeeRule(rule: LateFeeRule): string {
 // ─── Fee Settings ─────────────────────────────────────────────────────────────
 
 export const DEFAULT_FEE_SETTINGS: Omit<FeeSettings, "school_id" | "created_at" | "updated_at"> = {
+  receipt_theme: "myzkool_blue",
   receipt_prefix: "MZ",
-  receipt_paper: "a5",
+  receipt_paper: "a4",
   receipt_language: "en",
+  signature_url: null,
+  signatory_name: "Authorized Signatory",
+  signatory_designation: "Accounts Officer",
+  logo_url: null,
+  receipt_header_title: "Official Fee Receipt",
+  receipt_terms: [
+    "Fee once paid is non-refundable except refundable security deposit.",
+    "Please retain this official computer-generated receipt for your records and tax purposes.",
+    "Any discrepancy must be reported to the accounts department within 7 business days.",
+  ],
+  receipt_footer: "This is a computer generated receipt and does not require a physical signature unless stamped.",
+  refund_policy_note: "Refunds are processed in accordance with school management policies and audited ledger reconciliation.",
   allow_partial: true,
   min_partial_paise: 0,
   allow_advance: true,
@@ -2551,6 +2564,10 @@ export const DEFAULT_FEE_SETTINGS: Omit<FeeSettings, "school_id" | "created_at" 
   parent_pay_enabled: false,
   gateway_fee_bearer: "school",
   auto_print_receipt: false,
+  enable_cash_reconciliation: true,
+  invoice_prefix: "INV",
+  invoice_due_days: 15,
+  invoice_notes: "Payment due within 15 days of issue.",
   owner_pin_hash: null,
 };
 
@@ -2558,14 +2575,41 @@ export async function getFeeSettings(schoolId: string): Promise<{ settings: FeeS
   if (isSupabaseConfigured) {
     try {
       const { data } = await supabase.from("fee_settings").select("*").eq("school_id", schoolId).maybeSingle();
-      if (data) return { settings: data as FeeSettings };
+      if (data) {
+        return {
+          settings: {
+            ...DEFAULT_FEE_SETTINGS,
+            ...data,
+            receipt_theme: data.receipt_theme || DEFAULT_FEE_SETTINGS.receipt_theme,
+            receipt_terms: Array.isArray(data.receipt_terms) && data.receipt_terms.length > 0
+              ? data.receipt_terms
+              : DEFAULT_FEE_SETTINGS.receipt_terms,
+            receipt_footer: data.receipt_footer || DEFAULT_FEE_SETTINGS.receipt_footer,
+            refund_policy_note: data.refund_policy_note || DEFAULT_FEE_SETTINGS.refund_policy_note,
+            signatory_name: data.signatory_name || DEFAULT_FEE_SETTINGS.signatory_name,
+            signatory_designation: data.signatory_designation || DEFAULT_FEE_SETTINGS.signatory_designation,
+          } as FeeSettings,
+        };
+      }
     } catch { }
   }
   const stored = lsGetObj<FeeSettings | null>(FEE_SETTINGS_KEY(schoolId), null);
-  if (stored) return { settings: stored };
+  if (stored) {
+    return {
+      settings: {
+        ...DEFAULT_FEE_SETTINGS,
+        ...stored,
+        receipt_terms: Array.isArray(stored.receipt_terms) && stored.receipt_terms.length > 0
+          ? stored.receipt_terms
+          : DEFAULT_FEE_SETTINGS.receipt_terms,
+      },
+    };
+  }
   const defaults: FeeSettings = {
-    school_id: schoolId, ...DEFAULT_FEE_SETTINGS,
-    created_at: now(), updated_at: now(),
+    school_id: schoolId,
+    ...DEFAULT_FEE_SETTINGS,
+    created_at: now(),
+    updated_at: now(),
   };
   return { settings: defaults };
 }
@@ -2590,7 +2634,13 @@ export async function updateFeeSettings(
         .upsert({ school_id: schoolId, ...update }, { onConflict: "school_id" })
         .select().single();
       if (error) throw error;
-      return { settings: data as FeeSettings };
+      const merged: FeeSettings = {
+        ...DEFAULT_FEE_SETTINGS,
+        ...(data as any),
+        receipt_theme: data.receipt_theme || DEFAULT_FEE_SETTINGS.receipt_theme,
+      };
+      lsSetObj(FEE_SETTINGS_KEY(schoolId), merged);
+      return { settings: merged };
     } catch (e: any) { return { error: e.message }; }
   }
 
@@ -2598,6 +2648,134 @@ export async function updateFeeSettings(
   const merged: FeeSettings = { ...current, ...update, school_id: schoolId };
   lsSetObj(FEE_SETTINGS_KEY(schoolId), merged);
   return { settings: merged };
+}
+
+/**
+ * Upload authorized school signature image.
+ * Validates PNG format and maximum file size (2 MB).
+ * Scopes storage strictly to signatures/{schoolId}/...
+ */
+export async function uploadSchoolSignature(
+  schoolId: string,
+  file: File
+): Promise<{ url?: string; error?: string }> {
+  if (!schoolId) return { error: "School ID is required for signature upload." };
+
+  const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+  if (!isPng) {
+    return { error: "Invalid file type. Only transparent PNG images are supported for signatures." };
+  }
+
+  const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
+  if (file.size > MAX_SIZE_BYTES) {
+    return { error: `Signature file too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed size is 2 MB.` };
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      const ext = "png";
+      const filePath = `signatures/${schoolId}/${Date.now()}_${uuid().slice(0, 8)}.${ext}`;
+      const { data, error } = await supabase.storage.from("school-assets").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: "image/png",
+      });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage
+          .from("school-assets")
+          .getPublicUrl(data.path);
+        return { url: publicUrlData.publicUrl };
+      }
+      if (error) {
+        console.warn("Supabase storage upload error, falling back to base64:", error.message);
+      }
+    } catch (e: any) {
+      console.warn("Storage upload exception, falling back to base64:", e.message);
+    }
+  }
+
+  // Fallback: Read as Base64 Data URL (supports transparent PNG in mock/offline mode)
+  if (typeof FileReader !== "undefined") {
+    return new Promise<{ url?: string; error?: string }>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ url: reader.result as string });
+      reader.onerror = () => resolve({ error: "Failed to process signature image." });
+      reader.readAsDataURL(file);
+    });
+  }
+
+  try {
+    const buf = await file.arrayBuffer();
+    const base64 = Buffer.from(buf).toString("base64");
+    return { url: `data:${file.type || "image/png"};base64,${base64}` };
+  } catch {
+    return { url: `data:image/png;base64,mockPngSignature==` };
+  }
+}
+
+/**
+ * Upload school branding logo.
+ * Validates image type (PNG, JPEG, WebP) and size (3 MB).
+ * Scopes storage strictly to logos/{schoolId}/...
+ */
+export async function uploadSchoolLogo(
+  schoolId: string,
+  file: File
+): Promise<{ url?: string; error?: string }> {
+  if (!schoolId) return { error: "School ID is required for logo upload." };
+
+  const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+  const isAllowed = allowedTypes.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
+  if (!isAllowed) {
+    return { error: "Only PNG, JPG, or WebP images are allowed for school logo." };
+  }
+
+  const MAX_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
+  if (file.size > MAX_SIZE_BYTES) {
+    return { error: `Logo file too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed size is 3 MB.` };
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filePath = `logos/${schoolId}/${Date.now()}_${uuid().slice(0, 8)}_${safeName}`;
+      const { data, error } = await supabase.storage.from("school-assets").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage
+          .from("school-assets")
+          .getPublicUrl(data.path);
+        return { url: publicUrlData.publicUrl };
+      }
+      if (error) {
+        console.warn("Supabase logo upload error, falling back to base64:", error.message);
+      }
+    } catch (e: any) {
+      console.warn("Storage upload exception, falling back to base64:", e.message);
+    }
+  }
+
+  // Fallback: Read as Base64 Data URL
+  if (typeof FileReader !== "undefined") {
+    return new Promise<{ url?: string; error?: string }>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ url: reader.result as string });
+      reader.onerror = () => resolve({ error: "Failed to process logo image." });
+      reader.readAsDataURL(file);
+    });
+  }
+
+  try {
+    const buf = await file.arrayBuffer();
+    const base64 = Buffer.from(buf).toString("base64");
+    return { url: `data:${file.type || "image/png"};base64,${base64}` };
+  } catch {
+    return { url: `data:image/png;base64,mockPngLogo==` };
+  }
 }
 
 // ─── Owner PIN verification (rate-limited) ────────────────────────────────────

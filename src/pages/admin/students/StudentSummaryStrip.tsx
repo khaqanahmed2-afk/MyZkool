@@ -3,26 +3,21 @@ import {
   Users,
   UserCheck,
   UserPlus,
-  FileText,
   CreditCard,
-  Bus,
+  RotateCcw,
+  AlertCircle,
 } from "lucide-react";
 
-export interface StudentSummaryData {
-  totalStudents: number;
-  enrolledCount: number;
-  newAdmissionsCount: number;
-  feePendingCount: number;
-  boysCount?: number;
-  girlsCount?: number;
-  documentsPending?: number;
-  transportCount?: number;
-}
+import type { StudentSummaryData } from "../../../types/students";
+export type { StudentSummaryData };
 
 interface StudentSummaryStripProps {
   data: StudentSummaryData;
   activeFilter?: string;
   onFilterClick: (filterKey: string) => void;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 interface MetricCardConfig {
@@ -37,7 +32,14 @@ interface MetricCardConfig {
   description: string;
 }
 
-export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: StudentSummaryStripProps) {
+export function StudentSummaryStrip({
+  data,
+  activeFilter,
+  onFilterClick,
+  loading = false,
+  error = null,
+  onRetry,
+}: StudentSummaryStripProps) {
   const cards: MetricCardConfig[] = [
     {
       key: "all",
@@ -70,7 +72,7 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
       iconBg: "bg-indigo-50",
       activeRing: "ring-indigo-500",
       activeBg: "bg-indigo-50/50",
-      description: "This academic year",
+      description: "Admitted this academic year",
     },
     {
       key: "fee_pending",
@@ -81,9 +83,52 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
       iconBg: "bg-amber-50",
       activeRing: "ring-amber-500",
       activeBg: "bg-amber-50/50",
-      description: "With outstanding dues",
+      description: "Students with outstanding dues",
     },
   ];
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="p-4 bg-white border border-[#E6EAF3] rounded-2xl shadow-2xs space-y-3 animate-pulse"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-20 h-3 bg-slate-200 rounded-md" />
+              <div className="w-8 h-8 rounded-xl bg-slate-100" />
+            </div>
+            <div className="space-y-1.5 pt-1">
+              <div className="w-12 h-6 bg-slate-200 rounded-md" />
+              <div className="w-24 h-2.5 bg-slate-100 rounded-md" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-xs text-rose-700 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <span>Failed to load student statistics: {error}</span>
+        </div>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-rose-300 font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer shadow-2xs transition-colors"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Retry</span>
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -115,7 +160,7 @@ export function StudentSummaryStrip({ data, activeFilter, onFilterClick }: Stude
             </div>
             <div>
               <div className="text-2xl font-bold text-slate-900 tracking-tight font-display">
-                {card.count.toLocaleString()}
+                {(card.count || 0).toLocaleString()}
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5 truncate">
                 {card.description}
