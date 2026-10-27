@@ -73,11 +73,15 @@ export const StudentCreditsTab: React.FC<Props> = ({
                 </div>
                 <div className="text-right">
                   <span className="font-bold text-xs text-sky-700 tabular-nums">
-                    {formatPaise(cr.remaining_paise)} Remaining
+                    {formatPaise(cr.remaining_paise)} Available
                   </span>
-                  {cr.amount_paise > cr.remaining_paise && (
-                    <span className="block text-[10px] text-slate-400">
-                      (Initial: {formatPaise(cr.amount_paise)})
+                  {cr.amount_paise > cr.remaining_paise ? (
+                    <span className="block text-[10px] text-slate-500 tabular-nums">
+                      Applied: {formatPaise(cr.amount_paise - cr.remaining_paise)} | Original: {formatPaise(cr.amount_paise)}
+                    </span>
+                  ) : (
+                    <span className="block text-[10px] text-slate-400 tabular-nums">
+                      Original: {formatPaise(cr.amount_paise)} (Fully Available)
                     </span>
                   )}
                 </div>

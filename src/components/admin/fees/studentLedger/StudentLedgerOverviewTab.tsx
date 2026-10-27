@@ -255,112 +255,22 @@ export const StudentLedgerOverviewTab: React.FC<Props> = ({
         )}
       </div>
 
-      {/* 3. Recent Transactions Snapshot */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-            Recent Ledger Activity
-          </h4>
-          <button
-            type="button"
-            onClick={() => onNavigateTab("ledger")}
-            className="text-xs text-blue-600 font-semibold hover:text-blue-700 flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <span>View Full Ledger ({transactions.length})</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+      {/* 3. Streamlined Ledger Quick Access */}
+      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5 text-slate-700">
+          <Receipt className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>
+            Detailed chronological accounting history available with <strong>{transactions.length}</strong> journal entries.
+          </span>
         </div>
-
-        {recentTransactions.length === 0 ? (
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 text-center text-xs text-slate-500">
-            No transactions recorded for this student yet.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {recentTransactions.map((tx) => {
-              const isCredit = tx.credit_paise > 0;
-              const badge = getStatusBadgeConfig(tx.payment_status);
-
-              return (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  key={tx.id}
-                  onClick={() => onSelectTransaction(tx)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelectTransaction(tx);
-                    }
-                  }}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 bg-white hover:border-blue-300 hover:bg-blue-50/20 transition-all shadow-2xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        tx.type === "payment"
-                          ? "bg-emerald-50 text-emerald-600"
-                          : tx.type === "concession" || tx.type === "waiver"
-                          ? "bg-teal-50 text-teal-600"
-                          : tx.payment_status === "Overdue"
-                          ? "bg-rose-50 text-rose-600"
-                          : tx.category === "Transport"
-                          ? "bg-amber-50 text-amber-600"
-                          : "bg-blue-50 text-blue-600"
-                      }`}
-                    >
-                      {tx.type === "payment" ? (
-                        <Receipt className="w-4 h-4" />
-                      ) : tx.category === "Transport" ? (
-                        <Bus className="w-4 h-4" />
-                      ) : tx.type === "concession" || tx.type === "waiver" ? (
-                        <ShieldCheck className="w-4 h-4" />
-                      ) : (
-                        <Receipt className="w-4 h-4" />
-                      )}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-800 truncate">
-                        {tx.description}
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-slate-700 font-semibold">
-                          {tx.ref_no}
-                        </span>
-                        <span>•</span>
-                        <span>{tx.billing_period || tx.period || "—"}</span>
-                        <span>•</span>
-                        <span>{formatDateDisplay(tx.date)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0 ml-3">
-                    <div
-                      className={`text-xs font-bold tabular-nums ${
-                        isCredit ? "text-emerald-700" : "text-slate-900"
-                      }`}
-                    >
-                      {isCredit ? `- ${formatPaise(tx.credit_paise)}` : formatPaise(tx.debit_paise)}
-                    </div>
-                    <span
-                      className={`inline-block text-[10px] font-semibold mt-0.5 ${
-                        tx.payment_status === "Paid" || tx.payment_status === "Received" || tx.payment_status === "Waived"
-                          ? "text-emerald-700"
-                          : tx.payment_status === "Overdue"
-                          ? "text-rose-600"
-                          : "text-amber-700"
-                      }`}
-                    >
-                      {tx.payment_status}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => onNavigateTab("ledger")}
+          className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 cursor-pointer"
+        >
+          <span>Open Full Ledger Journal</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );

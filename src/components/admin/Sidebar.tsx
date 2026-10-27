@@ -76,7 +76,15 @@ const NAVIGATION: NavItem[] = [
   { label: "Library", href: "/admin/library", icon: BookOpen },
   { label: "Inventory", href: "/admin/inventory", icon: Package },
   { label: "Staff", href: "/admin/staff", icon: Briefcase },
-  { label: "Settings", href: "/admin/settings/classes", icon: Settings },
+  {
+    label: "Settings",
+    href: "/admin/settings",
+    icon: Settings,
+    children: [
+      { label: "Classes & Sections", href: "/admin/settings/classes" },
+      { label: "Data Purge & Privacy", href: "/admin/settings/privacy" },
+    ],
+  },
 ];
 
 export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
@@ -89,9 +97,9 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   useEffect(() => {
     if (!school?.id) return;
     checkSchoolFeature(school.id, "transport").then(setHasTransport).catch(() => setHasTransport(false));
-    getPendingCount(school.id).then((count) => setPendingApprovals(count)).catch(() => {});
+    getPendingCount(school.id).then((count) => setPendingApprovals(count)).catch(() => { });
     const timer = setInterval(() => {
-      getPendingCount(school.id).then((count) => setPendingApprovals(count)).catch(() => {});
+      getPendingCount(school.id).then((count) => setPendingApprovals(count)).catch(() => { });
     }, 30_000);
     return () => clearInterval(timer);
   }, [school?.id]);
@@ -165,9 +173,8 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen w-64 bg-white border-r border-[#E6EAF3] z-50 flex flex-col transition-transform duration-300 ease-in-out shadow-lg md:shadow-none ${
-          isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-        }`}
+        className={`fixed top-0 left-0 h-screen w-64 bg-white border-r border-[#E6EAF3] z-50 flex flex-col transition-transform duration-300 ease-in-out shadow-lg md:shadow-none ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          }`}
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-[#E6EAF3] shrink-0">
@@ -207,38 +214,33 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
                   <button
                     type="button"
                     onClick={() => toggleSection(item.href)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                      parentOnRoute
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${parentOnRoute
                         ? "bg-blue-50 text-[#2158E0] font-semibold"
                         : "text-[#5B6478] hover:bg-gray-50 hover:text-[#141A2E]"
-                    }`}
+                      }`}
                   >
                     <Icon
-                      className={`w-4 h-4 shrink-0 ${
-                        parentOnRoute
+                      className={`w-4 h-4 shrink-0 ${parentOnRoute
                           ? "text-[#2158E0]"
                           : "text-[#5B6478]"
-                      }`}
+                        }`}
                     />
                     <span className="flex-1 text-left">{item.label}</span>
                     <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                        isExpanded ? "rotate-180" : ""
-                      } ${
-                        parentOnRoute
+                      className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""
+                        } ${parentOnRoute
                           ? "text-[#2158E0]"
                           : "text-[#94A3B8]"
-                      }`}
+                        }`}
                     />
                   </button>
                 ) : (
                   <Link
                     to={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                      exactActive
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${exactActive
                         ? "bg-[#2158E0] text-white shadow-sm"
                         : "text-[#5B6478] hover:bg-[#F0F5FE] hover:text-[#2158E0]"
-                    }`}
+                      }`}
                     onClick={() => { if (window.innerWidth < 768) onClose(); }}
                   >
                     <Icon className={`w-4 h-4 shrink-0 ${exactActive ? "text-white" : "text-[#5B6478]"}`} />
@@ -265,11 +267,10 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
                         <Link
                           key={child.href}
                           to={child.href}
-                          className={`flex items-center px-2.5 py-2 rounded-lg text-xs font-medium transition-colors ${
-                            childActive
+                          className={`flex items-center px-2.5 py-2 rounded-lg text-xs font-medium transition-colors ${childActive
                               ? "bg-blue-50 text-[#2158E0] font-bold"
                               : "text-[#5B6478] hover:bg-slate-50 hover:text-[#141A2E]"
-                          }`}
+                            }`}
                           onClick={() => { if (window.innerWidth < 768) onClose(); }}
                         >
                           {child.label}

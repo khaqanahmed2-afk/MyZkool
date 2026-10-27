@@ -55,6 +55,7 @@ const StudentPromotionPipeline = lazy(() => import("../pages/admin/students/Stud
 const StudentTCRegister = lazy(() => import("../pages/admin/students/StudentTCRegister"));
 const StudentIdCards = lazy(() => import("../pages/admin/students/StudentIdCards"));
 const ClassesSettings = lazy(() => import("../pages/admin/settings/ClassesSettings"));
+const DataDeletionSettings = lazy(() => import("../pages/admin/settings/DataDeletionSettings"));
 
 // Fees Management
 const FeeSetupChecklist = lazy(() => import("../pages/admin/fees/FeeSetupChecklist"));
@@ -67,6 +68,7 @@ const FeeSettingsPage = lazy(() => import("../pages/admin/fees/FeeSettingsPage")
 const ReceiptPreviewPage = lazy(() => import("../pages/admin/fees/ReceiptPreviewPage"));
 const DuesGenerationPage = lazy(() => import("../pages/admin/fees/DuesGenerationPage"));
 const InvoicesPage = lazy(() => import("../pages/admin/fees/InvoicesPage"));
+const InvoiceDetailPage = lazy(() => import("../pages/admin/fees/InvoiceDetailPage"));
 const ApprovalsPage = lazy(() => import("../pages/admin/approvals/ApprovalsPage"));
 const FeeCollectionsPage = lazy(() => import("../pages/admin/fees/FeeCollectionsPage"));
 const FeeCollectPage = lazy(() => import("../pages/admin/fees/FeeCollectPage"));
@@ -194,10 +196,10 @@ export default function AppRoutes() {
             <Route path="fees/setup/late-fees" element={<LateFeeRulesPage />} />
             <Route path="fees/setup/settings" element={<FeeSettingsPage />} />
             <Route path="fees/receipt-preview" element={<ReceiptPreviewPage />} />
-            <Route path="fees/settings" element={<Navigate to="/admin/fees/setup/settings" replace />} />
-            <Route path="fees/invoice-settings" element={<Navigate to="/admin/fees/setup/settings" replace />} />
+            <Route path="fees/invoice-settings" element={<FeeSettingsPage />} />
             <Route path="fees/dues" element={<InvoicesPage />} />
             <Route path="fees/invoices" element={<InvoicesPage />} />
+            <Route path="fees/invoices/:id" element={<InvoiceDetailPage />} />
             <Route path="fees/assign" element={<InvoicesPage />} />
             <Route path="fees/collections" element={<FeeCollectionsPage />} />
             <Route path="fees/collect" element={<FeeCollectPage />} />
@@ -229,6 +231,8 @@ export default function AppRoutes() {
             <Route path="reports" element={<ModulePlaceholder />} />
             <Route path="settings" element={<ClassesSettings />} />
             <Route path="settings/classes" element={<ClassesSettings />} />
+            <Route path="settings/privacy" element={<DataDeletionSettings />} />
+            <Route path="settings/deletion" element={<DataDeletionSettings />} />
           </Route>
 
           {/* 404 Catch-All */}

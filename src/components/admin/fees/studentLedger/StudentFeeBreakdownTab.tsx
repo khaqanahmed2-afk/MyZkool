@@ -35,20 +35,31 @@ export const StudentFeeBreakdownTab: React.FC<Props> = ({
   metrics,
 }) => {
   const [filter, setFilter] = useState<FilterType>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [page, setPage] = useState<number>(1);
   const pageSize = 8;
 
-  // Filter items
+  // Filter items by status and search query
   const filtered = useMemo(() => {
     return feeBreakdown.filter((item) => {
-      if (filter === "outstanding") return item.pending_paise > 0;
-      if (filter === "overdue") return item.status === "Overdue" || (item.pending_paise > 0 && item.status.toLowerCase() === "overdue");
-      if (filter === "paid") return item.status === "Paid" || (item.pending_paise === 0 && item.paid_paise > 0);
-      if (filter === "waived") return item.status === "Waived" || item.waived_paise > 0;
+      // Status filter
+      if (filter === "outstanding" && item.pending_paise <= 0) return false;
+      if (filter === "overdue" && item.status !== "Overdue" && !(item.pending_paise > 0 && item.status.toLowerCase() === "overdue")) return false;
+      if (filter === "paid" && item.status !== "Paid" && !(item.pending_paise === 0 && item.paid_paise > 0)) return false;
+      if (filter === "waived" && item.status !== "Waived" && item.waived_paise <= 0) return false;
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchesDesc = item.description.toLowerCase().includes(q);
+        const matchesPeriod = item.billing_period.toLowerCase().includes(q);
+        const matchesCat = (item.category || "").toLowerCase().includes(q);
+        if (!matchesDesc && !matchesPeriod && !matchesCat) return false;
+      }
       return true;
     });
-  }, [feeBreakdown, filter]);
+  }, [feeBreakdown, filter, searchQuery]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -58,7 +69,7 @@ export const StudentFeeBreakdownTab: React.FC<Props> = ({
     return filtered.slice(start, start + pageSize);
   }, [filtered, currentPage, pageSize]);
 
-  // Counts for pills
+  // Counts for pills (based on whole dataset)
   const counts = useMemo(() => {
     let outstanding = 0;
     let overdue = 0;
@@ -66,7 +77,7 @@ export const StudentFeeBreakdownTab: React.FC<Props> = ({
     let waived = 0;
     for (const item of feeBreakdown) {
       if (item.pending_paise > 0) outstanding++;
-      if (item.status === "Overdue") overdue++;
+      if (item.status === "Overdue" || (item.pending_paise > 0 && item.status.toLowerCase() === "overdue")) overdue++;
       if (item.status === "Paid" || (item.pending_paise === 0 && item.paid_paise > 0)) paid++;
       if (item.status === "Waived" || item.waived_paise > 0) waived++;
     }
@@ -86,61 +97,79 @@ export const StudentFeeBreakdownTab: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
-      {/* Header and Filter Pills */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Header and Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
             Fee-Wise Obligations & Balances
           </h4>
           <p className="text-[11px] text-slate-500">
-            Canonical schedule of assessed fee components, applied waivers, payments, and balances
+            Assessed fee schedule components, approved concessions, paid settlements, and balances
           </p>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <button
-            type="button"
-            onClick={() => {
-              setFilter("all");
-              setPage(1);
-            }}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              filter === "all"
-                ? "bg-blue-600 text-white shadow-2xs"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            All ({counts.all})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFilter("outstanding");
-              setPage(1);
-            }}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              filter === "outstanding"
-                ? "bg-amber-600 text-white shadow-2xs"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            Outstanding ({counts.outstanding})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFilter("overdue");
-              setPage(1);
-            }}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              filter === "overdue"
-                ? "bg-rose-600 text-white shadow-2xs"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            Overdue ({counts.overdue})
-          </button>
+        {/* Search Bar & Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search obligations..."
+              className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
+            />
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("all");
+                setPage(1);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                filter === "all"
+                  ? "bg-blue-600 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              All ({counts.all})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("outstanding");
+                setPage(1);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                filter === "outstanding"
+                  ? "bg-amber-600 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              Outstanding ({counts.outstanding})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("overdue");
+                setPage(1);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                filter === "overdue"
+                  ? "bg-rose-600 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+              title="Overdue items are an overdue subset of outstanding obligations"
+            >
+              Overdue ({counts.overdue})
+            </button>
           <button
             type="button"
             onClick={() => {
@@ -171,6 +200,7 @@ export const StudentFeeBreakdownTab: React.FC<Props> = ({
               Waived ({counts.waived})
             </button>
           )}
+        </div>
         </div>
       </div>
 

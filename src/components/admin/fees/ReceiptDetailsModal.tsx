@@ -7,9 +7,10 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { formatPaise } from "../../../lib/amountInWords";
-import { generateReceiptHTML } from "../../../lib/receiptTemplate";
+import { generateReceiptHTML, isUUID } from "../../../lib/receiptTemplate";
 import { cancelReceipt, getReceiptById } from "../../../services/collectionService";
 import { getFeeSettings } from "../../../services/feeSetupService";
+import { getStudentBalance } from "../../../services/feeDuesService";
 import { useAuth } from "../../../context/AuthContext";
 import type { EnrichedTransaction } from "../../../services/feeCollectionsQueryService";
 import type { FeeReceipt, FeeReceiptItem, FeePayment } from "../../../types/collection";
@@ -137,7 +138,19 @@ const ReceiptCancelConfirmBox: React.FC<ReceiptCancelConfirmBoxProps> = ({
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. DETAILS METRICS GRID
 // ─────────────────────────────────────────────────────────────────────────────
-const ReceiptDetailsGrid: React.FC<{ transaction: EnrichedTransaction }> = ({ transaction }) => {
+const ReceiptDetailsGrid: React.FC<{
+  transaction: EnrichedTransaction;
+  collectorName?: string;
+  studentBalancePaise?: number | null;
+  balanceLoading?: boolean;
+}> = ({ transaction, collectorName, studentBalancePaise, balanceLoading }) => {
+  const displayCollector =
+    collectorName && !isUUID(collectorName)
+      ? collectorName
+      : transaction.collected_by_name && !isUUID(transaction.collected_by_name)
+      ? transaction.collected_by_name
+      : "Authorized Staff";
+
   return (
     <div className="grid grid-cols-2 gap-4 text-xs">
       <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
@@ -148,9 +161,29 @@ const ReceiptDetailsGrid: React.FC<{ transaction: EnrichedTransaction }> = ({ tr
       </div>
 
       <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
+        <span className="text-gray-400 block mb-1">Remaining Balance</span>
+        <span className={`text-base font-extrabold ${studentBalancePaise && studentBalancePaise > 0 ? "text-red-600" : "text-emerald-600"}`}>
+          {balanceLoading ? (
+            <span className="text-xs text-gray-400 font-normal">Checking ledger...</span>
+          ) : studentBalancePaise !== null && studentBalancePaise !== undefined ? (
+            formatPaise(studentBalancePaise)
+          ) : (
+            <span className="text-xs text-amber-600 font-normal">Pending Verification</span>
+          )}
+        </span>
+      </div>
+
+      <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
         <span className="text-gray-400 block mb-1">Payment Method</span>
         <span className="text-sm font-bold uppercase text-gray-800">
           {transaction.payment_method}
+        </span>
+      </div>
+
+      <div className="p-3 bg-white border border-[#E6EAF3] rounded-xl">
+        <span className="text-gray-400 block mb-1">Collected By</span>
+        <span className="text-sm font-semibold text-gray-800 truncate block">
+          {displayCollector}
         </span>
       </div>
 
@@ -282,31 +315,43 @@ function executeReceiptPrint(
   realItems: FeeReceiptItem[],
   realPayments: FeePayment[],
   schoolId: string | null | undefined,
-  school: { name?: string; address?: string; contact_phone?: string; logo_url?: string } | null,
+  school: { name?: string; address?: string; contact_phone?: string; logo_url?: string; signature_url?: string } | null,
   isCancelled: boolean,
-  feeSettings?: FeeSettings | null
+  feeSettings?: FeeSettings | null,
+  studentBalancePaise?: number | null,
+  collectorName?: string | null
 ) {
-  const receiptToUse: FeeReceipt = realReceipt || {
-    id: transaction.receipt_id,
-    school_id: schoolId || "",
-    receipt_no: transaction.receipt_no,
-    student_id: transaction.student_id,
-    academic_year_id: transaction.academic_year_id || "2026-2027",
-    receipt_date: transaction.receipt_date,
-    total_paise: transaction.amount_paise,
-    status: isCancelled ? "cancelled" : "active",
-    source: transaction.payment_method === "online" ? "online" : "counter",
-    payment_group_id: null,
-    collected_by: transaction.collected_by_name || null,
-    remarks: transaction.remarks || null,
-    idempotency_key: null,
-    print_count: 1,
-    whatsapp_sent_at: null,
-    cancelled_by: null,
-    cancelled_at: null,
-    cancel_reason: null,
-    created_at: transaction.created_at,
-    updated_at: transaction.created_at,
+  const resolvedCollector =
+    (!isUUID(collectorName) ? collectorName : null) ||
+    (!isUUID(realReceipt?.collected_by) ? realReceipt?.collected_by : null) ||
+    (realReceipt as any)?.collected_by_name ||
+    (!isUUID(transaction.collected_by_name) ? transaction.collected_by_name : null) ||
+    "Authorized Staff";
+
+  const receiptToUse: FeeReceipt = {
+    ...(realReceipt || {
+      id: transaction.receipt_id,
+      school_id: schoolId || "",
+      receipt_no: transaction.receipt_no,
+      student_id: transaction.student_id,
+      academic_year_id: transaction.academic_year_id || "2026-2027",
+      receipt_date: transaction.receipt_date,
+      total_paise: transaction.amount_paise,
+      status: isCancelled ? "cancelled" : "active",
+      source: transaction.payment_method === "online" ? "online" : "counter",
+      payment_group_id: null,
+      collected_by: resolvedCollector,
+      remarks: transaction.remarks || null,
+      idempotency_key: null,
+      print_count: 1,
+      whatsapp_sent_at: null,
+      cancelled_by: null,
+      cancelled_at: null,
+      cancel_reason: null,
+      created_at: transaction.created_at,
+      updated_at: transaction.created_at,
+    }),
+    collected_by: resolvedCollector,
   };
 
   const itemsToUse: FeeReceiptItem[] =
@@ -351,14 +396,14 @@ function executeReceiptPrint(
       admission_no: transaction.admission_no,
       class_name: transaction.class_name,
       section_name: transaction.section_name,
-      balance_remaining_paise: 0,
+      balance_remaining_paise: typeof studentBalancePaise === "number" ? studentBalancePaise : undefined,
     },
     {
       name: school?.name || feeSettings?.receipt_header_title || "School",
       address: school?.address || "Main Campus",
       phone: school?.contact_phone || "+91 98765 43210",
       logo_url: feeSettings?.logo_url || school?.logo_url,
-      signature_url: feeSettings?.signature_url,
+      signature_url: feeSettings?.signature_url || (school as any)?.signature_url || null,
       signatory_name: feeSettings?.signatory_name,
       signatory_designation: feeSettings?.signatory_designation,
       terms: feeSettings?.receipt_terms,
@@ -371,6 +416,8 @@ function executeReceiptPrint(
     feeSettings,
     {
       invoiceNo: transaction.invoice_numbers.join(", "),
+      collectedByName: resolvedCollector,
+      balanceUnverified: studentBalancePaise === null || studentBalancePaise === undefined,
     }
   );
 
@@ -389,31 +436,43 @@ function executeReceiptDownload(
   realItems: FeeReceiptItem[],
   realPayments: FeePayment[],
   schoolId: string | null | undefined,
-  school: { name?: string; address?: string; contact_phone?: string; logo_url?: string } | null,
+  school: { name?: string; address?: string; contact_phone?: string; logo_url?: string; signature_url?: string } | null,
   isCancelled: boolean,
-  feeSettings?: FeeSettings | null
+  feeSettings?: FeeSettings | null,
+  studentBalancePaise?: number | null,
+  collectorName?: string | null
 ) {
-  const receiptToUse: FeeReceipt = realReceipt || {
-    id: transaction.receipt_id,
-    school_id: schoolId || "",
-    receipt_no: transaction.receipt_no,
-    student_id: transaction.student_id,
-    academic_year_id: transaction.academic_year_id || "2026-2027",
-    receipt_date: transaction.receipt_date,
-    total_paise: transaction.amount_paise,
-    status: isCancelled ? "cancelled" : "active",
-    source: transaction.payment_method === "online" ? "online" : "counter",
-    payment_group_id: null,
-    collected_by: transaction.collected_by_name || null,
-    remarks: transaction.remarks || null,
-    idempotency_key: null,
-    print_count: 1,
-    whatsapp_sent_at: null,
-    cancelled_by: null,
-    cancelled_at: null,
-    cancel_reason: null,
-    created_at: transaction.created_at,
-    updated_at: transaction.created_at,
+  const resolvedCollector =
+    (!isUUID(collectorName) ? collectorName : null) ||
+    (!isUUID(realReceipt?.collected_by) ? realReceipt?.collected_by : null) ||
+    (realReceipt as any)?.collected_by_name ||
+    (!isUUID(transaction.collected_by_name) ? transaction.collected_by_name : null) ||
+    "Authorized Staff";
+
+  const receiptToUse: FeeReceipt = {
+    ...(realReceipt || {
+      id: transaction.receipt_id,
+      school_id: schoolId || "",
+      receipt_no: transaction.receipt_no,
+      student_id: transaction.student_id,
+      academic_year_id: transaction.academic_year_id || "2026-2027",
+      receipt_date: transaction.receipt_date,
+      total_paise: transaction.amount_paise,
+      status: isCancelled ? "cancelled" : "active",
+      source: transaction.payment_method === "online" ? "online" : "counter",
+      payment_group_id: null,
+      collected_by: resolvedCollector,
+      remarks: transaction.remarks || null,
+      idempotency_key: null,
+      print_count: 1,
+      whatsapp_sent_at: null,
+      cancelled_by: null,
+      cancelled_at: null,
+      cancel_reason: null,
+      created_at: transaction.created_at,
+      updated_at: transaction.created_at,
+    }),
+    collected_by: resolvedCollector,
   };
 
   const itemsToUse: FeeReceiptItem[] =
@@ -458,14 +517,14 @@ function executeReceiptDownload(
       admission_no: transaction.admission_no,
       class_name: transaction.class_name,
       section_name: transaction.section_name,
-      balance_remaining_paise: 0,
+      balance_remaining_paise: typeof studentBalancePaise === "number" ? studentBalancePaise : undefined,
     },
     {
       name: school?.name || feeSettings?.receipt_header_title || "School",
       address: school?.address || "Main Campus",
       phone: school?.contact_phone || "+91 98765 43210",
       logo_url: feeSettings?.logo_url || school?.logo_url,
-      signature_url: feeSettings?.signature_url,
+      signature_url: feeSettings?.signature_url || (school as any)?.signature_url || null,
       signatory_name: feeSettings?.signatory_name,
       signatory_designation: feeSettings?.signatory_designation,
       terms: feeSettings?.receipt_terms,
@@ -478,6 +537,8 @@ function executeReceiptDownload(
     feeSettings,
     {
       invoiceNo: transaction.invoice_numbers.join(", "),
+      collectedByName: resolvedCollector,
+      balanceUnverified: studentBalancePaise === null || studentBalancePaise === undefined,
     }
   );
 
@@ -513,11 +574,18 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  // Real database items and payments
+  // Real database items, payments, balance & collector
   const isLoadingDetailsRef = useRef(false);
   const [realReceipt, setRealReceipt] = useState<FeeReceipt | null>(null);
   const [realItems, setRealItems] = useState<FeeReceiptItem[]>([]);
   const realPaymentsRef = useRef<FeePayment[]>([]);
+  const [studentBalancePaise, setStudentBalancePaise] = useState<number | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState<boolean>(true);
+  const [collectorDisplayName, setCollectorDisplayName] = useState<string>(
+    transaction?.collected_by_name && !isUUID(transaction.collected_by_name)
+      ? transaction.collected_by_name
+      : "Authorized Staff"
+  );
 
   useEffect(() => {
     if (!schoolId) return;
@@ -530,6 +598,7 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
     if (!schoolId || !transaction?.receipt_id) return;
     let isMounted = true;
     isLoadingDetailsRef.current = true;
+    setBalanceLoading(true);
 
     getReceiptById(schoolId, transaction.receipt_id)
       .then((res) => {
@@ -537,6 +606,15 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
         if (res.receipt) setRealReceipt(res.receipt);
         if (res.items) setRealItems(res.items);
         if (res.payments) realPaymentsRef.current = res.payments;
+        if (res.collectorName) {
+          setCollectorDisplayName(res.collectorName);
+        } else if (res.receipt?.collected_by && !isUUID(res.receipt.collected_by)) {
+          setCollectorDisplayName(res.receipt.collected_by);
+        }
+        if (typeof res.remainingBalancePaise === "number") {
+          setStudentBalancePaise(res.remainingBalancePaise);
+          setBalanceLoading(false);
+        }
       })
       .catch((err) => {
         console.warn("Failed to load real receipt items:", err);
@@ -545,10 +623,27 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
         if (isMounted) isLoadingDetailsRef.current = false;
       });
 
+    // Authoritative verification against student's dues ledger
+    if (transaction?.student_id) {
+      getStudentBalance(schoolId, transaction.student_id)
+        .then((balRes) => {
+          if (!isMounted) return;
+          if (balRes && typeof balRes.balance === "number") {
+            setStudentBalancePaise(balRes.balance);
+          }
+        })
+        .catch((err) => {
+          console.warn("Failed to fetch authoritative student balance:", err);
+        })
+        .finally(() => {
+          if (isMounted) setBalanceLoading(false);
+        });
+    }
+
     return () => {
       isMounted = false;
     };
-  }, [schoolId, transaction?.receipt_id]);
+  }, [schoolId, transaction?.receipt_id, transaction?.student_id]);
 
   if (!transaction) return null;
 
@@ -567,7 +662,9 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
       schoolId,
       school,
       isCancelled,
-      feeSettings
+      feeSettings,
+      studentBalancePaise,
+      collectorDisplayName
     );
   };
 
@@ -580,7 +677,9 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
       schoolId,
       school,
       isCancelled,
-      feeSettings
+      feeSettings,
+      studentBalancePaise,
+      collectorDisplayName
     );
   };
 
@@ -651,7 +750,12 @@ const ReceiptDetailsModalContent: React.FC<ReceiptDetailsModalProps> = ({
           </div>
 
           {/* Details Grid */}
-          <ReceiptDetailsGrid transaction={transaction} />
+          <ReceiptDetailsGrid
+            transaction={transaction}
+            collectorName={collectorDisplayName}
+            studentBalancePaise={studentBalancePaise}
+            balanceLoading={balanceLoading}
+          />
 
           {/* Fee Items Breakdown */}
           <ReceiptLineItemsBreakdown realItems={realItems} remarks={transaction.remarks} />

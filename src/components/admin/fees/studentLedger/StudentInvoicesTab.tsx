@@ -64,6 +64,7 @@ export const StudentInvoicesTab: React.FC<Props> = ({
                   <th className="py-2.5 px-3 w-8"></th>
                   <th className="py-2.5 px-3">Invoice #</th>
                   <th className="py-2.5 px-3">Billing Period</th>
+                  <th className="py-2.5 px-3">Issue Date</th>
                   <th className="py-2.5 px-3">Due Date</th>
                   <th className="py-2.5 px-3 text-right">Total Amount</th>
                   <th className="py-2.5 px-3 text-right">Paid</th>
@@ -104,12 +105,23 @@ export const StudentInvoicesTab: React.FC<Props> = ({
 
                         {/* Invoice Number */}
                         <td className="py-2.5 px-3 font-semibold text-slate-900 font-mono text-[11px]">
-                          {inv.invoice_no}
+                          <a
+                            href={`/admin/fees/invoices/${encodeURIComponent(inv.id || inv.invoice_no)}`}
+                            className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            <span>{inv.invoice_no}</span>
+                            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                          </a>
                         </td>
 
                         {/* Billing Period */}
                         <td className="py-2.5 px-3 text-slate-600 text-[11px] whitespace-nowrap">
                           {inv.billing_period}
+                        </td>
+
+                        {/* Issue Date */}
+                        <td className="py-2.5 px-3 text-slate-500 text-[11px] whitespace-nowrap">
+                          {formatDateDisplay(inv.invoice_date || (inv as any).created_at)}
                         </td>
 
                         {/* Due Date */}
@@ -157,6 +169,13 @@ export const StudentInvoicesTab: React.FC<Props> = ({
                         {/* Actions */}
                         <td className="py-2.5 px-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
+                            <a
+                              href={`/admin/fees/invoices/${encodeURIComponent(inv.id || inv.invoice_no)}`}
+                              className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="Open Dedicated Invoice Details Page"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
                             <button
                               type="button"
                               onClick={() => onPrintInvoice(inv)}

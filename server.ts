@@ -6,6 +6,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import dotenv from "dotenv";
 import { transportRouter } from "./src/routes/transportRoutes";
 import { razorpayRouter } from "./src/routes/razorpayRoutes";
+import { deletionRouter } from "./src/routes/deletionRoutes";
 import { getSchoolBySubdomain } from "./src/services/schoolService";
 import { apiErrorHandler } from "./src/middleware/errorHandler";
 
@@ -18,6 +19,7 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 app.use(express.json({ limit: "25mb" }));
 app.use(razorpayRouter);
 app.use("/api/transport", transportRouter);
+app.use("/api/deletion", deletionRouter);
 
 // Lazy initialize Gemini AI SDK
 let aiClient: GoogleGenAI | null = null;

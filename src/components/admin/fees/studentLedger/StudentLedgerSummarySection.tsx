@@ -101,7 +101,13 @@ export const StudentLedgerSummarySection: React.FC<Props> = ({ ledgerDetails }) 
 
           <div className="mt-1.5 pt-1.5 border-t border-emerald-100/70 text-[10px] text-emerald-700/90 font-medium">
             {totalPaid > 0 ? (
-              <span>{ledgerDetails.payments.length} verified payment receipt{ledgerDetails.payments.length === 1 ? "" : "s"}</span>
+              <span>
+                {ledgerDetails.payments.length > 0
+                  ? `${ledgerDetails.payments.length} verified receipt voucher${ledgerDetails.payments.length === 1 ? "" : "s"}${
+                      ledgerDetails.unreceipted_settlement ? " + direct settlements" : ""
+                    }`
+                  : "Settled direct / legacy fee allocations"}
+              </span>
             ) : (
               <span className="text-emerald-600/70">No payments recorded</span>
             )}
@@ -129,7 +135,9 @@ export const StudentLedgerSummarySection: React.FC<Props> = ({ ledgerDetails }) 
 
           <div className="mt-1.5 pt-1.5 border-t border-amber-100/70 text-[10px] opacity-80 flex items-center justify-between">
             <span>
-              {outstandingBalance === 0
+              {advanceCredits > 0
+                ? `Payable after credit: ${formatPaise(Math.max(0, outstandingBalance - advanceCredits))}`
+                : outstandingBalance === 0
                 ? "All dues settled"
                 : student.next_due_date
                 ? `Next due: ${student.next_due_date}`
@@ -201,21 +209,39 @@ export const StudentLedgerSummarySection: React.FC<Props> = ({ ledgerDetails }) 
           </div>
         )}
 
-        {/* Advance Credit Counter Deposit Banner */}
+        {/* Advance Credit Counter Deposit Banner with 3-Point Reconciled Formula */}
         {advanceCredits > 0 && (
-          <div className="p-2.5 bg-sky-50/80 border border-sky-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 text-sky-900 font-semibold">
-              <Wallet className="w-4 h-4 text-sky-600 shrink-0" />
-              <span>
-                Unallocated Advance Credit Available:{" "}
-                <span className="font-bold tabular-nums text-sky-950">
-                  {formatPaise(advanceCredits)}
-                </span>
+          <div className="p-3 bg-sky-50/80 border border-sky-200 rounded-xl space-y-1.5 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sky-900 font-semibold">
+                <Wallet className="w-4 h-4 text-sky-600 shrink-0" />
+                <span>Advance Fee Credit Settlement Model</span>
+              </div>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800">
+                Unallocated Credit
               </span>
             </div>
-            <span className="text-[11px] text-sky-700 font-medium">
-              Automatically offsets subsequent billing cycles and future dues
-            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-sky-200/60 text-[11px]">
+              <div>
+                <span className="text-slate-500">Outstanding before credit:</span>{" "}
+                <span className="font-bold text-slate-800 tabular-nums">
+                  {formatPaise(outstandingBalance)}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500">Available advance credit:</span>{" "}
+                <span className="font-bold text-sky-700 tabular-nums">
+                  {formatPaise(advanceCredits)}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500">Payable after available credit:</span>{" "}
+                <span className="font-bold text-emerald-800 tabular-nums">
+                  {formatPaise(Math.max(0, outstandingBalance - advanceCredits))}
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </div>

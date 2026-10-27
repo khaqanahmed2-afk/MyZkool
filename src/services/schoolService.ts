@@ -872,3 +872,150 @@ export async function completeOnboarding({
     school: updatedSchool,
   };
 }
+
+/**
+ * Updates the authoritative school logo in `public.schools`
+ * and synchronizes with `fee_settings.logo_url` for backwards compatibility.
+ */
+export async function updateCentralSchoolLogo(
+  schoolId: string,
+  logoUrl: string | null
+): Promise<{ success: boolean; error?: string }> {
+  if (!schoolId) return { success: false, error: "School ID is required." };
+  const timestamp = new Date().toISOString();
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Update authoritative school profile
+      const { error: schoolErr } = await supabase
+        .from("schools")
+        .update({ logo_url: logoUrl, updated_at: timestamp })
+        .eq("id", schoolId);
+
+      if (schoolErr) {
+        console.warn("Supabase updateCentralSchoolLogo error on schools table:", schoolErr.message);
+      }
+
+      // 2. Sync to fee_settings compatibility layer
+      try {
+        await supabase
+          .from("fee_settings")
+          .update({ logo_url: logoUrl, updated_at: timestamp })
+          .eq("school_id", schoolId);
+      } catch {
+        // Non-fatal compatibility sync
+      }
+    } catch (e: any) {
+      console.warn("Exception updating central school logo:", e);
+    }
+  }
+
+  // 3. Local storage update
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(LOCAL_STORAGE_KEY_PREFIX)) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const sc = JSON.parse(raw);
+              if (sc.id === schoolId) {
+                sc.logo_url = logoUrl || undefined;
+                sc.updated_at = timestamp;
+                localStorage.setItem(key, JSON.stringify(sc));
+              }
+            } catch {}
+          }
+        }
+      }
+      // Also update fee_settings cached object
+      const feeKey = `myzkool_fee_settings_${schoolId}`;
+      const feeRaw = localStorage.getItem(feeKey);
+      if (feeRaw) {
+        try {
+          const fs = JSON.parse(feeRaw);
+          fs.logo_url = logoUrl;
+          localStorage.setItem(feeKey, JSON.stringify(fs));
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return { success: true };
+}
+
+/**
+ * Updates school branding and contact info in `public.schools`
+ * without touching unrelated school configuration.
+ */
+export async function updateCentralSchoolInfo(
+  schoolId: string,
+  info: {
+    name?: string;
+    address?: string;
+    contact_phone?: string;
+    official_email?: string;
+    logo_url?: string | null;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  if (!schoolId) return { success: false, error: "School ID is required." };
+  const timestamp = new Date().toISOString();
+
+  const updatePayload: Record<string, any> = { updated_at: timestamp };
+  if (info.name !== undefined) updatePayload.name = info.name.trim();
+  if (info.address !== undefined) updatePayload.address = info.address.trim();
+  if (info.contact_phone !== undefined) updatePayload.contact_phone = info.contact_phone.trim();
+  if (info.official_email !== undefined) updatePayload.official_email = info.official_email.trim().toLowerCase();
+  if (info.logo_url !== undefined) updatePayload.logo_url = info.logo_url;
+
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase
+        .from("schools")
+        .update(updatePayload)
+        .eq("id", schoolId);
+
+      if (error) {
+        console.warn("Supabase updateCentralSchoolInfo error:", error.message);
+        return { success: false, error: error.message };
+      }
+
+      // If logo_url was part of the update, keep fee_settings in sync
+      if (info.logo_url !== undefined) {
+        try {
+          await supabase
+            .from("fee_settings")
+            .update({ logo_url: info.logo_url, updated_at: timestamp })
+            .eq("school_id", schoolId);
+        } catch {}
+      }
+    } catch (e: any) {
+      return { success: false, error: e.message || "Failed to update school profile." };
+    }
+  }
+
+  // Update localStorage
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(LOCAL_STORAGE_KEY_PREFIX)) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const sc = JSON.parse(raw);
+              if (sc.id === schoolId) {
+                Object.assign(sc, updatePayload);
+                localStorage.setItem(key, JSON.stringify(sc));
+              }
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return { success: true };
+}
+

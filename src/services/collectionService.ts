@@ -21,6 +21,7 @@ import { nextReceiptNo } from "./counterService";
 import { getFeeSettings } from "./feeSetupService";
 import { getStudentDues } from "./feeDuesService";
 export { getStudentDues };
+import { isUUID } from "../lib/receiptTemplate";
 import type {
   CollectInput, CollectResult, CancelReceiptInput, CancelReceiptResult,
   FeeReceipt, FeeReceiptItem, FeePayment, CollectContext,
@@ -531,7 +532,14 @@ export async function getReceipts(
 export async function getReceiptById(
   schoolId: string,
   receiptId: string,
-): Promise<{ receipt?: FeeReceipt; items?: FeeReceiptItem[]; payments?: FeePayment[]; error?: string }> {
+): Promise<{
+  receipt?: FeeReceipt;
+  items?: FeeReceiptItem[];
+  payments?: FeePayment[];
+  collectorName?: string;
+  remainingBalancePaise?: number;
+  error?: string;
+}> {
   if (isSupabaseConfigured) {
     try {
       const [{ data: r }, { data: it }, { data: py }, { data: heads }] = await Promise.all([
@@ -545,14 +553,81 @@ export async function getReceiptById(
         ...item,
         fee_head_id: headMap.get(item.fee_head_id) || item.fee_head_id || "Tuition / Term Fee",
       }));
-      return { receipt: r as FeeReceipt, items: enrichedItems, payments: (py || []) as FeePayment[] };
+
+      // Resolve collector display name through verified school profiles
+      let collectorName = "Authorized Staff";
+      if (r && r.collected_by) {
+        if (!isUUID(r.collected_by)) {
+          collectorName = r.collected_by;
+        } else {
+          const { data: prof } = await supabase
+            .from("profiles")
+            .select("full_name, role")
+            .eq("school_id", schoolId)
+            .or(`auth_id.eq.${r.collected_by},id.eq.${r.collected_by}`)
+            .maybeSingle();
+
+          if (prof?.full_name) {
+            collectorName = prof.full_name;
+          } else if (prof?.role === "admin" || prof?.role === "school_admin") {
+            collectorName = "School Admin";
+          } else {
+            collectorName = "Authorized Staff";
+          }
+        }
+      }
+
+      // Resolve student's actual outstanding dues after current payment
+      let remainingBalancePaise = 0;
+      if (r && r.student_id) {
+        const { data: duesData } = await supabase
+          .from("student_dues")
+          .select("balance_paise, status")
+          .eq("school_id", schoolId)
+          .eq("student_id", r.student_id);
+
+        if (duesData && duesData.length > 0) {
+          remainingBalancePaise = duesData
+            .filter((d: any) => d.status === "pending" || d.status === "partial")
+            .reduce((sum: number, d: any) => sum + (d.balance_paise || 0), 0);
+        }
+      }
+
+      // Ensure raw UUID never leaks in returned receipt
+      if (r) {
+        (r as any).collected_by_name = collectorName;
+        if (isUUID(r.collected_by)) {
+          r.collected_by = collectorName;
+        }
+      }
+
+      return {
+        receipt: r as FeeReceipt,
+        items: enrichedItems,
+        payments: (py || []) as FeePayment[],
+        collectorName,
+        remainingBalancePaise,
+      };
     } catch (e: any) { return { error: e.message }; }
   }
+
   const receipt = lsGet<FeeReceipt>(RECEIPTS_KEY(schoolId)).find(r => r.id === receiptId && r.school_id === schoolId);
   if (!receipt) return { error: "Receipt not found" };
   const items = lsGet<FeeReceiptItem>(ITEMS_KEY(schoolId)).filter(i => i.receipt_id === receiptId);
   const payments = lsGet<FeePayment>(PAYMENTS_KEY(schoolId)).filter(p => p.receipt_id === receiptId);
-  return { receipt, items, payments };
+
+  let collectorName = receipt.collected_by && !isUUID(receipt.collected_by) ? receipt.collected_by : "Authorized Staff";
+  if (isUUID(receipt.collected_by)) {
+    receipt.collected_by = collectorName;
+  }
+  (receipt as any).collected_by_name = collectorName;
+
+  const studentDues = lsGet<any>(`myzkool_student_dues_${schoolId}`).filter(
+    (d: any) => d.student_id === receipt.student_id && d.status !== "cancelled" && d.status !== "waived"
+  );
+  const remainingBalancePaise = studentDues.reduce((sum: number, d: any) => sum + (d.balance_paise || 0), 0);
+
+  return { receipt, items, payments, collectorName, remainingBalancePaise };
 }
 
 // ─── Collect context (for counter UI) ────────────────────────────────────────

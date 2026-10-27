@@ -63,6 +63,8 @@ export interface CollectionSummaryMetrics {
   onlineCount: number;
   cashPaise: number;
   cashCount: number;
+  cancelledCount?: number;
+  totalAuditedCount?: number;
 }
 
 export interface CollectionsFilterOptions {
@@ -77,7 +79,7 @@ export interface CollectionsFilterOptions {
   methodTab?: string;
   page?: number;
   pageSize?: number;
-  sortBy?: "date" | "amount" | "receipt_no" | "student_name";
+  sortBy?: "date" | "amount" | "receipt_no" | "student_name" | "class_name" | "payment_method" | "status";
   sortOrder?: "asc" | "desc";
 }
 
@@ -263,12 +265,22 @@ export async function getCollectionsViewData(
     periodEndDate = customEndDate || null;
   }
 
-  if (isSupabaseConfigured) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const cleanUUID = (val?: string | null): string | null => {
+    if (!val || typeof val !== "string") return null;
+    const trimmed = val.trim();
+    if (trimmed === "" || trimmed === "all" || trimmed === "none" || trimmed === "undefined" || trimmed === "null") return null;
+    return UUID_REGEX.test(trimmed) ? trimmed : null;
+  };
+
+  const validSchoolId = cleanUUID(schoolId);
+
+  if (isSupabaseConfigured && validSchoolId) {
     try {
       // 1. Fetch real summary from PostgreSQL RPC
       const summaryRpcPromise = supabase.rpc("get_fee_collections_summary", {
-        p_school_id: schoolId,
-        p_academic_year_id: (academicYearId && academicYearId !== "all") ? academicYearId : null,
+        p_school_id: validSchoolId,
+        p_academic_year_id: cleanUUID(academicYearId),
         p_start_date: periodStartDate,
         p_end_date: periodEndDate,
       });
@@ -540,6 +552,12 @@ export async function getCollectionsViewData(
     const effectiveEnd = periodEndDate || todayIST;
 
     allEnriched.forEach((tx) => {
+      if (tx.status === "cancelled") {
+        const inPeriod = tx.receipt_date >= effectiveStart && tx.receipt_date <= effectiveEnd;
+        if (inPeriod) {
+          summary.cancelledCount = (summary.cancelledCount || 0) + 1;
+        }
+      }
       if (tx.status === "received" || tx.status === "successful") {
         if (tx.receipt_date === todayIST) {
           summary.todayPaise += tx.amount_paise;
@@ -563,6 +581,8 @@ export async function getCollectionsViewData(
         }
       }
     });
+
+    summary.totalAuditedCount = summary.thisMonthCount + (summary.cancelledCount || 0);
   }
 
   // 4. Apply Filters to Transactions
@@ -658,6 +678,21 @@ export async function getCollectionsViewData(
       return sortOrder === "asc"
         ? a.student_name.localeCompare(b.student_name)
         : b.student_name.localeCompare(a.student_name);
+    }
+    if (sortBy === "class_name") {
+      return sortOrder === "asc"
+        ? a.class_name.localeCompare(b.class_name)
+        : b.class_name.localeCompare(a.class_name);
+    }
+    if (sortBy === "payment_method") {
+      return sortOrder === "asc"
+        ? a.payment_method.localeCompare(b.payment_method)
+        : b.payment_method.localeCompare(a.payment_method);
+    }
+    if (sortBy === "status") {
+      return sortOrder === "asc"
+        ? a.status.localeCompare(b.status)
+        : b.status.localeCompare(a.status);
     }
     // Default: date desc
     const timeA = new Date(a.created_at).getTime() || 0;
@@ -786,6 +821,18 @@ export async function getStudentOutstandingInvoices(
 }
 
 /**
+ * Sanitize cell values against CSV formula injection (=, +, -, @)
+ */
+function sanitizeCSVField(val: string | null | undefined): string {
+  if (val === null || val === undefined) return '""';
+  let str = String(val);
+  if (/^[=\+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+/**
  * Export collections records as CSV
  */
 export function exportCollectionsCSV(transactions: EnrichedTransaction[]): void {
@@ -807,18 +854,18 @@ export function exportCollectionsCSV(transactions: EnrichedTransaction[]): void 
   ];
 
   const rows = transactions.map((t) => [
-    `"${t.receipt_no}"`,
-    `"${t.formatted_date_time}"`,
-    `"${t.student_name.replace(/"/g, '""')}"`,
-    `"${t.admission_no}"`,
-    `"${t.class_name}${t.section_name ? ` - ${t.section_name}` : ""}"`,
-    `"${t.invoice_numbers.join(", ")}"`,
+    sanitizeCSVField(t.receipt_no),
+    sanitizeCSVField(t.formatted_date_time),
+    sanitizeCSVField(t.student_name),
+    sanitizeCSVField(t.admission_no),
+    sanitizeCSVField(`${t.class_name}${t.section_name ? ` - ${t.section_name}` : ""}`),
+    sanitizeCSVField(t.invoice_numbers.join(", ")),
     (t.amount_paise / 100).toFixed(2),
-    `"${t.payment_method.toUpperCase()}"`,
-    `"${t.status.toUpperCase()}"`,
-    `"${(t.reference_no || "").replace(/"/g, '""')}"`,
-    `"${(t.collected_by_name || "").replace(/"/g, '""')}"`,
-    `"${(t.remarks || "").replace(/"/g, '""')}"`,
+    sanitizeCSVField(t.payment_method.toUpperCase()),
+    sanitizeCSVField(t.status.toUpperCase()),
+    sanitizeCSVField(t.reference_no || ""),
+    sanitizeCSVField(t.collected_by_name || ""),
+    sanitizeCSVField(t.remarks || ""),
   ]);
 
   const csvContent =

@@ -547,6 +547,7 @@ export async function getStudentFeeSummaries(
     let cmp = 0;
     if (sortBy === "student_name") cmp = a.student_name.localeCompare(b.student_name);
     else if (sortBy === "admission_no") cmp = a.admission_no.localeCompare(b.admission_no);
+    else if (sortBy === "class") cmp = (a.class_name || "").localeCompare(b.class_name || "");
     else if (sortBy === "total_fee") cmp = a.total_applicable_paise - b.total_applicable_paise;
     else if (sortBy === "paid") cmp = a.total_paid_paise - b.total_paid_paise;
     else if (sortBy === "pending") cmp = a.total_pending_paise - b.total_pending_paise;
@@ -685,8 +686,33 @@ export async function getStudentLedgerDetails(
       fee_terms: termMap.get(d.term_id) || {},
       academic_years: yearMap.get(d.academic_year_id) || {},
     }));
+  }
+
+  // Fallback or augment receipts and advance credits
+  if (receipts.length === 0) {
     receipts = lsGet<FeeReceipt>(LEDGER_RECEIPTS_KEY(schoolId)).filter((r) => r.student_id === studentId);
+  }
+  if (studentCredits.length === 0) {
     studentCredits = lsGet<any>(`myzkool_fee_credits_${schoolId}`).filter((c) => c.student_id === studentId);
+  }
+
+  // Load local receipt items & payments if not attached
+  const localReceiptItems = lsGet<any>(`myzkool_fee_receipt_items_${schoolId}`);
+  const localPayments = lsGet<any>(LEDGER_PAYMENTS_KEY(schoolId));
+  for (const lp of localPayments) {
+    if (lp.receipt_id && !paymentDetailsMap.has(lp.receipt_id)) {
+      paymentDetailsMap.set(lp.receipt_id, lp);
+    }
+  }
+  const itemsByReceiptId = new Map<string, any[]>();
+  for (const it of localReceiptItems) {
+    if (!itemsByReceiptId.has(it.receipt_id)) itemsByReceiptId.set(it.receipt_id, []);
+    itemsByReceiptId.get(it.receipt_id)!.push(it);
+  }
+  for (const r of receipts) {
+    if (!(r as any).fee_receipt_items || (r as any).fee_receipt_items.length === 0) {
+      (r as any).fee_receipt_items = itemsByReceiptId.get(r.id) || [];
+    }
   }
 
   const advanceCreditPaise = studentCredits.reduce((s: number, c: any) => s + Number(c.remaining_paise || 0), 0);
@@ -741,6 +767,46 @@ export async function getStudentLedgerDetails(
       }
     }
   }
+
+  // Detect unreceipted historical dues settlements (e.g. legacy database migration or direct ledger settlements)
+  const settledDuesWithoutReceipt: Array<{
+    due_id: string;
+    due_description: string;
+    paid_paise: number;
+    billing_period: string;
+  }> = [];
+
+  for (const d of dues) {
+    if (d.status === "cancelled") continue;
+    const duePaid = Number(d.paid_paise || 0);
+    if (duePaid > 0) {
+      const recordedAllocations = paymentAllocationsByDue.get(d.id) || [];
+      const allocatedSum = recordedAllocations.reduce((s, a) => s + a.amount_paise, 0);
+      const unbackedPaid = Math.max(0, duePaid - allocatedSum);
+      if (unbackedPaid > 0) {
+        const head = (d as any).fee_heads || {};
+        const term = (d as any).fee_terms || {};
+        const headName = head.name || (d as any).fee_head_name || "Fee Obligation";
+        const termName = term.name || (d as any).term_name || "";
+        const desc = termName ? `${termName} ${headName}` : headName;
+        const period = termName || (d as any).academic_years?.label || effectiveStudent.academic_year_name || "2026–2027";
+        settledDuesWithoutReceipt.push({
+          due_id: d.id,
+          due_description: desc,
+          paid_paise: unbackedPaid,
+          billing_period: period,
+        });
+      }
+    }
+  }
+
+  const unreceiptedTotalPaise = settledDuesWithoutReceipt.reduce((s, it) => s + it.paid_paise, 0);
+  const unreceiptedSettlement = unreceiptedTotalPaise > 0 ? {
+    total_settled_paise: unreceiptedTotalPaise,
+    status: 'legacy_settlement' as const,
+    description: 'Audited historical settlements recorded directly against student fee obligations in legacy database records without separate voucher generation.',
+    settled_dues: settledDuesWithoutReceipt,
+  } : undefined;
 
   // Build fee-wise pending and overdue breakdown
   const feeBreakdown: FeeObligationBreakdownItem[] = dues
@@ -1151,6 +1217,29 @@ export async function getStudentLedgerDetails(
       });
     }
 
+    // Add unreceipted historical settlements so the ledger journal accurately reflects all settled dues
+    for (const sDue of settledDuesWithoutReceipt) {
+      const d = dueMap.get(sDue.due_id);
+      const effectiveD = d?.due_date || (d?.created_at ? d.created_at.split("T")[0] : todayStr);
+      fallbackItems.push({
+        id: `tx-settle-${sDue.due_id}`,
+        date: effectiveD,
+        effectiveDate: effectiveD,
+        ref_no: `SETTLE-${sDue.due_id.slice(0, 6)}`,
+        period: sDue.billing_period,
+        billing_period: sDue.billing_period,
+        type: "payment",
+        description: `Fee Settlement (Historical Allocation: ${sDue.due_description})`,
+        category: "Payment",
+        debit_paise: 0,
+        credit_paise: sDue.paid_paise,
+        running_balance_paise: 0,
+        payment_status: "Received",
+        raw_due_id: sDue.due_id,
+        audit_ref: `SETTLE-${sDue.due_id.slice(0, 8)}`,
+      });
+    }
+
     // Sort chronologically ascending to compute running balance accurately
     fallbackItems.sort((a, b) => {
       if (a.effectiveDate !== b.effectiveDate) {
@@ -1173,28 +1262,32 @@ export async function getStudentLedgerDetails(
     });
   }
 
-  // Calculate ledger summary metrics
-  const totalCharges = transactions
-    .filter((t) => t.type === "charge" || (t.type === "adjustment" && t.debit_paise > 0))
-    .reduce((acc, t) => acc + t.debit_paise, 0);
-  const totalConcessions = transactions
-    .filter((t) => t.type === "concession" || t.type === "waiver")
-    .reduce((acc, t) => acc + t.credit_paise, 0);
-  const totalPayments = transactions
-    .filter((t) => t.type === "payment")
-    .reduce((acc, t) => acc + t.credit_paise, 0);
-  const totalCreditAdjustments = transactions
-    .filter((t) => t.type === "adjustment" && t.credit_paise > 0)
-    .reduce((acc, t) => acc + t.credit_paise, 0);
+  // Calculate authoritative ledger summary metrics directly reconciled with assessed obligations
+  const totalCharges = dues
+    .filter((d) => d.status !== "cancelled")
+    .reduce((s, d) => s + (d.gross_paise || (d.net_paise + (d.concession_paise || 0)) || 0), 0);
+  const totalConcessions = dues
+    .filter((d) => d.status !== "cancelled")
+    .reduce((s, d) => s + (d.concession_paise || 0), 0);
+  const netAssessed = Math.max(0, totalCharges - totalConcessions);
+  const totalPayments = dues
+    .filter((d) => d.status !== "cancelled")
+    .reduce((s, d) => s + (d.paid_paise || 0), 0);
+  const closingBalance = Math.max(0, netAssessed - totalPayments);
 
-  // If transactions are derived from fee_ledger, running balance already accounts for advance payments.
-  // Otherwise, fallback calculation subtracts advance credit exactly once.
-  const isFromFeeLedger = Boolean(dbLedgerEntries && dbLedgerEntries.length > 0);
-  const rawClosing = Math.max(0, totalCharges - (totalConcessions + totalPayments + totalCreditAdjustments));
-  const closingBalance = isFromFeeLedger
-    ? (transactions.length > 0 ? transactions[transactions.length - 1].running_balance_paise : rawClosing)
-    : Math.max(0, rawClosing - advanceCreditPaise);
-  const overdueBalance = effectiveStudent.total_overdue_paise || 0;
+  // Overdue calculation (strictly IST, past due date, subset of closing balance, never negative)
+  let overdueSum = 0;
+  for (const d of dues) {
+    if (d.status === "cancelled" || d.status === "waived") continue;
+    const itemBalance = Math.max(
+      0,
+      (d.net_paise !== undefined ? d.net_paise : Math.max(0, d.gross_paise - (d.concession_paise || 0))) - (d.paid_paise || 0)
+    );
+    if (itemBalance > 0 && d.due_date && d.due_date < todayStr) {
+      overdueSum += itemBalance;
+    }
+  }
+  const overdueBalance = Math.max(0, Math.min(closingBalance, overdueSum));
 
   // Invoices list for the student: query with student_id and sufficient pageSize to guarantee complete invoice history
   let studentInvoices: StudentInvoice[] = [];
@@ -1299,6 +1392,13 @@ export async function getStudentLedgerDetails(
     }
   }
 
+  // Deterministic chronological ordering for invoices by due_date ascending with stable tie-breaker
+  studentInvoices.sort((a, b) => {
+    const dComp = (a.due_date || "").localeCompare(b.due_date || "");
+    if (dComp !== 0) return dComp;
+    return (a.invoice_no || a.id).localeCompare(b.invoice_no || b.id);
+  });
+
   // Payments list derived from student's genuine receipts
   const paymentsList = receipts.map((r) => ({
     id: r.id,
@@ -1382,7 +1482,7 @@ export async function getStudentLedgerDetails(
       opening_balance_paise: 0,
       total_charges_paise: totalCharges, // Gross assessed charges before concessions
       total_concessions_paise: totalConcessions, // Approved concessions / waivers
-      net_assessed_paise: Math.max(0, totalCharges - totalConcessions), // Net applicable obligations
+      net_assessed_paise: netAssessed, // Net applicable obligations
       total_payments_paise: totalPayments,
       total_refunds_paise: 0,
       closing_balance_paise: closingBalance,
@@ -1396,6 +1496,7 @@ export async function getStudentLedgerDetails(
     concessions: concessionsList,
     transport_details: transportDetails,
     advance_credits: advanceCreditsList,
+    unreceipted_settlement: unreceiptedSettlement,
   };
 }
 

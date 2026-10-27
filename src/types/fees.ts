@@ -165,7 +165,7 @@ export interface FeeStructureConfigItem {
   proration_rule: 'full' | 'prorated' | 'none';
   start_date?: string | null;
   end_date?: string | null;
-  term_amounts: Record<string, number>; // term_id -> amount_rupees
+  term_amounts?: Record<string, number>; // term_id -> amount_rupees
 }
 
 export interface StudentFeeAssignment {
@@ -345,6 +345,58 @@ export interface FeeSettings {
   invoice_due_days?: number;
   invoice_notes?: string;
   owner_pin_hash?: string | null;
+  // Invoice customization & visibility settings
+  show_school_logo?: boolean;
+  show_school_name?: boolean;
+  show_address?: boolean;
+  show_phone?: boolean;
+  show_email?: boolean;
+  repeat_header_on_pages?: boolean;
+  show_student_details?: boolean;
+  show_invoice_number_date?: boolean;
+  show_fee_breakdown?: boolean;
+  show_discount?: boolean;
+  show_previous_dues?: boolean;
+  show_overdues?: boolean;
+  show_received_amount?: boolean;
+  show_balance_amount?: boolean;
+  show_current_student_balance?: boolean;
+  show_total_fee?: boolean;
+  show_amount_in_words?: boolean;
+  show_payment_mode?: boolean;
+  show_tax_details?: boolean;
+  amount_format?: 'indian' | 'international';
+  decimal_places?: number;
+  show_description?: boolean;
+  show_terms_and_conditions?: boolean;
+  show_received_by?: boolean;
+  show_parent_name?: boolean;
+  show_concession_breakdown?: boolean;
+  show_billing_period?: boolean;
+  // Payment Receipt customization & visibility settings
+  show_receipt_school_logo?: boolean;
+  show_receipt_school_name?: boolean;
+  show_receipt_address?: boolean;
+  show_receipt_phone?: boolean;
+  show_receipt_email?: boolean;
+  show_receipt_number_date?: boolean;
+  show_receipt_student_details?: boolean;
+  show_receipt_parent_name?: boolean;
+  show_receipt_payment_mode?: boolean;
+  show_receipt_transaction_ref?: boolean;
+  show_receipt_fee_allocation?: boolean;
+  show_receipt_amount_received?: boolean;
+  show_receipt_amount_in_words?: boolean;
+  show_receipt_balance_remaining?: boolean;
+  show_receipt_advance_credit?: boolean;
+  show_receipt_cashier?: boolean;
+  show_receipt_signatory?: boolean;
+  show_receipt_terms?: boolean;
+  show_receipt_acknowledgement?: boolean;
+  show_page_numbers?: boolean;
+  print_text_size?: 'small' | 'medium' | 'large';
+  print_orientation?: 'portrait' | 'landscape';
+  print_margins?: 'normal' | 'compact' | 'wide';
   created_at: string;
   updated_at: string;
 }
@@ -498,6 +550,7 @@ export interface FeeSettingsInput {
   receipt_theme?: ReceiptTheme;
   receipt_prefix?: string;
   receipt_paper?: 'a4' | 'a5' | 'thermal80';
+  paper_size?: 'a4' | 'a5' | 'thermal80';
   receipt_language?: 'en' | 'hi' | 'both';
   signature_url?: string | null;
   signatory_name?: string | null;
@@ -524,6 +577,56 @@ export interface FeeSettingsInput {
   invoice_prefix?: string;
   invoice_due_days?: number;
   invoice_notes?: string;
+  show_school_logo?: boolean;
+  show_school_name?: boolean;
+  show_address?: boolean;
+  show_phone?: boolean;
+  show_email?: boolean;
+  repeat_header_on_pages?: boolean;
+  show_student_details?: boolean;
+  show_invoice_number_date?: boolean;
+  show_fee_breakdown?: boolean;
+  show_discount?: boolean;
+  show_previous_dues?: boolean;
+  show_overdues?: boolean;
+  show_received_amount?: boolean;
+  show_balance_amount?: boolean;
+  show_current_student_balance?: boolean;
+  show_total_fee?: boolean;
+  show_amount_in_words?: boolean;
+  show_payment_mode?: boolean;
+  show_tax_details?: boolean;
+  amount_format?: 'indian' | 'international';
+  decimal_places?: number;
+  show_description?: boolean;
+  show_terms_and_conditions?: boolean;
+  show_parent_name?: boolean;
+  show_concession_breakdown?: boolean;
+  show_billing_period?: boolean;
+  show_receipt_school_logo?: boolean;
+  show_receipt_school_name?: boolean;
+  show_receipt_address?: boolean;
+  show_receipt_phone?: boolean;
+  show_receipt_email?: boolean;
+  show_receipt_number_date?: boolean;
+  show_receipt_student_details?: boolean;
+  show_receipt_parent_name?: boolean;
+  show_receipt_payment_mode?: boolean;
+  show_receipt_transaction_ref?: boolean;
+  show_receipt_fee_allocation?: boolean;
+  show_receipt_amount_received?: boolean;
+  show_receipt_amount_in_words?: boolean;
+  show_receipt_balance_remaining?: boolean;
+  show_receipt_advance_credit?: boolean;
+  show_receipt_cashier?: boolean;
+  show_receipt_signatory?: boolean;
+  show_receipt_terms?: boolean;
+  show_receipt_acknowledgement?: boolean;
+  show_received_by?: boolean;
+  show_page_numbers?: boolean;
+  print_text_size?: 'small' | 'medium' | 'large';
+  print_orientation?: 'portrait' | 'landscape';
+  print_margins?: 'normal' | 'compact' | 'wide';
   new_pin?: string;           // plaintext; service hashes before storing
 }
 
@@ -618,7 +721,7 @@ export const ACCOUNTANT_FEE_PERMISSIONS: FeePermission[] = [
 
 // ─── Student Invoice Domain Types ───────────────────────────────────────────
 
-export type InvoiceStatus = 'paid' | 'partial' | 'unpaid' | 'overdue' | 'cancelled' | 'draft';
+export type InvoiceStatus = 'paid' | 'partial' | 'unpaid' | 'overdue' | 'cancelled' | 'draft' | 'partially_paid';
 
 export interface InvoiceLineItem {
   due_id: string;
@@ -663,24 +766,37 @@ export interface StudentInvoice {
   section_name?: string;
   guardian_name?: string;
   guardian_phone?: string;
+  parent_name?: string;
+  parent_phone?: string;
   term_id: string;
   billing_period: string;
   invoice_date: string;
   due_date: string;
   total_paise: number;
+  total_amount_paise?: number;
   net_paise?: number;
+  net_amount_paise?: number;
   gross_paise: number;
   concession_paise: number;
   late_fee_paise: number;
   transport_paise: number;
   tuition_paise: number;
   paid_paise: number;
+  paid_amount_paise?: number;
   balance_paise: number;
   status: InvoiceStatus;
   line_items: InvoiceLineItem[];
+  items?: any[];
   payments: InvoicePaymentRecord[];
   whatsapp_sent_at?: string | null;
   notes?: string;
+  student_photo_url?: string | null;
+  previous_dues_paise?: number;
+  overdue_paise?: number;
+  current_student_balance_paise?: number;
+  payment_mode?: string;
+  transaction_id?: string;
+  payment_date?: string;
   created_at: string;
 }
 

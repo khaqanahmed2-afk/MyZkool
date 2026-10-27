@@ -118,6 +118,9 @@ function ReceiptDrawer({
 
   const [feeSettings, setFeeSettings] = useState<any>(null);
 
+  const [collectorName, setCollectorName] = useState<string>("Authorized Staff");
+  const [remainingBalance, setRemainingBalance] = useState<number | undefined>(undefined);
+
   useEffect(() => {
     if (!schoolId) return;
     setLoading(true);
@@ -128,6 +131,8 @@ function ReceiptDrawer({
       if (r.receipt) setReceipt(r.receipt);
       if (r.items) setItems(r.items);
       if (r.payments) setPayments(r.payments);
+      if (r.collectorName) setCollectorName(r.collectorName);
+      if (typeof r.remainingBalancePaise === "number") setRemainingBalance(r.remainingBalancePaise);
       if (sRes?.settings) setFeeSettings(sRes.settings);
     }).finally(() => setLoading(false));
   }, [schoolId, receiptId]);
@@ -139,8 +144,9 @@ function ReceiptDrawer({
       items,
       payments,
       {
-        student_name: "Student",
-        admission_no: "ADM",
+        student_name: (receipt as any).student?.first_name ? `${(receipt as any).student.first_name} ${(receipt as any).student.last_name || ""}`.trim() : "Student",
+        admission_no: (receipt as any).student?.admission_no || "ADM",
+        balance_remaining_paise: remainingBalance,
       },
       {
         name: feeSettings?.receipt_header_title || "MyZkool School",
@@ -154,7 +160,11 @@ function ReceiptDrawer({
       },
       paper,
       (receipt.print_count ?? 0) > 0,
-      feeSettings
+      feeSettings,
+      {
+        collectedByName: collectorName,
+        balanceUnverified: remainingBalance === undefined,
+      }
     );
     const win = window.open("", "_blank");
     if (!win) return;

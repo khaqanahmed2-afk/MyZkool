@@ -1,49 +1,49 @@
 /**
- * FeeSettingsPage — Fee & Receipt Settings
+ * InvoiceSettingsPage (FeeSettingsPage) — Production-Grade Invoice & Receipt Settings
  *
- * Professional SaaS Settings module for MyZkool:
- * 1. Compact page header with zero redundant breadcrumbs or oversized banners.
- * 2. 3 Grouped Settings Categories:
- *    - Receipt Design (Receipt Theme, Branding & Signatures, Terms & Footer)
- *    - Billing Configuration (Invoice Numbering, Receipt Rules, Payment Rules)
- *    - Security (Owner PIN)
- * 3. 3 Predefined Receipt Themes with crisp color swatches, descriptive notes, and compact visual thumbnails.
- * 4. School Branding (Logo upload/replace/remove, Signatory Name & Designation, transparent PNG signature).
- * 5. Reorderable receipt terms, refund policy note, and computer-generated footer disclaimer.
- * 6. Sequential invoice & receipt numbering rules with live preview badges.
- * 7. Payment collection rules (partial payments, advance credits, auto-allocation, day-close reconciliation).
- * 8. Owner PIN override protection with secure PBKDF2 backend persistence.
- * 9. Standalone "Preview Receipt" action in a separate browser tab (zero permanent preview sidebar!).
- * 10. Single consistent bottom action bar with dirty tracking, reset confirmation, and real persistence.
+ * Implements Desktop-First Document Settings with Three Clean Tabs:
+ * 1. Invoice Settings (School header, student & invoice details, fee breakdown, dues, summary, footer, signature, PIN)
+ * 2. Payment Receipt Settings (School header, receipt & student info, payment mode, fee allocation, balance, cashier, signatory)
+ * 3. Print Settings (A4 / 80mm thermal / A5 paper, themes, font size, margins, orientation, Indian/International formatting)
+ *
+ * Authoritative School Profile Integration:
+ * - Single source of truth from `schools` table / school profile
+ * - Edit modal updates centrally with validation
+ * - No duplicated school data
+ *
+ * Live Document Preview:
+ * - Live toggle between Invoice and Receipt preview
+ * - Live toggle between A4 Sheet and 80 mm Thermal layouts
+ * - Sample document switcher + live document selector
+ * - Functional Download PDF and Print actions
+ * - Unsaved changes warning with discard option
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Save,
   Loader2,
   Eye,
-  EyeOff,
-  AlertCircle,
   CheckCircle2,
-  Upload,
+  AlertCircle,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  Plus,
-  RotateCcw,
+  Edit3,
+  Download,
   Printer,
+  ChevronDown,
+  Info,
+  Lock,
+  Building,
+  Phone,
+  Mail,
+  MapPin,
+  X,
   FileText,
-  Palette,
-  Building2,
-  Stamp,
-  Sliders,
-  ShieldCheck,
-  Image as ImageIcon,
+  Receipt,
+  RotateCcw,
   Check,
-  CreditCard,
-  FileSignature,
-  ExternalLink,
 } from "lucide-react";
+import { useAuth } from "../../../hooks/useAuth";
 import {
   getFeeSettings,
   updateFeeSettings,
@@ -51,1499 +51,1663 @@ import {
   uploadSchoolLogo,
   DEFAULT_FEE_SETTINGS,
 } from "../../../services/feeSetupService";
-import type { FeeSettings, FeeSettingsInput, ReceiptTheme } from "../../../types/fees";
+import { updateCentralSchoolInfo } from "../../../services/schoolService";
+import type { FeeSettings, FeeSettingsInput, ReceiptTheme, StudentInvoice } from "../../../types/fees";
+import type { FeeReceipt, FeeReceiptItem } from "../../../types/collection";
 import {
+  generateInvoiceHTML,
+  downloadInvoicePDF,
+  printInvoiceHTML,
+} from "../../../lib/invoiceTemplate";
+import {
+  generateReceiptA4Html,
+  downloadReceiptPDF,
+  printReceiptA4,
   RECEIPT_THEMES,
-  DEFAULT_RECEIPT_TERMS,
+  type ReceiptStudentDetails,
+  type ReceiptSchoolDetails,
 } from "../../../lib/receiptTemplate";
-import { useAuth } from "../../../hooks/useAuth";
+import { getSchoolInvoices, getInvoiceById } from "../../../services/invoiceService";
+import { getReceipts, getReceiptById } from "../../../services/collectionService";
 
-type SettingsGroup = "receipt_design" | "billing_config" | "security";
-type SettingsSection = "theme" | "branding" | "terms" | "invoice" | "receipt" | "payment" | "security";
-
-interface ThemeMeta {
-  desc: string;
-  palette: string[];
-}
-
-const THEME_METAS: Record<ReceiptTheme, ThemeMeta> = {
-  myzkool_blue: {
-    desc: "Crisp corporate blue palette. Authoritative, high-clarity layout standard for CBSE and state-board institutions.",
-    palette: ["#2158E0", "#EFF6FF", "#BFDBFE", "#1E293B"],
-  },
-  mint_pastel: {
-    desc: "Soft deep-teal and mint hues. Calm, modern financial aesthetic with high-contrast emphasis on paid amounts.",
-    palette: ["#0F766E", "#F0FDF4", "#A7F3D0", "#132E27"],
-  },
-  lavender_pastel: {
-    desc: "Refined purple and lavender tones. Distinguished layout favored by premium academies and private schools.",
-    palette: ["#6B21A8", "#FAF5FF", "#DDD6FE", "#26153B"],
-  },
+// Built-in realistic sample receipt for instant live preview
+const SAMPLE_RECEIPT: FeeReceipt = {
+  id: "rcpt-sample-001",
+  school_id: "sample-school",
+  receipt_no: "RCP-2025-00123",
+  receipt_date: "2025-10-15",
+  student_id: "std-aarav-sharma",
+  academic_year_id: "ay-2025-26",
+  total_paise: 1050000, // ₹10,500.00
+  status: "active",
+  source: "counter",
+  payment_group_id: null,
+  collected_by: "Mr. R. Verma (Cashier)",
+  remarks: "Fee payment for October 2025.",
+  idempotency_key: null,
+  print_count: 0,
+  whatsapp_sent_at: null,
+  cancelled_by: null,
+  cancelled_at: null,
+  cancel_reason: null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
 };
 
-/**
- * Compact visual receipt thumbnail showing theme styling
- */
-function ReceiptMiniThumbnail({ themeKey, isSelected }: { themeKey: ReceiptTheme; isSelected: boolean }) {
-  const t = RECEIPT_THEMES[themeKey];
-  return (
-    <div
-      className="w-full h-24 rounded-lg p-2.5 flex flex-col justify-between transition-all border select-none overflow-hidden"
-      style={{
-        backgroundColor: "#FFFFFF",
-        borderColor: isSelected ? t.primary : "#E2E8F0",
-        boxShadow: isSelected ? "0 2px 8px -2px rgba(33, 88, 224, 0.15)" : "0 1px 2px rgba(0, 0, 0, 0.03)",
-      }}
-    >
-      {/* Mini Letterhead Band */}
-      <div className="flex items-center gap-2 pb-1.5 border-b" style={{ borderColor: t.accentBorder }}>
-        <div
-          className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-black shrink-0"
-          style={{ backgroundColor: t.accentBg, color: t.primary, border: `1px solid ${t.primary}` }}
-        >
-          S
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="h-1.5 w-16 rounded-full" style={{ backgroundColor: t.primary }} />
-          <div className="h-1 w-10 bg-slate-200 rounded-full mt-1" />
-        </div>
-        <div
-          className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0"
-          style={{ backgroundColor: t.badgeBg, color: t.badgeText, border: `0.5px solid ${t.accentBorder}` }}
-        >
-          PAID
-        </div>
-      </div>
+const SAMPLE_RECEIPT_ITEMS: FeeReceiptItem[] = [
+  {
+    id: "rcpt-item-1",
+    receipt_id: "rcpt-sample-001",
+    due_id: "due-item-1",
+    fee_head_id: "head-tuition",
+    fee_head_name: "Tuition Fee",
+    amount_paise: 800000,
+    gross_paise: 800000,
+    concession_paise: 0,
+    net_paise: 800000,
+    balance_paise: 0,
+    term_name: "October 2025",
+  } as any,
+  {
+    id: "rcpt-item-2",
+    receipt_id: "rcpt-sample-001",
+    due_id: "due-item-2",
+    fee_head_id: "head-transport",
+    fee_head_name: "Transport Fee",
+    amount_paise: 200000,
+    gross_paise: 200000,
+    concession_paise: 0,
+    net_paise: 200000,
+    balance_paise: 0,
+    term_name: "October 2025",
+  } as any,
+  {
+    id: "rcpt-item-3",
+    receipt_id: "rcpt-sample-001",
+    due_id: "due-item-3",
+    fee_head_id: "head-exam",
+    fee_head_name: "Exam Fee",
+    amount_paise: 50000,
+    gross_paise: 50000,
+    concession_paise: 0,
+    net_paise: 50000,
+    balance_paise: 0,
+    term_name: "October 2025",
+  } as any,
+];
 
-      {/* Mini Metadata & Line Items */}
-      <div className="space-y-1 my-auto">
-        <div className="flex justify-between items-center text-[7px] text-slate-400">
-          <span>RC-2026-001</span>
-          <span>Class 10-A</span>
-        </div>
-        <div
-          className="rounded px-1.5 py-1 flex justify-between items-center text-[8px] font-medium"
-          style={{ backgroundColor: t.tableHeaderBg }}
-        >
-          <span className="truncate" style={{ color: t.textDark }}>Tuition Fee</span>
-          <span className="font-bold shrink-0" style={{ color: t.primary }}>₹12,000</span>
-        </div>
-      </div>
-
-      {/* Mini Footer Seal & Sign */}
-      <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[7px]">
-        <span className="text-slate-400">Authorized Signatory</span>
-        <div className="w-8 h-1 rounded-full" style={{ backgroundColor: t.accentBorder }} />
-      </div>
-    </div>
-  );
-}
+const SAMPLE_STUDENT_DETAILS: ReceiptStudentDetails = {
+  student_name: "Aarav Sharma",
+  admission_no: "A1234",
+  roll_no: "12",
+  class_name: "6",
+  section_name: "A",
+  father_name: "Rajesh Sharma",
+  guardian_name: "Rajesh Sharma",
+  parent_name: "Rajesh Sharma",
+  applicable_month: "October 2025",
+  academic_year_label: "2025–2026",
+  previous_balance_paise: 500000, // ₹5,000 carried forward
+  balance_remaining_paise: 500000, // ₹5,000 remaining
+};
 
 export default function FeeSettingsPage() {
-  const { school: authSchool, schoolId: authSchoolId, loading: authLoading } = useAuth() as any;
-  const activeSchoolId = authSchool?.id || authSchoolId || null;
+  const { school: authSchool, schoolId: authSchoolId } = useAuth() as any;
+  const activeSchoolId = authSchool?.id || authSchoolId || "default-school";
 
   const [settings, setSettings] = useState<FeeSettings | null>(null);
+  const [initialSettings, setInitialSettings] = useState<FeeSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  // Grouped Navigation State
-  const [activeGroup, setActiveGroup] = useState<SettingsGroup>("receipt_design");
-  const [activeSection, setActiveSection] = useState<SettingsSection>("theme");
+  // Settings Category Tabs: 'invoice' | 'receipt' | 'print'
+  const [activeSettingsTab, setActiveSettingsTab] = useState<"invoice" | "receipt" | "print">("invoice");
 
-  // Form State
-  const [theme, setTheme] = useState<ReceiptTheme>("myzkool_blue");
-  const [form, setForm] = useState<FeeSettingsInput>({});
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
-  const [signatoryName, setSignatoryName] = useState("Authorized Signatory");
-  const [signatoryDesignation, setSignatoryDesignation] = useState("Accounts Officer");
-  const [headerTitle, setHeaderTitle] = useState("Official Fee Receipt");
-  const [terms, setTerms] = useState<string[]>(DEFAULT_RECEIPT_TERMS);
-  const [newTermText, setNewTermText] = useState("");
-  const [footerText, setFooterText] = useState("This is a computer generated receipt and does not require a physical signature unless stamped.");
-  const [refundNote, setRefundNote] = useState("Refunds are processed in accordance with school management policies and audited ledger reconciliation.");
+  // Live Preview States
+  const [previewDocType, setPreviewDocType] = useState<"invoice" | "receipt">("invoice");
+  const [previewPaper, setPreviewPaper] = useState<"a4" | "thermal80">("a4");
 
-  // Upload progress & states
-  const [uploadingLogo, setUploadingLogo] = useState(false);
+  // Invoices for preview selector
+  const [invoicesList, setInvoicesList] = useState<StudentInvoice[]>([]);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("sample");
+  const [activeInvoice, setActiveInvoice] = useState<StudentInvoice | null>(null);
+
+  // Receipts for preview selector
+  const [receiptsList, setReceiptsList] = useState<FeeReceipt[]>([]);
+  const [selectedReceiptId, setSelectedReceiptId] = useState<string>("sample");
+  const [activeReceipt, setActiveReceipt] = useState<FeeReceipt | null>(SAMPLE_RECEIPT);
+  const [activeReceiptItems, setActiveReceiptItems] = useState<FeeReceiptItem[]>(SAMPLE_RECEIPT_ITEMS);
+
+  // Edit School Info Modal State (Central Authoritative Profile)
+  const [isEditSchoolModalOpen, setIsEditSchoolModalOpen] = useState(false);
+  const [schoolEditForm, setSchoolEditForm] = useState({
+    name: authSchool?.name || "Peace Convent School",
+    address: authSchool?.address || "Near Main Road, Mawai, Uttar Pradesh - 222001",
+    phone: authSchool?.contact_phone || authSchool?.phone || "+91 98765 43210",
+    email: authSchool?.official_email || authSchool?.email || "info@peaceconvent.edu.in",
+    logo_url: authSchool?.logo_url || null,
+  });
+  const [savingSchoolInfo, setSavingSchoolInfo] = useState(false);
+
+  // Signature Upload State
   const [uploadingSignature, setUploadingSignature] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Owner PIN State
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [showPin, setShowPin] = useState(false);
-  const [pinError, setPinError] = useState<string | null>(null);
+  // Advanced section collapse
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [ownerPin, setOwnerPin] = useState("");
 
-  // Load Settings
-  const load = useCallback(async () => {
-    if (authLoading) return;
-    if (!activeSchoolId) {
-      setLoading(false);
-      return;
-    }
+  // Warn before discarding unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
+
+  // Load Settings, Invoices and Receipts
+  const loadData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const { settings: s } = await getFeeSettings(activeSchoolId);
-      setSettings(s);
-      setTheme(s.receipt_theme || "myzkool_blue");
-      setLogoUrl(s.logo_url || authSchool?.logo_url || null);
-      setSignatureUrl(s.signature_url || null);
-      setSignatoryName(s.signatory_name || "Authorized Signatory");
-      setSignatoryDesignation(s.signatory_designation || "Accounts Officer");
-      setHeaderTitle(s.receipt_header_title || "Official Fee Receipt");
-      setTerms(Array.isArray(s.receipt_terms) && s.receipt_terms.length > 0 ? s.receipt_terms : DEFAULT_RECEIPT_TERMS);
-      setFooterText(s.receipt_footer ?? DEFAULT_FEE_SETTINGS.receipt_footer ?? "");
-      setRefundNote(s.refund_policy_note ?? DEFAULT_FEE_SETTINGS.refund_policy_note ?? "");
+      const [{ settings: fetchedSettings }, { invoices }, { receipts }] = await Promise.all([
+        getFeeSettings(activeSchoolId),
+        getSchoolInvoices(activeSchoolId, { pageSize: 50 }).catch(() => ({ invoices: [] })),
+        getReceipts(activeSchoolId).catch(() => ({ receipts: [] })),
+      ]);
 
-      setForm({
-        receipt_theme: s.receipt_theme || "myzkool_blue",
-        invoice_prefix: s.invoice_prefix || "INV",
-        invoice_due_days: s.invoice_due_days ?? 15,
-        invoice_notes: s.invoice_notes ?? "Payment due within 15 days of issue.",
-        receipt_prefix: s.receipt_prefix || "MZ",
-        receipt_paper: s.receipt_paper || "a4",
-        receipt_language: s.receipt_language || "en",
-        allow_partial: s.allow_partial ?? true,
-        min_partial_paise: s.min_partial_paise ?? 0,
-        allow_advance: s.allow_advance ?? true,
-        allocation_mode: s.allocation_mode || "auto_oldest_first",
-        round_to_rupee: s.round_to_rupee ?? true,
-        backdate_days_limit: s.backdate_days_limit ?? 0,
-        discount_approval_threshold_percent: s.discount_approval_threshold_percent ?? 10,
-        auto_assign_fee_on_admission: s.auto_assign_fee_on_admission ?? true,
-        auto_late_fee: s.auto_late_fee ?? false,
-        cheque_receipt_timing: s.cheque_receipt_timing || "on_receipt",
-        parent_pay_enabled: s.parent_pay_enabled ?? false,
-        gateway_fee_bearer: s.gateway_fee_bearer || "school",
-        auto_print_receipt: s.auto_print_receipt ?? false,
-        enable_cash_reconciliation: s.enable_cash_reconciliation ?? true,
+      const mergedSettings: FeeSettings = {
+        ...DEFAULT_FEE_SETTINGS,
+        ...fetchedSettings,
+        school_id: activeSchoolId,
+      };
+
+      setSettings(mergedSettings);
+      setInitialSettings(mergedSettings);
+      setInvoicesList(invoices || []);
+      setReceiptsList(receipts || []);
+
+      if (mergedSettings.receipt_paper === "thermal80") {
+        setPreviewPaper("thermal80");
+      } else {
+        setPreviewPaper("a4");
+      }
+
+      // Initialize authoritative school profile form
+      setSchoolEditForm({
+        name: authSchool?.name || "Peace Convent School",
+        address: authSchool?.address || "Near Main Road, Mawai, Uttar Pradesh - 222001",
+        phone: authSchool?.contact_phone || authSchool?.phone || "+91 98765 43210",
+        email: authSchool?.official_email || authSchool?.email || "info@peaceconvent.edu.in",
+        logo_url: authSchool?.logo_url || fetchedSettings.logo_url || null,
       });
-    } catch (err: any) {
-      setError(err.message || "Failed to load fee & receipt settings.");
+
+      // Load sample or selected invoice
+      const sampleRes = await getInvoiceById(activeSchoolId, "sample-invoice");
+      setActiveInvoice(sampleRes.invoice);
+    } catch (e: any) {
+      setError(e.message || "Failed to load fee and document settings");
     } finally {
       setLoading(false);
     }
-  }, [activeSchoolId, authLoading, authSchool?.logo_url]);
+  }, [activeSchoolId, authSchool]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadData();
+  }, [loadData]);
 
-  // Derived Preview Strings
-  const receiptPrefixVal = form.receipt_prefix?.trim() || "MZ";
-  const receiptPreviewNo = `${receiptPrefixVal}/2026-27/000124`;
-  const invoicePrefixVal = form.invoice_prefix?.trim() || "INV";
-  const invoicePreviewNo = `${invoicePrefixVal}-2026-001`;
-
-  // Detect Unsaved Changes (Dirty Tracking)
-  const isDirty = useMemo(() => {
-    if (!settings) return false;
-    if (theme !== (settings.receipt_theme || "myzkool_blue")) return true;
-    if (logoUrl !== (settings.logo_url || null)) return true;
-    if (signatureUrl !== (settings.signature_url || null)) return true;
-    if (signatoryName !== (settings.signatory_name || "Authorized Signatory")) return true;
-    if (signatoryDesignation !== (settings.signatory_designation || "Accounts Officer")) return true;
-    if (headerTitle !== (settings.receipt_header_title || "Official Fee Receipt")) return true;
-    if (footerText !== (settings.receipt_footer ?? "")) return true;
-    if (refundNote !== (settings.refund_policy_note ?? "")) return true;
-    if (newPin.length > 0) return true;
-
-    // Compare terms arrays
-    const initialTerms = Array.isArray(settings.receipt_terms) && settings.receipt_terms.length > 0
-      ? settings.receipt_terms
-      : DEFAULT_RECEIPT_TERMS;
-    if (JSON.stringify(terms) !== JSON.stringify(initialTerms)) return true;
-
-    // Compare form fields
-    if ((form.invoice_prefix ?? "INV") !== (settings.invoice_prefix ?? "INV")) return true;
-    if ((form.invoice_due_days ?? 15) !== (settings.invoice_due_days ?? 15)) return true;
-    if ((form.invoice_notes ?? "") !== (settings.invoice_notes ?? "")) return true;
-    if ((form.receipt_prefix ?? "MZ") !== (settings.receipt_prefix ?? "MZ")) return true;
-    if ((form.receipt_paper ?? "a4") !== (settings.receipt_paper ?? "a4")) return true;
-    if ((form.receipt_language ?? "en") !== (settings.receipt_language ?? "en")) return true;
-    if ((form.allow_partial ?? true) !== (settings.allow_partial ?? true)) return true;
-    if ((form.min_partial_paise ?? 0) !== (settings.min_partial_paise ?? 0)) return true;
-    if ((form.allow_advance ?? true) !== (settings.allow_advance ?? true)) return true;
-    if ((form.round_to_rupee ?? true) !== (settings.round_to_rupee ?? true)) return true;
-    if ((form.enable_cash_reconciliation ?? true) !== (settings.enable_cash_reconciliation ?? true)) return true;
-    if ((form.allocation_mode ?? "auto_oldest_first") !== (settings.allocation_mode ?? "auto_oldest_first")) return true;
-    if ((form.cheque_receipt_timing ?? "on_receipt") !== (settings.cheque_receipt_timing ?? "on_receipt")) return true;
-    if ((form.discount_approval_threshold_percent ?? 10) !== (settings.discount_approval_threshold_percent ?? 10)) return true;
-    if ((form.backdate_days_limit ?? 0) !== (settings.backdate_days_limit ?? 0)) return true;
-    if ((form.auto_print_receipt ?? false) !== (settings.auto_print_receipt ?? false)) return true;
-
-    return false;
-  }, [settings, theme, logoUrl, signatureUrl, signatoryName, signatoryDesignation, headerTitle, footerText, refundNote, newPin, terms, form]);
-
-  // Open Preview in Separate Tab with Current (including unsaved) Preferences
-  const handleOpenPreviewInNewTab = useCallback(() => {
-    const previewData = {
-      theme,
-      logoUrl,
-      signatureUrl,
-      signatoryName,
-      signatoryDesignation,
-      headerTitle,
-      terms,
-      footerText,
-      refundNote,
-      receiptPrefix: form.receipt_prefix || "MZ",
-      receiptPaper: form.receipt_paper || "a4",
-      invoicePrefix: form.invoice_prefix || "INV",
-      school: {
-        name: authSchool?.name || "Khaqan Public School",
-        address: authSchool?.address || "124 Knowledge Park, Education District",
-        phone: authSchool?.contact_phone || "+91 95559 54854",
-        email: authSchool?.official_email || "accounts@myzkool.in",
-        affiliation_no: authSchool?.affiliation_board ? `CBSE / ${authSchool.affiliation_board}` : "CBSE / AFF-2026-892",
-      },
-      timestamp: Date.now(),
-    };
-
-    try {
-      sessionStorage.setItem("myzkool_receipt_preview_data", JSON.stringify(previewData));
-      localStorage.setItem("myzkool_receipt_preview_data", JSON.stringify(previewData));
-    } catch (e) {
-      console.warn("Storage quota or access error", e);
-    }
-
-    window.open("/admin/fees/receipt-preview", "_blank");
-  }, [theme, logoUrl, signatureUrl, signatoryName, signatoryDesignation, headerTitle, terms, footerText, refundNote, form, authSchool]);
-
-  // Handle Logo Upload
-  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !activeSchoolId) return;
-    setUploadError(null);
-    setUploadingLogo(true);
-    try {
-      const res = await uploadSchoolLogo(activeSchoolId, file);
-      if (res.error) {
-        setUploadError(res.error);
-      } else if (res.url) {
-        setLogoUrl(res.url);
+  // Handle invoice selection change
+  const handleSelectInvoice = async (invId: string) => {
+    setSelectedInvoiceId(invId);
+    if (invId === "sample") {
+      const res = await getInvoiceById(activeSchoolId, "sample-invoice");
+      setActiveInvoice(res.invoice);
+    } else {
+      const found = invoicesList.find((i) => i.id === invId);
+      if (found) {
+        const full = await getInvoiceById(activeSchoolId, found.id);
+        setActiveInvoice(full.invoice || found);
       }
-    } catch (err: any) {
-      setUploadError(err.message || "Failed to upload logo.");
-    } finally {
-      setUploadingLogo(false);
-      e.target.value = "";
     }
-  }
+  };
 
-  // Handle Signature Upload (PNG transparency enforced)
-  async function handleSignatureUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !activeSchoolId) return;
-    setUploadError(null);
-    setUploadingSignature(true);
-    try {
-      const res = await uploadSchoolSignature(activeSchoolId, file);
-      if (res.error) {
-        setUploadError(res.error);
-      } else if (res.url) {
-        setSignatureUrl(res.url);
+  // Handle receipt selection change
+  const handleSelectReceipt = async (rcptId: string) => {
+    setSelectedReceiptId(rcptId);
+    if (rcptId === "sample") {
+      setActiveReceipt(SAMPLE_RECEIPT);
+      setActiveReceiptItems(SAMPLE_RECEIPT_ITEMS);
+    } else {
+      const found = receiptsList.find((r) => r.id === rcptId);
+      if (found) {
+        const full = await getReceiptById(activeSchoolId, found.id);
+        setActiveReceipt(full.receipt || found);
+        setActiveReceiptItems(full.items || []);
       }
-    } catch (err: any) {
-      setUploadError(err.message || "Failed to upload signature image.");
-    } finally {
-      setUploadingSignature(false);
-      e.target.value = "";
     }
-  }
+  };
 
-  // Terms Operations
-  function addTerm() {
-    if (!newTermText.trim()) return;
-    setTerms([...terms, newTermText.trim()]);
-    setNewTermText("");
-  }
+  // Setting updater
+  const updateSetting = <K extends keyof FeeSettings>(key: K, value: FeeSettings[K]) => {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, [key]: value };
+      setDirty(true);
+      return updated;
+    });
+  };
 
-  function removeTerm(index: number) {
-    setTerms(terms.filter((_, i) => i !== index));
-  }
+  // Discard changes
+  const handleDiscardChanges = () => {
+    if (initialSettings) {
+      setSettings({ ...initialSettings });
+      setDirty(false);
+      setOwnerPin("");
+      setError(null);
+    }
+  };
 
-  function moveTermUp(index: number) {
-    if (index === 0) return;
-    const copy = [...terms];
-    const temp = copy[index - 1];
-    copy[index - 1] = copy[index];
-    copy[index] = temp;
-    setTerms(copy);
-  }
-
-  function moveTermDown(index: number) {
-    if (index === terms.length - 1) return;
-    const copy = [...terms];
-    const temp = copy[index + 1];
-    copy[index + 1] = copy[index];
-    copy[index] = temp;
-    setTerms(copy);
-  }
-
-  function updateTerm(index: number, val: string) {
-    const copy = [...terms];
-    copy[index] = val;
-    setTerms(copy);
-  }
-
-  // Save Settings
-  async function handleSave() {
-    if (!activeSchoolId) return;
+  // Save Settings to Supabase
+  const handleSave = async () => {
+    if (!settings) return;
     setSaving(true);
     setError(null);
-    setPinError(null);
-    setUploadError(null);
     setSuccess(false);
 
     try {
-      const payload: FeeSettingsInput = {
-        ...form,
-        receipt_theme: theme,
-        logo_url: logoUrl,
-        signature_url: signatureUrl,
-        signatory_name: signatoryName.trim() || "Authorized Signatory",
-        signatory_designation: signatoryDesignation.trim() || "Accounts Officer",
-        receipt_header_title: headerTitle.trim() || "Official Fee Receipt",
-        receipt_terms: terms,
-        receipt_footer: footerText.trim(),
-        refund_policy_note: refundNote.trim(),
+      const input: FeeSettingsInput = {
+        ...settings,
+        receipt_paper: previewPaper === "thermal80" ? "thermal80" : (settings.receipt_paper === "thermal80" ? "a4" : settings.receipt_paper),
+        new_pin: ownerPin.trim() ? ownerPin.trim() : undefined,
       };
 
-      if (newPin) {
-        if (newPin !== confirmPin) {
-          setPinError("PINs do not match.");
-          setSaving(false);
-          return;
-        }
-        if (!/^\d{4,8}$/.test(newPin)) {
-          setPinError("Owner PIN must be between 4 and 8 digits.");
-          setSaving(false);
-          return;
-        }
-        payload.new_pin = newPin;
-      }
-
-      const { settings: updated, error: e } = await updateFeeSettings(activeSchoolId, payload);
-      if (e) {
-        setError(e);
-      } else {
+      const res = await updateFeeSettings(activeSchoolId, input);
+      if (res.error) {
+        setError(res.error);
+      } else if (res.settings) {
+        setSettings(res.settings);
+        setInitialSettings(res.settings);
+        setDirty(false);
+        setOwnerPin("");
         setSuccess(true);
-        setNewPin("");
-        setConfirmPin("");
-        if (updated) setSettings(updated);
         setTimeout(() => setSuccess(false), 4000);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to save settings.");
+    } catch (e: any) {
+      setError(e.message || "Failed to save settings to database");
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  // Reset to Defaults
-  function handleResetToDefaults() {
-    if (window.confirm("Are you sure you want to reset all receipt formatting and fee preferences to default values? Historical student transactions and recorded receipts will not be modified.")) {
-      setTheme("myzkool_blue");
-      setTerms(DEFAULT_RECEIPT_TERMS);
-      setFooterText(DEFAULT_FEE_SETTINGS.receipt_footer || "");
-      setRefundNote(DEFAULT_FEE_SETTINGS.refund_policy_note || "");
-      setSignatoryName("Authorized Signatory");
-      setSignatoryDesignation("Accounts Officer");
-      setHeaderTitle("Official Fee Receipt");
-      setForm({
-        ...DEFAULT_FEE_SETTINGS,
-      });
-      setNewPin("");
-      setConfirmPin("");
-      setPinError(null);
+  // Signature Upload Handler
+  const handleSignatureFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingSignature(true);
+    setError(null);
+    try {
+      const res = await uploadSchoolSignature(activeSchoolId, file);
+      if (res.error) {
+        setError(res.error);
+      } else if (res.url) {
+        updateSetting("signature_url", res.url);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to upload signature image.");
+    } finally {
+      setUploadingSignature(false);
+      if (signatureInputRef.current) signatureInputRef.current.value = "";
     }
-  }
+  };
 
-  // Switching navigation group
-  function selectGroup(group: SettingsGroup) {
-    setActiveGroup(group);
-    if (group === "receipt_design") {
-      setActiveSection("theme");
-    } else if (group === "billing_config") {
-      setActiveSection("invoice");
-    } else if (group === "security") {
-      setActiveSection("security");
+  // Logo Upload in Edit School Modal
+  const handleLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    try {
+      const res = await uploadSchoolLogo(activeSchoolId, file);
+      if (res.error) {
+        setError(res.error);
+      } else if (res.url) {
+        setSchoolEditForm((prev) => ({ ...prev, logo_url: res.url || null }));
+        updateSetting("logo_url", res.url);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to upload logo.");
     }
-  }
+  };
 
-  if (loading) {
+  // Save School Info Modal
+  const handleSaveSchoolInfo = async () => {
+    setSavingSchoolInfo(true);
+    setError(null);
+    try {
+      const res = await updateCentralSchoolInfo(activeSchoolId, schoolEditForm);
+      if (res.error) {
+        setError(res.error);
+      } else {
+        updateSetting("logo_url", schoolEditForm.logo_url);
+        setIsEditSchoolModalOpen(false);
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to update school profile information.");
+    } finally {
+      setSavingSchoolInfo(false);
+    }
+  };
+
+  // Authoritative School details for templates
+  const schoolBranding = useMemo(() => {
+    return {
+      name: schoolEditForm.name || authSchool?.name || "PEACE CONVENT SCHOOL",
+      address: schoolEditForm.address || authSchool?.address || "Behind Abdul Hameed Memorial Inter College, Mawai, Ayodhya, Uttar Pradesh – 224117, India",
+      phone: schoolEditForm.phone || authSchool?.contact_phone || "8400404002",
+      email: schoolEditForm.email || authSchool?.official_email || "myzkool.official@gmail.com",
+      logo_url: settings?.logo_url || schoolEditForm.logo_url || authSchool?.logo_url || null,
+      signature_url: settings?.signature_url || null,
+      signatory_name: settings?.signatory_name || "Principal",
+      signatory_designation: settings?.signatory_designation || "Principal",
+      upi_id: "peaceconvent@upi",
+    };
+  }, [schoolEditForm, authSchool, settings]);
+
+  // Generated HTML for Live Document Preview
+  const previewHTML = useMemo(() => {
+    if (!settings) return "";
+    const effectivePaper = previewPaper;
+
+    if (previewDocType === "invoice") {
+      if (!activeInvoice) return "";
+      return generateInvoiceHTML(activeInvoice, schoolBranding, effectivePaper, settings);
+    } else {
+      // Payment Receipt Preview
+      const receiptToRender = activeReceipt || SAMPLE_RECEIPT;
+      const receiptItemsToRender = activeReceiptItems.length > 0 ? activeReceiptItems : SAMPLE_RECEIPT_ITEMS;
+
+      const schoolDetailsForReceipt: ReceiptSchoolDetails = {
+        name: schoolBranding.name,
+        address: schoolBranding.address,
+        phone: schoolBranding.phone,
+        email: schoolBranding.email,
+        logo_url: schoolBranding.logo_url || undefined,
+        theme: (settings.receipt_theme || "myzkool_blue") as ReceiptTheme,
+        signature_url: settings?.signature_url || schoolBranding.signature_url,
+        signatory_name: settings.signatory_name || "Principal",
+        signatory_designation: settings.signatory_designation || "Principal",
+        terms: settings.receipt_terms,
+        footer: settings.receipt_footer,
+      };
+
+      const studentDetailsForReceipt: ReceiptStudentDetails = {
+        student_name: activeInvoice?.student_name || SAMPLE_STUDENT_DETAILS.student_name,
+        admission_no: activeInvoice?.admission_no || SAMPLE_STUDENT_DETAILS.admission_no,
+        roll_no: activeInvoice?.roll_no || SAMPLE_STUDENT_DETAILS.roll_no,
+        class_name: activeInvoice?.class_name ? `Class ${activeInvoice.class_name}` : SAMPLE_STUDENT_DETAILS.class_name,
+        section_name: activeInvoice?.section_name ? `Section ${activeInvoice.section_name}` : SAMPLE_STUDENT_DETAILS.section_name,
+        father_name: activeInvoice?.guardian_name || SAMPLE_STUDENT_DETAILS.father_name,
+        guardian_name: activeInvoice?.guardian_name || SAMPLE_STUDENT_DETAILS.guardian_name,
+        parent_name: activeInvoice?.guardian_name || SAMPLE_STUDENT_DETAILS.parent_name,
+        applicable_month: SAMPLE_STUDENT_DETAILS.applicable_month,
+        academic_year_label: activeInvoice?.academic_year_name || SAMPLE_STUDENT_DETAILS.academic_year_label,
+        previous_balance_paise: activeInvoice?.previous_dues_paise || SAMPLE_STUDENT_DETAILS.previous_balance_paise,
+        balance_remaining_paise: activeInvoice?.balance_paise || SAMPLE_STUDENT_DETAILS.balance_remaining_paise,
+      };
+
+      const settingsWithPaper: FeeSettings = {
+        ...settings,
+        receipt_paper: effectivePaper,
+      };
+
+      return generateReceiptA4Html(
+        receiptToRender,
+        receiptItemsToRender,
+        studentDetailsForReceipt,
+        schoolDetailsForReceipt,
+        settingsWithPaper,
+        {
+          copyType: "student",
+          invoiceNo: activeInvoice?.invoice_no || "INV-2025-00123",
+          applicableMonth: "October 2025",
+          advanceAmountPaise: 0,
+          payments: [
+            {
+              id: "pay-sample-01",
+              school_id: activeSchoolId,
+              receipt_id: receiptToRender.id,
+              mode: "upi",
+              amount_paise: receiptToRender.total_paise,
+              reference_no: "UPI1234567890",
+              bank_name: null,
+              instrument_no: null,
+              instrument_date: null,
+              cheque_status: null,
+              gateway_order_id: null,
+              gateway_payment_id: null,
+              created_at: new Date().toISOString(),
+            } as any,
+          ],
+        }
+      );
+    }
+  }, [
+    settings,
+    previewDocType,
+    previewPaper,
+    activeInvoice,
+    activeReceipt,
+    activeReceiptItems,
+    schoolBranding,
+  ]);
+
+  // Handle Download PDF
+  const handleDownloadPDF = () => {
+    if (!previewHTML) return;
+    if (previewDocType === "invoice") {
+      const docNo = activeInvoice?.invoice_no || "invoice";
+      downloadInvoicePDF(docNo, previewHTML);
+    } else {
+      const docNo = activeReceipt?.receipt_no || "receipt";
+      downloadReceiptPDF(docNo, previewHTML);
+    }
+  };
+
+  // Handle Print
+  const handlePrint = () => {
+    if (!previewHTML) return;
+    if (previewDocType === "invoice") {
+      printInvoiceHTML(previewHTML);
+    } else {
+      printReceiptA4(previewHTML);
+    }
+  };
+
+  // Scroll to preview on small screens
+  const previewRef = useRef<HTMLDivElement>(null);
+  const handleScrollToPreview = () => {
+    previewRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  if (loading && !settings) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[420px] text-gray-500">
-        <Loader2 className="w-7 h-7 animate-spin text-[#2158E0] mb-3" />
-        <p className="text-xs font-medium">Loading Fee & Receipt Settings…</p>
+      <div className="min-h-[500px] flex flex-col items-center justify-center p-8 text-slate-500">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-3" />
+        <p className="text-sm font-medium">Loading Document Settings...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-5 px-4 sm:px-6 space-y-5">
-      {/* 1. Compact Page Title Area (Oversized header, breadcrumbs, actions dropdown completely removed) */}
-      <div className="border-b border-gray-200/80 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="p-4 sm:p-6 max-w-[1640px] mx-auto space-y-6">
+      {/* ─── PAGE HEADER & ACTIONS ─────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 tracking-tight font-display">
-            Fee & Receipt Settings
-          </h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Configure school receipts, billing preferences, and payment rules.
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Invoice & Receipt Settings</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Configure how student invoices and payment receipts look, print, and download.
           </p>
         </div>
 
-        {/* Quick Preview Action in Header */}
-        <button
-          type="button"
-          onClick={handleOpenPreviewInNewTab}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
-          title="Open a full-page print preview of the receipt in a separate tab"
-        >
-          <ExternalLink className="w-3.5 h-3.5 text-gray-500" />
-          <span>Preview Receipt</span>
-        </button>
-      </div>
-
-      {/* Notifications */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-xs flex items-start gap-2.5 shadow-2xs">
-          <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-          <div className="flex-1 font-medium">{error}</div>
-        </div>
-      )}
-      {uploadError && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs flex items-start gap-2.5 shadow-2xs">
-          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-          <div className="flex-1 font-medium">{uploadError}</div>
-        </div>
-      )}
-      {success && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-800 text-xs flex items-center gap-2 shadow-2xs">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="font-semibold">Settings saved successfully. All future receipts and invoices will reflect these preferences.</span>
-        </div>
-      )}
-
-      {/* 2. Settings Navigation System */}
-      <div className="space-y-3">
-        {/* Tier 1: Group Selector */}
-        <div className="flex items-center gap-1 border-b border-gray-200/90 overflow-x-auto scrollbar-none">
-          <button
-            type="button"
-            onClick={() => selectGroup("receipt_design")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors cursor-pointer whitespace-nowrap ${
-              activeGroup === "receipt_design"
-                ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-                : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-            }`}
-          >
-            <Palette className="w-3.5 h-3.5" />
-            <span>Receipt Design</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-gray-100 text-gray-600 font-medium">3</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => selectGroup("billing_config")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors cursor-pointer whitespace-nowrap ${
-              activeGroup === "billing_config"
-                ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-                : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Billing Configuration</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-gray-100 text-gray-600 font-medium">3</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => selectGroup("security")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors cursor-pointer whitespace-nowrap ${
-              activeGroup === "security"
-                ? "border-[#2158E0] text-[#2158E0] bg-blue-50/40 rounded-t-lg"
-                : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Security</span>
-            {settings?.owner_pin_hash && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Owner PIN active" />
-            )}
-          </button>
-        </div>
-
-        {/* Tier 2: Sub-section Pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {activeGroup === "receipt_design" && (
-            <>
-              {[
-                { id: "theme", label: "Receipt Theme & Appearance", icon: Palette },
-                { id: "branding", label: "Branding & Signatures", icon: Building2 },
-                { id: "terms", label: "Terms & Footer", icon: FileText },
-              ].map((sub) => {
-                const Icon = sub.icon;
-                const isCurrent = activeSection === sub.id;
-                return (
-                  <button
-                    key={sub.id}
-                    type="button"
-                    onClick={() => setActiveSection(sub.id as any)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      isCurrent
-                        ? "bg-gray-900 text-white shadow-2xs"
-                        : "bg-gray-100/80 text-gray-600 hover:bg-gray-200/80 hover:text-gray-900"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{sub.label}</span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-
-          {activeGroup === "billing_config" && (
-            <>
-              {[
-                { id: "invoice", label: "Invoice Numbering", icon: Sliders },
-                { id: "receipt", label: "Receipt Rules", icon: Stamp },
-                { id: "payment", label: "Payment Rules", icon: CreditCard },
-              ].map((sub) => {
-                const Icon = sub.icon;
-                const isCurrent = activeSection === sub.id;
-                return (
-                  <button
-                    key={sub.id}
-                    type="button"
-                    onClick={() => setActiveSection(sub.id as any)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      isCurrent
-                        ? "bg-gray-900 text-white shadow-2xs"
-                        : "bg-gray-100/80 text-gray-600 hover:bg-gray-200/80 hover:text-gray-900"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{sub.label}</span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-
-          {activeGroup === "security" && (
-            <button
-              type="button"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-900 text-white shadow-2xs cursor-default"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Owner Security PIN</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 3. Main Settings Content Area (Permanent Side Preview is completely removed!) */}
-      <div className="bg-white border border-[#E6EAF3] rounded-2xl p-5 sm:p-6 shadow-2xs">
-        {/* SECTION 1: Receipt Theme & Appearance */}
-        {activeSection === "theme" && (
-          <div className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                  <Palette className="w-4 h-4 text-[#2158E0]" />
-                  <span>Approved Receipt Themes</span>
-                </h3>
-                <span className="text-xs text-gray-400">3 Themes Available</span>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Select an official receipt styling theme. Use the Preview button below or at the bottom to verify the template in a new tab.
-              </p>
-            </div>
-
-            {/* 3 Equal-Width Theme Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(Object.keys(RECEIPT_THEMES) as ReceiptTheme[]).map((tKey) => {
-                const t = RECEIPT_THEMES[tKey];
-                const meta = THEME_METAS[tKey];
-                const isSelected = theme === tKey;
-
-                return (
-                  <div
-                    key={tKey}
-                    onClick={() => setTheme(tKey)}
-                    className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between gap-3.5 ${
-                      isSelected
-                        ? "border-[#2158E0] bg-blue-50/20 shadow-xs ring-2 ring-blue-500/20"
-                        : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50"
-                    }`}
-                  >
-                    <div>
-                      {/* Top: Swatch & Selection Indicator */}
-                      <div className="flex items-center justify-between mb-2.5">
-                        <div className="flex items-center gap-1.5">
-                          {meta.palette.map((color, idx) => (
-                            <span
-                              key={idx}
-                              className="w-4 h-4 rounded-full border border-black/10 shadow-2xs"
-                              style={{ backgroundColor: color }}
-                              title={`Color: ${color}`}
-                            />
-                          ))}
-                        </div>
-
-                        {isSelected ? (
-                          <span className="w-4 h-4 rounded-full bg-[#2158E0] text-white flex items-center justify-center text-[10px]">
-                            <Check className="w-2.5 h-2.5 stroke-[3]" />
-                          </span>
-                        ) : (
-                          <span className="w-4 h-4 rounded-full border border-gray-300" />
-                        )}
-                      </div>
-
-                      {/* Theme Name & Meaningful Description */}
-                      <h4 className="text-xs font-bold text-gray-900">{t.name}</h4>
-                      <p className="text-[11px] text-gray-500 mt-1 leading-relaxed line-clamp-2">
-                        {meta.desc}
-                      </p>
-                    </div>
-
-                    {/* Compact Receipt-Style Visual Thumbnail */}
-                    <div className="pt-2 border-t border-gray-100">
-                      <ReceiptMiniThumbnail themeKey={tKey} isSelected={isSelected} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Receipt Appearance Controls */}
-            <div className="pt-4 border-t border-gray-100 space-y-4">
-              <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider text-gray-500">
-                Receipt Appearance Preferences
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="theme-paper-size" className="block text-xs font-semibold text-gray-700 mb-1">
-                    Default Paper Format
-                  </label>
-                  <select
-                    id="theme-paper-size"
-                    value={form.receipt_paper ?? "a4"}
-                    onChange={(e) => setForm((f) => ({ ...f, receipt_paper: e.target.value as any }))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                  >
-                    <option value="a4">A4 (Standard School Sheet 210 × 297 mm)</option>
-                    <option value="a5">A5 (Half Sheet 148 × 210 mm)</option>
-                    <option value="thermal80">Thermal POS (80 mm Roll)</option>
-                  </select>
-                  <p className="text-[10px] text-gray-400 mt-1">Sets default layout for student receipts and downloads</p>
-                </div>
-
-                <div>
-                  <label htmlFor="theme-receipt-title" className="block text-xs font-semibold text-gray-700 mb-1">
-                    Receipt Banner Title
-                  </label>
-                  <input
-                    id="theme-receipt-title"
-                    type="text"
-                    value={headerTitle}
-                    onChange={(e) => setHeaderTitle(e.target.value)}
-                    placeholder="Official Fee Receipt"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1">Printed prominently across the top letterhead</p>
-                </div>
-              </div>
-
-              {/* Informational preview banner */}
-              <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl flex items-center justify-between gap-3 text-xs text-[#2158E0]">
-                <div className="flex items-center gap-2 min-w-0">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2158E0]" />
-                  <span className="truncate">
-                    Current active theme: <strong>{RECEIPT_THEMES[theme]?.name}</strong>
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleOpenPreviewInNewTab}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-white border border-blue-200 text-[#2158E0] hover:bg-blue-50 rounded-lg text-xs font-semibold shrink-0 cursor-pointer shadow-2xs"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Preview Receipt</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 2: Branding & Signatures */}
-        {activeSection === "branding" && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-[#2158E0]" />
-                <span>School Branding & Signatures</span>
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Configure school logo, signatory details, and upload transparent signature files for automated receipt stamping.
-              </p>
-            </div>
-
-            {/* School Profile Information (Read-Only context verification) */}
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-gray-800">School Profile Letterhead</span>
-                <span className="text-[10px] text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-200 font-medium">From School Settings</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600">
-                <div>
-                  <span className="text-gray-400 text-[11px] block">Official Name</span>
-                  <span className="font-semibold text-gray-900">{authSchool?.name || "Khaqan Public School"}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-[11px] block">Affiliation Board / Reg. No.</span>
-                  <span>{authSchool?.affiliation_board ? `CBSE / ${authSchool.affiliation_board}` : "CBSE / AFF-2026-892"}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-[11px] block">Official Email</span>
-                  <span>{authSchool?.official_email || "accounts@myzkool.in"}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-[11px] block">Contact Phone</span>
-                  <span>{authSchool?.contact_phone || "+91 95559 54854"}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Logo Card */}
-            <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-gray-900">Official School Logo</h4>
-                  <p className="text-[11px] text-gray-500">Printed in letterhead header (PNG, JPG, or WebP up to 3MB)</p>
-                </div>
-                {logoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setLogoUrl(null)}
-                    className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-xl border border-dashed border-gray-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
-                  {logoUrl ? (
-                    <img src={logoUrl} alt="Logo Preview" className="w-full h-full object-contain p-1" />
-                  ) : (
-                    <ImageIcon className="w-6 h-6 text-gray-400" />
-                  )}
-                </div>
-
-                <div className="flex-1">
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs cursor-pointer">
-                    {uploadingLogo ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Uploading…</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>{logoUrl ? "Replace Logo" : "Upload School Logo"}</span>
-                      </>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      className="hidden"
-                      onChange={handleLogoUpload}
-                      disabled={uploadingLogo}
-                    />
-                  </label>
-                  <p className="text-[10px] text-gray-400 mt-1.5">
-                    Square or horizontal aspect ratio with clean background is recommended.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Authorized Signature Card */}
-            <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                    <FileSignature className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Authorized Signatory Signature</span>
-                  </h4>
-                  <p className="text-[11px] text-gray-500">
-                    Upload transparent PNG signature to auto-stamp on official fee receipts
-                  </p>
-                </div>
-                {signatureUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setSignatureUrl(null)}
-                    className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="w-28 h-16 rounded-xl border border-dashed border-gray-300 bg-white flex items-center justify-center overflow-hidden shrink-0 p-1 shadow-2xs">
-                  {signatureUrl ? (
-                    <img src={signatureUrl} alt="Signature Preview" className="max-h-14 max-w-full object-contain" />
-                  ) : (
-                    <span className="text-[10px] text-gray-400 italic text-center px-1">No Signature Uploaded</span>
-                  )}
-                </div>
-
-                <div className="flex-1">
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs cursor-pointer">
-                    {uploadingSignature ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Uploading PNG…</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>{signatureUrl ? "Replace Signature PNG" : "Upload PNG Signature"}</span>
-                      </>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/png"
-                      className="hidden"
-                      onChange={handleSignatureUpload}
-                      disabled={uploadingSignature}
-                    />
-                  </label>
-                  <p className="text-[10px] text-gray-400 mt-1.5">
-                    Must be transparent PNG file (max 2 MB). If omitted, a clean placeholder line is rendered.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Signatory Name & Designation */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="signatory-name-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Signatory Name
-                </label>
-                <input
-                  id="signatory-name-input"
-                  type="text"
-                  value={signatoryName}
-                  onChange={(e) => setSignatoryName(e.target.value)}
-                  placeholder="e.g. Dr. Anand Sharma"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Printed below the signature block</p>
-              </div>
-
-              <div>
-                <label htmlFor="signatory-desig-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Signatory Designation
-                </label>
-                <input
-                  id="signatory-desig-input"
-                  type="text"
-                  value={signatoryDesignation}
-                  onChange={(e) => setSignatoryDesignation(e.target.value)}
-                  placeholder="e.g. Principal / Accounts Officer"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Official title or office designation</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 3: Terms & Footer */}
-        {activeSection === "terms" && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-[#2158E0]" />
-                  <span>Terms, Notes, and Legal Disclaimer</span>
-                </h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  Manage standard school receipt terms, refund conditions, and legal disclaimer text.
-                </p>
-              </div>
+        <div className="flex items-center gap-3">
+          {dirty && (
+            <div className="flex items-center gap-2">
+              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                Unsaved changes
+              </span>
               <button
                 type="button"
-                onClick={() => setTerms(DEFAULT_RECEIPT_TERMS)}
-                className="text-xs text-[#2158E0] hover:underline font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                onClick={handleDiscardChanges}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                title="Discard unsaved edits"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Terms</span>
+                <span className="hidden sm:inline">Discard</span>
               </button>
             </div>
-
-            {/* Terms Reorderable List */}
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-gray-700">Receipt Terms & Conditions</label>
-              {terms.map((term, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg group hover:bg-white transition-colors"
-                >
-                  <span className="w-5 text-center text-xs font-bold text-gray-400 shrink-0">{idx + 1}.</span>
-                  <input
-                    type="text"
-                    value={term}
-                    onChange={(e) => updateTerm(idx, e.target.value)}
-                    className="flex-1 bg-transparent text-xs text-gray-800 outline-none"
-                  />
-                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => moveTermUp(idx)}
-                      disabled={idx === 0}
-                      title="Move Up"
-                      className="p-1 text-gray-500 hover:text-gray-800 disabled:opacity-30 cursor-pointer"
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveTermDown(idx)}
-                      disabled={idx === terms.length - 1}
-                      title="Move Down"
-                      className="p-1 text-gray-500 hover:text-gray-800 disabled:opacity-30 cursor-pointer"
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeTerm(idx)}
-                      title="Delete Term"
-                      className="p-1 text-red-500 hover:text-red-700 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {/* Add Term Input */}
-              <div className="flex gap-2 pt-1">
-                <input
-                  type="text"
-                  value={newTermText}
-                  onChange={(e) => setNewTermText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTerm();
-                    }
-                  }}
-                  placeholder="Type new term and click Add..."
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={addTerm}
-                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-200 cursor-pointer shadow-2xs shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Term</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Refund Policy Note */}
-            <div>
-              <label htmlFor="refund-note-textarea" className="block text-xs font-semibold text-gray-700 mb-1">
-                Refund Policy Informational Text
-              </label>
-              <textarea
-                id="refund-note-textarea"
-                rows={2}
-                value={refundNote}
-                onChange={(e) => setRefundNote(e.target.value)}
-                placeholder="e.g. Refunds are processed in accordance with school policies..."
-                className="w-full border border-gray-200 rounded-lg p-2.5 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none resize-none"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">Printed below the terms list on receipts</p>
-            </div>
-
-            {/* Computer Generated Legal Footer Disclaimer */}
-            <div>
-              <label htmlFor="footer-legal-textarea" className="block text-xs font-semibold text-gray-700 mb-1">
-                Computer-Generated Legal Disclaimer Footer
-              </label>
-              <textarea
-                id="footer-legal-textarea"
-                rows={2}
-                value={footerText}
-                onChange={(e) => setFooterText(e.target.value)}
-                placeholder="e.g. This is a computer generated receipt..."
-                className="w-full border border-gray-200 rounded-lg p-2.5 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none resize-none"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">Printed at the very bottom of every receipt</p>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 4: Invoice Numbering */}
-        {activeSection === "invoice" && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-[#2158E0]" />
-                <span>Invoice Numbering & Due Windows</span>
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Set unique invoice prefixes and default payment due days for term billings.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="inv-prefix-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Invoice Prefix
-                </label>
-                <input
-                  id="inv-prefix-input"
-                  type="text"
-                  maxLength={8}
-                  value={form.invoice_prefix ?? "INV"}
-                  onChange={(e) => setForm((f) => ({ ...f, invoice_prefix: e.target.value.toUpperCase() }))}
-                  placeholder="INV"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none uppercase font-semibold"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Up to 8 alphanumeric characters</p>
-              </div>
-
-              <div>
-                <span className="block text-xs font-semibold text-gray-700 mb-1">Next Invoice Number Preview</span>
-                <div className="border border-blue-200 bg-blue-50/50 rounded-lg px-3 py-2 text-xs text-[#2158E0] font-mono font-bold">
-                  {invoicePreviewNo}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="inv-due-days-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Default Due Window (Days)
-                </label>
-                <input
-                  id="inv-due-days-input"
-                  type="number"
-                  min={1}
-                  max={90}
-                  value={form.invoice_due_days ?? 15}
-                  onChange={(e) => setForm((f) => ({ ...f, invoice_due_days: Number(e.target.value) || 15 }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Days before an issued term invoice is marked overdue</p>
-              </div>
-
-              <div>
-                <label htmlFor="inv-notes-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Default Invoice Footer Notes
-                </label>
-                <input
-                  id="inv-notes-input"
-                  type="text"
-                  value={form.invoice_notes ?? ""}
-                  onChange={(e) => setForm((f) => ({ ...f, invoice_notes: e.target.value }))}
-                  placeholder="e.g. Payment due within 15 days of issue"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Printed on student dues bills and invoices</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 5: Receipt Rules */}
-        {activeSection === "receipt" && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <Stamp className="w-4 h-4 text-[#2158E0]" />
-                <span>Receipt Numbering & Print Layout</span>
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Configure gap-free sequential receipt numbering, default paper sizes, and print triggers.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="rec-prefix-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Receipt Prefix
-                </label>
-                <input
-                  id="rec-prefix-input"
-                  type="text"
-                  maxLength={6}
-                  value={form.receipt_prefix ?? "MZ"}
-                  onChange={(e) => setForm((f) => ({ ...f, receipt_prefix: e.target.value.toUpperCase() }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none font-semibold uppercase"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Prefix for all fee collection receipts</p>
-              </div>
-
-              <div>
-                <span className="block text-xs font-semibold text-gray-700 mb-1">Receipt Number Preview</span>
-                <div className="border border-emerald-200 bg-emerald-50/50 rounded-lg px-3 py-2 text-xs text-emerald-800 font-mono font-bold">
-                  {receiptPreviewNo}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="rec-paper-select" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Default Paper Format
-                </label>
-                <select
-                  id="rec-paper-select"
-                  value={form.receipt_paper ?? "a4"}
-                  onChange={(e) => setForm((f) => ({ ...f, receipt_paper: e.target.value as any }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                >
-                  <option value="a4">A4 (Standard School 210 × 297 mm)</option>
-                  <option value="a5">A5 (Half Sheet 148 × 210 mm)</option>
-                  <option value="thermal80">Thermal POS (80 mm roll)</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="rec-lang-select" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Language Format
-                </label>
-                <select
-                  id="rec-lang-select"
-                  value={form.receipt_language ?? "en"}
-                  onChange={(e) => setForm((f) => ({ ...f, receipt_language: e.target.value as any }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                >
-                  <option value="en">English (Default)</option>
-                  <option value="hi">Hindi (हिंदी)</option>
-                  <option value="both">Bilingual (English + Hindi)</option>
-                </select>
-              </div>
-            </div>
-
-            <label className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.auto_print_receipt ?? false}
-                onChange={(e) => setForm((f) => ({ ...f, auto_print_receipt: e.target.checked }))}
-                className="w-4 h-4 accent-[#2158E0]"
-              />
-              <div>
-                <span className="text-xs font-bold text-gray-900 block">Auto-print receipt after collection</span>
-                <p className="text-[11px] text-gray-500">Automatically trigger browser print dialog right after fee collection</p>
-              </div>
-            </label>
-          </div>
-        )}
-
-        {/* SECTION 6: Payment Rules */}
-        {activeSection === "payment" && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#2158E0]" />
-                <span>Payment & Collection Preferences</span>
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Configure partial payments, advance credits, daily cash close rules, and allocation policies.
-              </p>
-            </div>
-
-            {/* Partial Payments */}
-            <div className="space-y-3">
-              <label className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.allow_partial ?? true}
-                  onChange={(e) => setForm((f) => ({ ...f, allow_partial: e.target.checked }))}
-                  className="w-4 h-4 accent-[#2158E0]"
-                />
-                <div>
-                  <span className="text-xs font-bold text-gray-900 block">Allow partial fee collections</span>
-                  <p className="text-[11px] text-gray-500">Parents can pay in installments against open invoice dues</p>
-                </div>
-              </label>
-
-              {form.allow_partial && (
-                <div className="pl-7">
-                  <label htmlFor="min-partial-input" className="block text-xs font-medium text-gray-700 mb-1">
-                    Minimum partial payment (₹, 0 = no minimum)
-                  </label>
-                  <input
-                    id="min-partial-input"
-                    type="number"
-                    min={0}
-                    value={Number.isNaN(form.min_partial_paise) ? "" : (form.min_partial_paise ?? 0) / 100}
-                    onChange={(e) => {
-                      const val = e.currentTarget.valueAsNumber;
-                      setForm((f) => ({ ...f, min_partial_paise: Number.isFinite(val) ? val * 100 : 0 }));
-                    }}
-                    className="w-full sm:w-64 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Advance Payments & Rupee Rounding */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.allow_advance ?? true}
-                  onChange={(e) => setForm((f) => ({ ...f, allow_advance: e.target.checked }))}
-                  className="w-4 h-4 accent-[#2158E0]"
-                />
-                <div>
-                  <span className="text-xs font-bold text-gray-900 block">Allow advance payments</span>
-                  <p className="text-[11px] text-gray-500">Excess collections are stored as student credit balance</p>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.round_to_rupee ?? true}
-                  onChange={(e) => setForm((f) => ({ ...f, round_to_rupee: e.target.checked }))}
-                  className="w-4 h-4 accent-[#2158E0]"
-                />
-                <div>
-                  <span className="text-xs font-bold text-gray-900 block">Round concessions & late fees to nearest Rupee</span>
-                  <p className="text-[11px] text-gray-500">Eliminates paise fractions from ledger calculations</p>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.enable_cash_reconciliation ?? true}
-                  onChange={(e) => setForm((f) => ({ ...f, enable_cash_reconciliation: e.target.checked }))}
-                  className="w-4 h-4 accent-[#2158E0]"
-                />
-                <div>
-                  <span className="text-xs font-bold text-gray-900 block">Enforce daily cash close & reconciliation</span>
-                  <p className="text-[11px] text-gray-500">Requires daily cash drawer closing before subsequent sessions</p>
-                </div>
-              </label>
-            </div>
-
-            {/* Allocation Mode & Cheque Timing */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="alloc-mode-select" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Dues Allocation Mode
-                </label>
-                <select
-                  id="alloc-mode-select"
-                  value={form.allocation_mode ?? "auto_oldest_first"}
-                  onChange={(e) => setForm((f) => ({ ...f, allocation_mode: e.target.value as any }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                >
-                  <option value="auto_oldest_first">Auto — Oldest dues first (Recommended)</option>
-                  <option value="manual">Manual — Cashier selects dues explicitly</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="cheque-timing-select" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Cheque Receipt Timing
-                </label>
-                <select
-                  id="cheque-timing-select"
-                  value={form.cheque_receipt_timing ?? "on_receipt"}
-                  onChange={(e) => setForm((f) => ({ ...f, cheque_receipt_timing: e.target.value as any }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                >
-                  <option value="on_receipt">On receipt (Instrument received at desk)</option>
-                  <option value="on_clearance">On clearance (Bank clearing confirmation)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Concession Approval Threshold & Backdating */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="disc-thresh-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Concession Approval Threshold (%)
-                </label>
-                <input
-                  id="disc-thresh-input"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={Number.isNaN(form.discount_approval_threshold_percent) ? "" : (form.discount_approval_threshold_percent ?? 10)}
-                  onChange={(e) => {
-                    const val = e.currentTarget.valueAsNumber;
-                    setForm((f) => ({ ...f, discount_approval_threshold_percent: Number.isFinite(val) ? val : 0 }));
-                  }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Concessions above this % require owner approval</p>
-              </div>
-
-              <div>
-                <label htmlFor="backdate-limit-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Backdate Days Limit
-                </label>
-                <input
-                  id="backdate-limit-input"
-                  type="number"
-                  min={0}
-                  value={Number.isNaN(form.backdate_days_limit) ? "" : (form.backdate_days_limit ?? 0)}
-                  onChange={(e) => {
-                    const val = e.currentTarget.valueAsNumber;
-                    setForm((f) => ({ ...f, backdate_days_limit: Number.isFinite(val) ? Math.trunc(val) : 0 }));
-                  }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">0 = requires owner PIN override for each case</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 7: Owner Security PIN */}
-        {activeSection === "security" && (
-          <div className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#2158E0]" />
-                  <span>Owner Security PIN</span>
-                </h3>
-                {settings?.owner_pin_hash ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    PIN Active & Protected
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                    No PIN Set
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                The Owner PIN authorizes high concessions, counter fee waivers, and backdated receipt entries without logging out cashiers.
-              </p>
-            </div>
-
-            {pinError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 font-medium">
-                {pinError}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="relative">
-                <label htmlFor="owner-pin-input" className="block text-xs font-semibold text-gray-700 mb-1">
-                  {settings?.owner_pin_hash ? "New Security PIN" : "Set Security PIN"}
-                </label>
-                <input
-                  id="owner-pin-input"
-                  type={showPin ? "text" : "password"}
-                  inputMode="numeric"
-                  maxLength={8}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
-                  placeholder="4–8 numeric digits"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none pr-9 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPin(!showPin)}
-                  className="absolute right-2.5 top-7 text-gray-400 hover:text-gray-600 cursor-pointer"
-                  tabIndex={-1}
-                >
-                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-                <p className="text-[10px] text-gray-400 mt-1">Leave blank to keep existing PIN</p>
-              </div>
-
-              <div>
-                <label htmlFor="owner-pin-confirm" className="block text-xs font-semibold text-gray-700 mb-1">
-                  Confirm PIN
-                </label>
-                <input
-                  id="owner-pin-confirm"
-                  type={showPin ? "text" : "password"}
-                  inputMode="numeric"
-                  maxLength={8}
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Re-enter security PIN"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#2158E0] focus:ring-1 focus:ring-[#2158E0] outline-none font-mono"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 4. Small, Consistent Bottom Action Bar */}
-      <div className="bg-white border border-[#E6EAF3] rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-2xs">
-        {/* Reset to Defaults (Secondary Action) */}
-        <button
-          type="button"
-          onClick={handleResetToDefaults}
-          className="text-xs text-gray-500 hover:text-red-600 font-semibold cursor-pointer transition-colors"
-        >
-          Reset to Defaults
-        </button>
-
-        {/* Right Actions: Dirty Indicator, Preview Receipt, Save Settings */}
-        <div className="flex items-center gap-2.5">
-          {isDirty && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-amber-700 font-medium mr-1 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              <span>Unsaved changes</span>
-            </span>
           )}
 
           <button
             type="button"
-            onClick={handleOpenPreviewInNewTab}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-2xs cursor-pointer transition-colors"
-            title="Open receipt preview in a separate browser tab"
+            onClick={handleScrollToPreview}
+            className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer lg:hidden"
           >
-            <Printer className="w-3.5 h-3.5 text-gray-500" />
-            <span>Preview Receipt</span>
+            <Eye className="w-4 h-4 text-slate-500" />
+            <span>Preview</span>
           </button>
 
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || !isDirty}
-            className="flex items-center gap-1.5 px-5 py-2 bg-[#2158E0] text-white rounded-xl text-xs font-bold hover:bg-[#1A46B8] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm transition-all"
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-60 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-blue-500/20 cursor-pointer"
           >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>Save Settings</span>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>{saving ? "Saving Settings..." : "Save Settings"}</span>
           </button>
         </div>
       </div>
+
+      {/* Notifications */}
+      {error && (
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700 text-xs animate-in fade-in">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span className="font-semibold">{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3 text-emerald-700 text-xs animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span className="font-semibold">Document settings saved successfully to school database!</span>
+        </div>
+      )}
+
+      {/* ─── AUTHORITATIVE SCHOOL PROFILE BANNER (Central Source of Truth) ──── */}
+      <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-slate-50 border border-blue-200/80 rounded-2xl p-4 sm:p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl border border-blue-200 bg-white shadow-xs flex items-center justify-center overflow-hidden shrink-0">
+              {schoolBranding.logo_url ? (
+                <img
+                  src={schoolBranding.logo_url}
+                  alt={schoolBranding.name}
+                  className="max-h-full max-w-full object-contain p-1"
+                />
+              ) : (
+                <div className="w-full h-full bg-blue-600 text-white font-black text-lg flex items-center justify-center">
+                  {(schoolBranding.name || "MZ").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                  Authoritative School Profile
+                </span>
+                <span className="text-slate-400 text-xs">•</span>
+                <span className="text-[11px] text-slate-500 font-medium">Shared across Invoices & Receipts</span>
+              </div>
+              <h2 className="text-base font-bold text-slate-900 truncate mt-0.5">{schoolBranding.name}</h2>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 mt-1">
+                <span className="flex items-center gap-1 truncate">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">{schoolBranding.address}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{schoolBranding.phone}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{schoolBranding.email}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsEditSchoolModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 hover:border-blue-300 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 cursor-pointer self-start sm:self-center"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+            <span>Edit School Profile</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── TWO-COLUMN WORKSPACE: SETTINGS TABS (LEFT) & LIVE PREVIEW (RIGHT) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* LEFT COLUMN: 3 MAIN SETTINGS TABS (7 COLS) */}
+        <div className="lg:col-span-7 space-y-5">
+          {/* Main Document Settings Navigation Tabs */}
+          <div className="flex items-center gap-2 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSettingsTab("invoice");
+                setPreviewDocType("invoice");
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeSettingsTab === "invoice"
+                  ? "bg-white text-blue-700 shadow-sm shadow-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span>Invoice Settings</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSettingsTab("receipt");
+                setPreviewDocType("receipt");
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeSettingsTab === "receipt"
+                  ? "bg-white text-emerald-700 shadow-sm shadow-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Receipt className="w-4 h-4 text-emerald-600" />
+              <span>Payment Receipt Settings</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveSettingsTab("print")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeSettingsTab === "print"
+                  ? "bg-white text-purple-700 shadow-sm shadow-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Printer className="w-4 h-4 text-purple-600" />
+              <span>Print Settings</span>
+            </button>
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════════════ */}
+          {/* TAB 1: INVOICE SETTINGS                                                */}
+          {/* ══════════════════════════════════════════════════════════════════════ */}
+          {activeSettingsTab === "invoice" && (
+            <div className="space-y-4">
+              {/* Invoice Section 1: School Header on Invoice */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    1
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">School Header on Invoice</h3>
+                    <p className="text-[11px] text-slate-500">Configure visibility of official school letterhead elements.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show school logo"
+                    checked={settings?.show_school_logo ?? true}
+                    onChange={(v) => updateSetting("show_school_logo", v)}
+                  />
+                  <ToggleRow
+                    label="Show school name"
+                    checked={settings?.show_school_name ?? true}
+                    onChange={(v) => updateSetting("show_school_name", v)}
+                  />
+                  <ToggleRow
+                    label="Show address"
+                    checked={settings?.show_address ?? true}
+                    onChange={(v) => updateSetting("show_address", v)}
+                  />
+                  <ToggleRow
+                    label="Show phone number"
+                    checked={settings?.show_phone ?? true}
+                    onChange={(v) => updateSetting("show_phone", v)}
+                  />
+                  <ToggleRow
+                    label="Show email"
+                    checked={settings?.show_email ?? true}
+                    onChange={(v) => updateSetting("show_email", v)}
+                  />
+                  <ToggleRow
+                    label="Repeat header on multi-page invoices"
+                    checked={settings?.repeat_header_on_pages ?? true}
+                    onChange={(v) => updateSetting("repeat_header_on_pages", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Invoice Section 2: Student & Invoice Identification */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    2
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Student & Invoice Identification</h3>
+                    <p className="text-[11px] text-slate-500">Control student identification and billing period fields.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show student details (Name, Class, Adm No)"
+                    checked={settings?.show_student_details ?? true}
+                    onChange={(v) => updateSetting("show_student_details", v)}
+                  />
+                  <ToggleRow
+                    label="Show parent / guardian name"
+                    checked={settings?.show_parent_name ?? true}
+                    onChange={(v) => updateSetting("show_parent_name", v)}
+                  />
+                  <ToggleRow
+                    label="Show invoice number & issue date"
+                    checked={settings?.show_invoice_number_date ?? true}
+                    onChange={(v) => updateSetting("show_invoice_number_date", v)}
+                  />
+                  <ToggleRow
+                    label="Show academic year & billing period"
+                    checked={settings?.show_billing_period ?? true}
+                    onChange={(v) => updateSetting("show_billing_period", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Invoice Section 3: Fee Breakdown & Concessions */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    3
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Fee Breakdown & Concessions</h3>
+                    <p className="text-[11px] text-slate-500">Itemized table layout and concession displays.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show fee particulars table"
+                    checked={settings?.show_fee_breakdown ?? true}
+                    onChange={(v) => updateSetting("show_fee_breakdown", v)}
+                  />
+                  <ToggleRow
+                    label="Show line item descriptions"
+                    checked={settings?.show_description ?? true}
+                    onChange={(v) => updateSetting("show_description", v)}
+                  />
+                  <ToggleRow
+                    label="Show approved concessions"
+                    checked={settings?.show_discount ?? true}
+                    onChange={(v) => updateSetting("show_discount", v)}
+                  />
+                  <ToggleRow
+                    label="Show concession breakdown details"
+                    checked={settings?.show_concession_breakdown ?? true}
+                    onChange={(v) => updateSetting("show_concession_breakdown", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Invoice Section 4: Financial Summary & Dues */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    4
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Financial Summary & Dues</h3>
+                    <p className="text-[11px] text-slate-500">Totals card, previous balance, and overdue highlights.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show Total Fees"
+                    checked={settings?.show_total_fee ?? true}
+                    onChange={(v) => updateSetting("show_total_fee", v)}
+                  />
+                  <ToggleRow
+                    label="Show Previous Balance (earlier periods)"
+                    checked={settings?.show_previous_dues ?? true}
+                    onChange={(v) => updateSetting("show_previous_dues", v)}
+                  />
+                  <ToggleRow
+                    label="Show Overdue Amount (informational)"
+                    checked={settings?.show_overdues ?? true}
+                    onChange={(v) => updateSetting("show_overdues", v)}
+                  />
+                  <ToggleRow
+                    label="Show Amount Received"
+                    checked={settings?.show_received_amount ?? true}
+                    onChange={(v) => updateSetting("show_received_amount", v)}
+                  />
+                  <ToggleRow
+                    label="Show Balance Due"
+                    checked={settings?.show_balance_amount ?? true}
+                    onChange={(v) => updateSetting("show_balance_amount", v)}
+                  />
+                  <ToggleRow
+                    label="Show current student account balance"
+                    checked={settings?.show_current_student_balance ?? true}
+                    onChange={(v) => updateSetting("show_current_student_balance", v)}
+                  />
+                  <ToggleRow
+                    label="Show Amount in Words"
+                    checked={settings?.show_amount_in_words ?? true}
+                    onChange={(v) => updateSetting("show_amount_in_words", v)}
+                  />
+                  <ToggleRow
+                    label="Show payment mode & scan QR"
+                    checked={settings?.show_payment_mode ?? true}
+                    onChange={(v) => updateSetting("show_payment_mode", v)}
+                  />
+                  <ToggleRow
+                    label="Show tax / GST details (if configured)"
+                    checked={settings?.show_tax_details ?? false}
+                    onChange={(v) => updateSetting("show_tax_details", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Invoice Section 5: Footer & Signature */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    5
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Footer & Authorized Signature</h3>
+                    <p className="text-[11px] text-slate-500">Invoice terms, cashier acknowledgement, and signatory.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  <div className="space-y-3">
+                    <ToggleRow
+                      label="Show terms & conditions"
+                      checked={settings?.show_terms_and_conditions ?? true}
+                      onChange={(v) => updateSetting("show_terms_and_conditions", v)}
+                    />
+                    <ToggleRow
+                      label="Show received by / cashier info"
+                      checked={settings?.show_received_by ?? true}
+                      onChange={(v) => updateSetting("show_received_by", v)}
+                    />
+                    <ToggleRow
+                      label="Show page numbers"
+                      checked={settings?.show_page_numbers ?? true}
+                      onChange={(v) => updateSetting("show_page_numbers", v)}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Upload Signature Image</label>
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 h-10 border border-slate-200 bg-slate-50 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                          {settings?.signature_url ? (
+                            <img
+                              src={settings.signature_url}
+                              alt="Signature"
+                              className="max-h-full max-w-full object-contain"
+                            />
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">No image</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={uploadingSignature}
+                          onClick={() => signatureInputRef.current?.click()}
+                          className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors"
+                        >
+                          {uploadingSignature ? "Uploading..." : "Change"}
+                        </button>
+                        {settings?.signature_url && (
+                          <button
+                            type="button"
+                            onClick={() => updateSetting("signature_url", null)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
+                            title="Remove signature"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <input
+                          ref={signatureInputRef}
+                          type="file"
+                          accept="image/png, image/jpeg, image/webp"
+                          className="hidden"
+                          onChange={handleSignatureFile}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Authorized Signatory Title</label>
+                      <input
+                        type="text"
+                        value={settings?.signatory_designation || ""}
+                        onChange={(e) => updateSetting("signatory_designation", e.target.value)}
+                        placeholder="Principal / Authorized Signatory"
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Invoice Section 6: Advanced Collection Rules & Security PIN */}
+              <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((p) => !p)}
+                  className="w-full px-5 py-3.5 flex items-center justify-between text-left text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-slate-500" />
+                    <span>Advanced Collection Rules & Owner PIN Security</span>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                </button>
+
+                {showAdvanced && (
+                  <div className="p-5 border-t border-slate-200 space-y-4 bg-white text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Invoice Prefix</label>
+                        <input
+                          type="text"
+                          value={settings?.invoice_prefix || "INV"}
+                          onChange={(e) => updateSetting("invoice_prefix", e.target.value.toUpperCase())}
+                          className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Payment Due Days</label>
+                        <input
+                          type="number"
+                          value={settings?.invoice_due_days || 15}
+                          onChange={(e) => updateSetting("invoice_due_days", parseInt(e.target.value, 10))}
+                          className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block font-semibold text-slate-700 mb-1">Default Invoice Notes / Terms</label>
+                        <textarea
+                          rows={2}
+                          value={settings?.invoice_notes || ""}
+                          onChange={(e) => updateSetting("invoice_notes", e.target.value)}
+                          className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
+                          placeholder="Payment due within 15 days of issue."
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Set / Change Owner PIN</label>
+                        <input
+                          type="password"
+                          maxLength={8}
+                          value={ownerPin}
+                          onChange={(e) => setOwnerPin(e.target.value)}
+                          placeholder="4–8 digit override PIN"
+                          className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
+                        />
+                      </div>
+                      <div className="flex flex-col justify-center">
+                        <ToggleRow
+                          label="Allow partial payments"
+                          checked={settings?.allow_partial ?? true}
+                          onChange={(v) => updateSetting("allow_partial", v)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════ */}
+          {/* TAB 2: PAYMENT RECEIPT SETTINGS                                        */}
+          {/* ══════════════════════════════════════════════════════════════════════ */}
+          {activeSettingsTab === "receipt" && (
+            <div className="space-y-4">
+              {/* Receipt Section 1: School Header on Receipt */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                    1
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">School Header on Receipt</h3>
+                    <p className="text-[11px] text-slate-500">Letterhead and contact visibility on printed receipts.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show school logo on receipt"
+                    checked={settings?.show_receipt_school_logo ?? true}
+                    onChange={(v) => updateSetting("show_receipt_school_logo", v)}
+                  />
+                  <ToggleRow
+                    label="Show school name on receipt"
+                    checked={settings?.show_receipt_school_name ?? true}
+                    onChange={(v) => updateSetting("show_receipt_school_name", v)}
+                  />
+                  <ToggleRow
+                    label="Show campus address on receipt"
+                    checked={settings?.show_receipt_address ?? true}
+                    onChange={(v) => updateSetting("show_receipt_address", v)}
+                  />
+                  <ToggleRow
+                    label="Show phone number on receipt"
+                    checked={settings?.show_receipt_phone ?? true}
+                    onChange={(v) => updateSetting("show_receipt_phone", v)}
+                  />
+                  <ToggleRow
+                    label="Show email on receipt"
+                    checked={settings?.show_receipt_email ?? true}
+                    onChange={(v) => updateSetting("show_receipt_email", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Receipt Section 2: Receipt & Student Identification */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                    2
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Receipt & Student Identification</h3>
+                    <p className="text-[11px] text-slate-500">Receipt number, date, and student enrollment information.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show receipt number & payment date"
+                    checked={settings?.show_receipt_number_date ?? true}
+                    onChange={(v) => updateSetting("show_receipt_number_date", v)}
+                  />
+                  <ToggleRow
+                    label="Show student details (Name, Class, Adm No)"
+                    checked={settings?.show_receipt_student_details ?? true}
+                    onChange={(v) => updateSetting("show_receipt_student_details", v)}
+                  />
+                  <ToggleRow
+                    label="Show parent / guardian name"
+                    checked={settings?.show_receipt_parent_name ?? true}
+                    onChange={(v) => updateSetting("show_receipt_parent_name", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Receipt Section 3: Payment & Transaction Details */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                    3
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Payment & Transaction Details</h3>
+                    <p className="text-[11px] text-slate-500">Payment mode, reference / UTR number, and cashier.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show payment method (Cash, UPI, Card, NetBanking)"
+                    checked={settings?.show_receipt_payment_mode ?? true}
+                    onChange={(v) => updateSetting("show_receipt_payment_mode", v)}
+                  />
+                  <ToggleRow
+                    label="Show transaction / reference / UTR number"
+                    checked={settings?.show_receipt_transaction_ref ?? true}
+                    onChange={(v) => updateSetting("show_receipt_transaction_ref", v)}
+                  />
+                  <ToggleRow
+                    label="Show cashier / collector name"
+                    checked={settings?.show_receipt_cashier ?? true}
+                    onChange={(v) => updateSetting("show_receipt_cashier", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Receipt Section 4: Fee Allocation & Balances */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                    4
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Fee Allocation & Balances</h3>
+                    <p className="text-[11px] text-slate-500">Breakdown of obligations covered by this payment.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show fee particulars allocation table"
+                    checked={settings?.show_receipt_fee_allocation ?? true}
+                    onChange={(v) => updateSetting("show_receipt_fee_allocation", v)}
+                  />
+                  <ToggleRow
+                    label="Show Amount Paid in summary card"
+                    checked={settings?.show_receipt_amount_received ?? true}
+                    onChange={(v) => updateSetting("show_receipt_amount_received", v)}
+                  />
+                  <ToggleRow
+                    label="Show Amount in Words"
+                    checked={settings?.show_receipt_amount_in_words ?? true}
+                    onChange={(v) => updateSetting("show_receipt_amount_in_words", v)}
+                  />
+                  <ToggleRow
+                    label="Show Remaining Balance after payment"
+                    checked={settings?.show_receipt_balance_remaining ?? true}
+                    onChange={(v) => updateSetting("show_receipt_balance_remaining", v)}
+                  />
+                  <ToggleRow
+                    label="Show Advance Credit available (if unallocated)"
+                    checked={settings?.show_receipt_advance_credit ?? true}
+                    onChange={(v) => updateSetting("show_receipt_advance_credit", v)}
+                  />
+                </div>
+              </div>
+
+              {/* Receipt Section 5: Receipt Footer & Signatures */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                    5
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Receipt Footer & Signatures</h3>
+                    <p className="text-[11px] text-slate-500">Official seal, authorized signature, terms, and computer disclaimer.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 pt-2">
+                  <ToggleRow
+                    label="Show authorized signatory box"
+                    checked={settings?.show_receipt_signatory ?? true}
+                    onChange={(v) => updateSetting("show_receipt_signatory", v)}
+                  />
+                  <ToggleRow
+                    label="Show receipt terms & refund policy"
+                    checked={settings?.show_receipt_terms ?? true}
+                    onChange={(v) => updateSetting("show_receipt_terms", v)}
+                  />
+                  <ToggleRow
+                    label="Show computer generated disclaimer"
+                    checked={settings?.show_receipt_acknowledgement ?? true}
+                    onChange={(v) => updateSetting("show_receipt_acknowledgement", v)}
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Upload Authorized Signatory Signature</label>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-12 border border-slate-200 bg-slate-50 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                        {settings?.signature_url ? (
+                          <img
+                            src={settings.signature_url}
+                            alt="Authorized Signature"
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">No image</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={uploadingSignature}
+                        onClick={() => signatureInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors"
+                      >
+                        {uploadingSignature ? "Uploading..." : settings?.signature_url ? "Change" : "Upload"}
+                      </button>
+                      {settings?.signature_url && (
+                        <button
+                          type="button"
+                          onClick={() => updateSetting("signature_url", null)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
+                          title="Remove signature"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Authorized Signatory Title</label>
+                    <input
+                      type="text"
+                      value={settings?.signatory_name || ""}
+                      onChange={(e) => updateSetting("signatory_name", e.target.value)}
+                      placeholder="e.g. Principal / Authorized Signatory"
+                      className="w-full max-w-md px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════ */}
+          {/* TAB 3: PRINT SETTINGS                                                  */}
+          {/* ══════════════════════════════════════════════════════════════════════ */}
+          {activeSettingsTab === "print" && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-xs">
+                  🖨️
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Print & Formatting Preferences</h3>
+                  <p className="text-[11px] text-slate-500">Configure paper dimensions, theme colors, and Indian currency formatting.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Color Theme</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.receipt_theme || "myzkool_blue"}
+                      onChange={(e) => updateSetting("receipt_theme", e.target.value as ReceiptTheme)}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="myzkool_blue">MyZkool Blue (Professional Classic)</option>
+                      <option value="mint_pastel">Mint Pastel (Modern Teal)</option>
+                      <option value="lavender_pastel">Lavender Pastel (Royal Purple)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Default Paper Size</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.receipt_paper || "a4"}
+                      onChange={(e) => {
+                        const v = e.target.value as any;
+                        updateSetting("receipt_paper", v);
+                        setPreviewPaper(v === "thermal80" ? "thermal80" : "a4");
+                      }}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="a4">A4 Sheet (210 × 297 mm)</option>
+                      <option value="a5">A5 Sheet (148 × 210 mm)</option>
+                      <option value="thermal80">80 mm Thermal POS Roll</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Print Text Size</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.print_text_size || "medium"}
+                      onChange={(e) => updateSetting("print_text_size", e.target.value as any)}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="small">Small (Dense)</option>
+                      <option value="medium">Medium (Standard)</option>
+                      <option value="large">Large (High Contrast)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Print Orientation</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.print_orientation || "portrait"}
+                      onChange={(e) => updateSetting("print_orientation", e.target.value as any)}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Page Margins</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.print_margins || "normal"}
+                      onChange={(e) => updateSetting("print_margins", e.target.value as any)}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="compact">Compact (Narrow Margins)</option>
+                      <option value="normal">Normal (Standard 18mm)</option>
+                      <option value="wide">Wide (Spacious 24mm)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Indian Currency Format</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.amount_format || "indian"}
+                      onChange={(e) => updateSetting("amount_format", e.target.value as any)}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="indian">Indian (e.g. ₹ 1,00,000.00)</option>
+                      <option value="international">International (e.g. ₹ 100,000.00)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Decimal Places</label>
+                  <div className="relative">
+                    <select
+                      value={settings?.decimal_places ?? 2}
+                      onChange={(e) => updateSetting("decimal_places", parseInt(e.target.value, 10))}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 appearance-none focus:outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="2">2 Decimals (e.g. ₹ 500.00)</option>
+                      <option value="0">0 Decimals (e.g. ₹ 500)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col justify-end">
+                  <ToggleRow
+                    label="Show page numbers on multi-page"
+                    checked={settings?.show_page_numbers ?? true}
+                    onChange={(v) => updateSetting("show_page_numbers", v)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════════════ */}
+        {/* RIGHT COLUMN: STICKY LIVE DOCUMENT PREVIEW (5 COLS)                   */}
+        {/* ══════════════════════════════════════════════════════════════════════ */}
+        <div ref={previewRef} className="lg:col-span-5 lg:sticky lg:top-6 space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            {/* Top Row: Document Type Pill & Paper Switcher */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              {/* Document Type Selector (Invoice vs Receipt) */}
+              <div className="inline-flex p-0.5 bg-slate-100 rounded-xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocType("invoice")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    previewDocType === "invoice"
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Invoice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocType("receipt")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    previewDocType === "receipt"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Receipt
+                </button>
+              </div>
+
+              {/* Layout Switcher (A4 vs Thermal) */}
+              <div className="inline-flex p-0.5 bg-slate-100 rounded-xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setPreviewPaper("a4")}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    previewPaper === "a4"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  A4 Sheet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPaper("thermal80")}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    previewPaper === "thermal80"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  80mm Thermal
+                </button>
+              </div>
+            </div>
+
+            {/* Second Row: Specific Document Picker + Actions */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Document Selector */}
+              <div className="relative flex-1 min-w-0">
+                {previewDocType === "invoice" ? (
+                  <select
+                    value={selectedInvoiceId}
+                    onChange={(e) => handleSelectInvoice(e.target.value)}
+                    className="w-full pl-2.5 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 appearance-none focus:outline-none focus:border-blue-500 cursor-pointer truncate"
+                  >
+                    <option value="sample">Sample Student Invoice</option>
+                    {invoicesList.slice(0, 15).map((inv) => (
+                      <option key={inv.id} value={inv.id}>
+                        {inv.invoice_no} — {inv.student_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={selectedReceiptId}
+                    onChange={(e) => handleSelectReceipt(e.target.value)}
+                    className="w-full pl-2.5 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 appearance-none focus:outline-none focus:border-blue-500 cursor-pointer truncate"
+                  >
+                    <option value="sample">Sample Payment Receipt</option>
+                    {receiptsList.slice(0, 15).map((rcpt) => (
+                      <option key={rcpt.id} value={rcpt.id}>
+                        {rcpt.receipt_no} (₹{((rcpt.total_paise || (rcpt as any).total_amount_paise || 0) / 100).toLocaleString("en-IN")})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2 pointer-events-none" />
+              </div>
+
+              {/* Actions: Print and Download */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                  title="Print Document"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                  title="Download Document"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Download</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Live Document Frame */}
+            <div className="border border-slate-200/90 rounded-xl overflow-hidden bg-slate-100/60 shadow-inner max-h-[820px] overflow-y-auto">
+              <iframe
+                title="Document Live Preview Frame"
+                srcDoc={previewHTML}
+                className="w-full border-0 min-h-[760px] bg-white transition-opacity duration-150"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── EDIT SCHOOL INFO MODAL (Centrally Updates School Profile) ─────── */}
+      {isEditSchoolModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Building className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Edit School Profile</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditSchoolModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Official School Name *</label>
+                <input
+                  type="text"
+                  value={schoolEditForm.name}
+                  onChange={(e) => setSchoolEditForm((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Campus Address & Location *</label>
+                <input
+                  type="text"
+                  value={schoolEditForm.address}
+                  onChange={(e) => setSchoolEditForm((p) => ({ ...p, address: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Contact Phone</label>
+                  <input
+                    type="text"
+                    value={schoolEditForm.phone}
+                    onChange={(e) => setSchoolEditForm((p) => ({ ...p, phone: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Official Email</label>
+                  <input
+                    type="email"
+                    value={schoolEditForm.email}
+                    onChange={(e) => setSchoolEditForm((p) => ({ ...p, email: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Official School Logo</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                    {schoolEditForm.logo_url ? (
+                      <img
+                        src={schoolEditForm.logo_url}
+                        alt="School Logo"
+                        className="max-h-full max-w-full object-contain p-1"
+                      />
+                    ) : (
+                      <Building className="w-6 h-6 text-slate-300" />
+                    )}
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
+                    >
+                      Upload New Logo
+                    </button>
+                    <p className="text-[10px] text-slate-400 mt-1">PNG, JPG or WebP (max 3 MB)</p>
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png, image/jpeg, image/webp"
+                      className="hidden"
+                      onChange={handleLogoFile}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsEditSchoolModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingSchoolInfo}
+                onClick={handleSaveSchoolInfo}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-xs"
+              >
+                {savingSchoolInfo ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <span>Save School Profile</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Reusable accessible toggle row component with clean pastel switch.
+ */
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="text-xs font-medium text-slate-700 select-none leading-relaxed">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+          checked ? "bg-blue-600" : "bg-slate-300"
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+            checked ? "translate-x-4" : "translate-x-0"
+          }`}
+        />
+      </button>
     </div>
   );
 }

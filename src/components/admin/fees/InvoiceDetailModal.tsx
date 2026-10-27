@@ -1,5 +1,4 @@
-import React from "react";
-import { X, Printer, FileText, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { X, Printer, FileText, CheckCircle2, Clock, AlertTriangle, ExternalLink } from "lucide-react";
 import type { StudentInvoice } from "../../../types/fees";
 import { generateInvoiceHTML } from "../../../lib/invoiceTemplate";
 
@@ -62,6 +61,12 @@ export function InvoiceDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <a
+              href={`/admin/fees/invoices/${encodeURIComponent(invoice.id || invoice.invoice_no)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> Full View
+            </a>
             <button
               type="button"
               onClick={handlePrint}

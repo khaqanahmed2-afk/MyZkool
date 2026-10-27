@@ -114,7 +114,7 @@ export interface StudentFeeFilterOptions {
   due_date_to?: string;
   page?: number;
   pageSize?: number;
-  sort_by?: 'student_name' | 'admission_no' | 'total_fee' | 'paid' | 'pending' | 'overdue' | 'next_due_date' | 'status';
+  sort_by?: 'student_name' | 'admission_no' | 'total_fee' | 'paid' | 'pending' | 'overdue' | 'next_due_date' | 'status' | 'class';
   sort_order?: 'asc' | 'desc';
 }
 
@@ -236,6 +236,17 @@ export interface StudentLedgerDetails {
     date?: string;
     note?: string;
   }>;
+  unreceipted_settlement?: {
+    total_settled_paise: number;
+    status: 'legacy_settlement' | 'unbacked_allocations';
+    description: string;
+    settled_dues: Array<{
+      due_id: string;
+      due_description: string;
+      paid_paise: number;
+      billing_period: string;
+    }>;
+  };
 }
 
 export interface StudentFeeListResponse {

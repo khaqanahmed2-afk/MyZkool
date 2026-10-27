@@ -26,6 +26,7 @@ import {
   ShieldAlert,
   Building2,
   Calendar,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
 import { getAcademicYearsForSchool, getCurrentAcademicYear } from "../../../services/academicService";
@@ -379,6 +380,12 @@ export default function ClassesSettings() {
         >
           <GitMerge className="w-4 h-4" /> Parent Merge Tool (Spec A4.9)
         </button>
+        <Link
+          to="/admin/settings/privacy"
+          className="py-2 px-4 border-b-2 font-medium text-sm flex items-center gap-2 border-transparent text-red-600 hover:text-red-700 transition-colors ml-auto"
+        >
+          <Trash2 className="w-4 h-4" /> Data Purge & Account Deletion
+        </Link>
       </div>
 
       {errorMsg && (

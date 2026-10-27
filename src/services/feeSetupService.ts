@@ -10,6 +10,7 @@
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { getTransportSettings } from "./transportCoreService";
+import { updateCentralSchoolLogo } from "./schoolService";
 import type {
   FeeHead, FeeHeadInput,
   FeeTerm, FeeTermInput,
@@ -1209,6 +1210,32 @@ export async function assignFeeStructureToEligibleStudents(
     }
 
     if (eligibleStudents.length === 0) {
+      const localStudents = lsGet<any>(`myzkool_students_${schoolId}`);
+      const targetClassIdSet = new Set(targetClassIds);
+      const targetSectionIdSet = new Set(targetSectionIds);
+      eligibleStudents = localStudents
+        .filter((s: any) => {
+          if (s.school_id && s.school_id !== schoolId) return false;
+          if (structure?.target_type === "specific_classes" && targetClassIdSet.size > 0) {
+            return targetClassIdSet.has(s.class_id);
+          }
+          if (structure?.target_type === "specific_sections" && targetSectionIdSet.size > 0) {
+            return targetSectionIdSet.has(s.section_id);
+          }
+          if (targetClassIdSet.size > 0) {
+            return targetClassIdSet.has(s.class_id);
+          }
+          return true;
+        })
+        .map((s: any) => ({
+          id: s.id,
+          class_id: s.class_id,
+          section_id: s.section_id,
+          is_rte: !!s.is_rte,
+        }));
+    }
+
+    if (eligibleStudents.length === 0) {
       return { success: true, assignedStudentsCount: 0, createdDuesCount: 0, transportRidersCount: 0 };
     }
 
@@ -1628,6 +1655,285 @@ export async function assignFeeStructureToEligibleStudents(
   }
 }
 
+export interface StructureAssignmentPreviewResult {
+  success: boolean;
+  structure?: {
+    id: string;
+    name: string;
+    academic_year_id: string;
+    version: number;
+    status: string;
+    annual_fee_paise: number;
+  };
+  summary: {
+    total_eligible: number;
+    already_assigned: number;
+    newly_eligible: number;
+    transport_riders: number;
+    rte_count: number;
+    projected_dues_paise: number;
+  };
+  students: Array<{
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    admission_no: string;
+    class_name?: string;
+    section_name?: string;
+    is_rte: boolean;
+    is_already_assigned: boolean;
+    has_transport: boolean;
+    monthly_transport_paise: number;
+  }>;
+  error?: string;
+}
+
+export interface BulkAssignResult {
+  success: boolean;
+  assigned_count: number;
+  already_assigned_count: number;
+  created_dues_count: number;
+  skipped_count: number;
+  transport_riders_count: number;
+  error?: string;
+}
+
+/**
+ * Previews affected students and financial impact of assigning a fee structure
+ * before committing student assignments and generating dues.
+ */
+export async function previewStructureAssignment(
+  schoolId: string,
+  structureId: string
+): Promise<StructureAssignmentPreviewResult> {
+  if (!schoolId || !structureId) {
+    return {
+      success: false,
+      summary: { total_eligible: 0, already_assigned: 0, newly_eligible: 0, transport_riders: 0, rte_count: 0, projected_dues_paise: 0 },
+      students: [],
+      error: "School ID and Structure ID are required",
+    };
+  }
+
+  // 1. Try Supabase RPC
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.rpc("preview_fee_structure_assignment", {
+        p_school_id: schoolId,
+        p_structure_id: structureId,
+      });
+
+      if (!error && data && data.success) {
+        return data as StructureAssignmentPreviewResult;
+      }
+    } catch (err: any) {
+      console.warn("preview_fee_structure_assignment RPC fallback note:", err.message);
+    }
+  }
+
+  // 2. Client-side Fallback
+  try {
+    const allStructures = lsGet<FeeStructure>(FEE_STRUCTURES_KEY(schoolId));
+    const structure = allStructures.find((s) => s.id === structureId);
+    if (!structure) {
+      return {
+        success: false,
+        summary: { total_eligible: 0, already_assigned: 0, newly_eligible: 0, transport_riders: 0, rte_count: 0, projected_dues_paise: 0 },
+        students: [],
+        error: "Structure not found",
+      };
+    }
+
+    const { items: configItems } = await getStructureGrid(schoolId, structureId);
+    let annualPaise = 0;
+    for (const item of configItems) {
+      const mult = item.frequency === "monthly" ? 12 : item.frequency === "quarterly" ? 4 : item.frequency === "half_yearly" ? 2 : 1;
+      annualPaise += (item.amount_paise || 0) * mult;
+    }
+
+    // Load active enrollments
+    let studentList: any[] = [];
+    if (isSupabaseConfigured) {
+      try {
+        const { data: enrData } = await supabase
+          .from("student_enrollments")
+          .select("student_id, class_id, section_id, is_rte:students(is_rte), student:students(id, first_name, last_name, admission_no)")
+          .eq("school_id", schoolId)
+          .eq("academic_year_id", structure.academic_year_id)
+          .eq("status", "active");
+        if (enrData) {
+          studentList = enrData.map((e: any) => ({
+            student_id: e.student_id,
+            first_name: e.student?.first_name || "Student",
+            last_name: e.student?.last_name || "",
+            admission_no: e.student?.admission_no || "-",
+            class_id: e.class_id,
+            section_id: e.section_id,
+            is_rte: !!e.is_rte?.is_rte,
+          }));
+        }
+      } catch {
+        studentList = [];
+      }
+    }
+
+    if (studentList.length === 0) {
+      // Mock/local student enrollments
+      const localStudents = lsGet<any>(`myzkool_students_${schoolId}`);
+      studentList = localStudents.map((s: any) => ({
+        student_id: s.id,
+        first_name: s.first_name,
+        last_name: s.last_name || "",
+        admission_no: s.admission_no || "-",
+        class_id: s.class_id,
+        section_id: s.section_id,
+        is_rte: !!s.is_rte,
+      }));
+    }
+
+    // Filter to target classes/sections
+    const targetClassIds = structure.class_ids || (structure.class_id ? [structure.class_id] : []);
+    const targetSectionIds = structure.section_ids || [];
+
+    const eligible = studentList.filter((st) => {
+      if (structure.target_type === "all_classes") return true;
+      if (targetSectionIds.length > 0) return targetSectionIds.includes(st.section_id);
+      if (targetClassIds.length > 0) return targetClassIds.includes(st.class_id);
+      return true;
+    });
+
+    const localAssigns = lsGet<StudentFeeAssignment>(`myzkool_student_fee_assignments_${schoolId}`);
+    const localTrans = lsGet<any>(`myzkool_transport_assignments_${schoolId}`);
+
+    let alreadyAssignedCount = 0;
+    let transportCount = 0;
+    let rteCount = 0;
+    let totalDuesPaise = 0;
+
+    const mapped = eligible.map((st) => {
+      const isAlready = localAssigns.some(
+        (a) => a.student_id === st.student_id && a.structure_id === structureId && a.status === "active"
+      );
+      if (isAlready) alreadyAssignedCount++;
+
+      const trans = localTrans.find(
+        (t: any) => t.student_id === st.student_id && t.status === "active" && t.monthly_fee_paise > 0
+      );
+      const hasTrans = !!trans;
+      if (hasTrans) transportCount++;
+
+      if (st.is_rte) rteCount++;
+
+      if (!st.is_rte) totalDuesPaise += annualPaise;
+      if (hasTrans) totalDuesPaise += (trans.monthly_fee_paise || 0) * 12;
+
+      return {
+        student_id: st.student_id,
+        first_name: st.first_name,
+        last_name: st.last_name,
+        admission_no: st.admission_no,
+        is_rte: st.is_rte,
+        is_already_assigned: isAlready,
+        has_transport: hasTrans,
+        monthly_transport_paise: trans ? trans.monthly_fee_paise : 0,
+      };
+    });
+
+    return {
+      success: true,
+      structure: {
+        id: structure.id,
+        name: structure.name,
+        academic_year_id: structure.academic_year_id,
+        version: structure.version || 1,
+        status: structure.status,
+        annual_fee_paise: annualPaise,
+      },
+      summary: {
+        total_eligible: eligible.length,
+        already_assigned: alreadyAssignedCount,
+        newly_eligible: eligible.length - alreadyAssignedCount,
+        transport_riders: transportCount,
+        rte_count: rteCount,
+        projected_dues_paise: totalDuesPaise,
+      },
+      students: mapped,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      summary: { total_eligible: 0, already_assigned: 0, newly_eligible: 0, transport_riders: 0, rte_count: 0, projected_dues_paise: 0 },
+      students: [],
+      error: err.message || "Failed to preview structure assignment",
+    };
+  }
+}
+
+/**
+ * Bulk assigns fee structure to all eligible students and generates dues idempotently.
+ */
+export async function bulkAssignStructure(
+  schoolId: string,
+  structureId: string,
+  generateDues: boolean = true,
+  actorId?: string
+): Promise<BulkAssignResult> {
+  if (!schoolId || !structureId) {
+    return {
+      success: false,
+      assigned_count: 0,
+      already_assigned_count: 0,
+      created_dues_count: 0,
+      skipped_count: 0,
+      transport_riders_count: 0,
+      error: "School ID and Structure ID are required",
+    };
+  }
+
+  // 1. Try Supabase RPC
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.rpc("bulk_assign_fee_structure", {
+        p_school_id: schoolId,
+        p_structure_id: structureId,
+        p_generate_dues: generateDues,
+        p_actor_id: actorId || null,
+      });
+
+      if (!error && data && data.success) {
+        return data as BulkAssignResult;
+      }
+    } catch (err: any) {
+      console.warn("bulk_assign_fee_structure RPC fallback note:", err.message);
+    }
+  }
+
+  // 2. Client-side Fallback
+  const res = await assignFeeStructureToEligibleStudents(schoolId, structureId, actorId);
+  return {
+    success: res.success,
+    assigned_count: res.assignedStudentsCount,
+    already_assigned_count: 0,
+    created_dues_count: res.createdDuesCount,
+    skipped_count: 0,
+    transport_riders_count: res.transportRidersCount,
+    error: res.error,
+  };
+}
+
+/**
+ * Saves a fee structure explicitly as a Draft without generating dues or auto-assigning.
+ */
+export async function saveDraftFeeStructure(
+  schoolId: string,
+  input: Parameters<typeof saveCompleteFeeStructure>[1]
+): Promise<{ structure?: FeeStructure; error?: string }> {
+  return saveCompleteFeeStructure(schoolId, {
+    ...input,
+    status: "draft",
+  });
+}
+
 export async function checkStructureOverlaps(
   schoolId: string,
   yearId: string,
@@ -1706,6 +2012,7 @@ export async function saveCompleteFeeStructure(
     student_ids?: string[];
     description?: string;
     items?: FeeStructureConfigItem[];
+    autoAssign?: boolean;
     metadata?: Record<string, any>;
   }
 ): Promise<{ structure?: FeeStructure; error?: string }> {
@@ -1906,8 +2213,8 @@ export async function saveCompleteFeeStructure(
     }
   }
 
-  // Automatic student fee assignment if structure is marked Active
-  if (structure.status === "active") {
+  // Student fee assignment only if explicitly requested (separation of structure publishing from billing dues)
+  if (structure.status === "active" && input.autoAssign === true) {
     try {
       await assignFeeStructureToEligibleStudents(schoolId, structureId);
     } catch (e: any) {
@@ -2541,7 +2848,7 @@ export const DEFAULT_FEE_SETTINGS: Omit<FeeSettings, "school_id" | "created_at" 
   receipt_language: "en",
   signature_url: null,
   signatory_name: "Authorized Signatory",
-  signatory_designation: "Accounts Officer",
+  signatory_designation: "Principal",
   logo_url: null,
   receipt_header_title: "Official Fee Receipt",
   receipt_terms: [
@@ -2569,9 +2876,76 @@ export const DEFAULT_FEE_SETTINGS: Omit<FeeSettings, "school_id" | "created_at" 
   invoice_due_days: 15,
   invoice_notes: "Payment due within 15 days of issue.",
   owner_pin_hash: null,
+  // Section A: School Header
+  show_school_logo: true,
+  show_school_name: true,
+  show_address: true,
+  show_phone: true,
+  show_email: true,
+  repeat_header_on_pages: true,
+  // Section B: Invoice Details
+  show_student_details: true,
+  show_invoice_number_date: true,
+  show_fee_breakdown: true,
+  show_discount: true,
+  show_previous_dues: true,
+  show_overdues: true,
+  show_received_amount: true,
+  show_balance_amount: true,
+  show_current_student_balance: true,
+  // Section C: Totals & Payment
+  show_total_fee: true,
+  show_amount_in_words: true,
+  show_payment_mode: true,
+  show_tax_details: false,
+  amount_format: "indian",
+  decimal_places: 2,
+  show_parent_name: true,
+  show_concession_breakdown: true,
+  show_billing_period: true,
+  // Section D: Footer & Signature
+  show_description: true,
+  show_terms_and_conditions: true,
+  show_received_by: true,
+  show_page_numbers: true,
+  // Section E: Payment Receipt Details
+  show_receipt_school_logo: true,
+  show_receipt_school_name: true,
+  show_receipt_address: true,
+  show_receipt_phone: true,
+  show_receipt_email: true,
+  show_receipt_number_date: true,
+  show_receipt_student_details: true,
+  show_receipt_parent_name: true,
+  show_receipt_payment_mode: true,
+  show_receipt_transaction_ref: true,
+  show_receipt_fee_allocation: true,
+  show_receipt_amount_received: true,
+  show_receipt_amount_in_words: true,
+  show_receipt_balance_remaining: true,
+  show_receipt_advance_credit: false,
+  show_receipt_cashier: true,
+  show_receipt_signatory: true,
+  show_receipt_terms: true,
+  show_receipt_acknowledgement: true,
+  // Section F: Print Settings
+  print_text_size: "medium",
+  print_orientation: "portrait",
+  print_margins: "normal",
 };
 
 export async function getFeeSettings(schoolId: string): Promise<{ settings: FeeSettings }> {
+  // Authoritative logo resolution from central schools table
+  let authoritativeLogo: string | null = null;
+  if (isSupabaseConfigured) {
+    try {
+      const { data: scData } = await supabase.from("schools").select("logo_url").eq("id", schoolId).maybeSingle();
+      if (scData?.logo_url !== undefined) {
+        authoritativeLogo = scData.logo_url;
+      }
+    } catch {}
+  }
+
   if (isSupabaseConfigured) {
     try {
       const { data } = await supabase.from("fee_settings").select("*").eq("school_id", schoolId).maybeSingle();
@@ -2580,6 +2954,7 @@ export async function getFeeSettings(schoolId: string): Promise<{ settings: FeeS
           settings: {
             ...DEFAULT_FEE_SETTINGS,
             ...data,
+            logo_url: authoritativeLogo !== null ? authoritativeLogo : (data.logo_url || null),
             receipt_theme: data.receipt_theme || DEFAULT_FEE_SETTINGS.receipt_theme,
             receipt_terms: Array.isArray(data.receipt_terms) && data.receipt_terms.length > 0
               ? data.receipt_terms
@@ -2599,6 +2974,7 @@ export async function getFeeSettings(schoolId: string): Promise<{ settings: FeeS
       settings: {
         ...DEFAULT_FEE_SETTINGS,
         ...stored,
+        logo_url: authoritativeLogo !== null ? authoritativeLogo : (stored.logo_url || null),
         receipt_terms: Array.isArray(stored.receipt_terms) && stored.receipt_terms.length > 0
           ? stored.receipt_terms
           : DEFAULT_FEE_SETTINGS.receipt_terms,
@@ -2608,6 +2984,7 @@ export async function getFeeSettings(schoolId: string): Promise<{ settings: FeeS
   const defaults: FeeSettings = {
     school_id: schoolId,
     ...DEFAULT_FEE_SETTINGS,
+    logo_url: authoritativeLogo,
     created_at: now(),
     updated_at: now(),
   };
@@ -2626,6 +3003,11 @@ export async function updateFeeSettings(
       return { error: "PIN must be 4–8 digits" };
     }
     update.owner_pin_hash = await hashPin(new_pin);
+  }
+
+  // Central school logo synchronization: update schools.logo_url authoritatively
+  if (input.logo_url !== undefined) {
+    await updateCentralSchoolLogo(schoolId, input.logo_url);
   }
 
   if (isSupabaseConfigured) {
@@ -2749,7 +3131,9 @@ export async function uploadSchoolLogo(
         const { data: publicUrlData } = supabase.storage
           .from("school-assets")
           .getPublicUrl(data.path);
-        return { url: publicUrlData.publicUrl };
+        const publicUrl = publicUrlData.publicUrl;
+        await updateCentralSchoolLogo(schoolId, publicUrl);
+        return { url: publicUrl };
       }
       if (error) {
         console.warn("Supabase logo upload error, falling back to base64:", error.message);
@@ -2763,7 +3147,11 @@ export async function uploadSchoolLogo(
   if (typeof FileReader !== "undefined") {
     return new Promise<{ url?: string; error?: string }>((resolve) => {
       const reader = new FileReader();
-      reader.onload = () => resolve({ url: reader.result as string });
+      reader.onload = async () => {
+        const b64 = reader.result as string;
+        await updateCentralSchoolLogo(schoolId, b64);
+        resolve({ url: b64 });
+      };
       reader.onerror = () => resolve({ error: "Failed to process logo image." });
       reader.readAsDataURL(file);
     });
@@ -2772,9 +3160,13 @@ export async function uploadSchoolLogo(
   try {
     const buf = await file.arrayBuffer();
     const base64 = Buffer.from(buf).toString("base64");
-    return { url: `data:${file.type || "image/png"};base64,${base64}` };
+    const b64Url = `data:${file.type || "image/png"};base64,${base64}`;
+    await updateCentralSchoolLogo(schoolId, b64Url);
+    return { url: b64Url };
   } catch {
-    return { url: `data:image/png;base64,mockPngLogo==` };
+    const mockUrl = `data:image/png;base64,mockPngLogo==`;
+    await updateCentralSchoolLogo(schoolId, mockUrl);
+    return { url: mockUrl };
   }
 }
 

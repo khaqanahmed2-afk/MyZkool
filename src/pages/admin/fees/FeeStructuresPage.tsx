@@ -30,11 +30,17 @@ import {
   Sparkles,
   DollarSign,
   Eye,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  Send,
 } from "lucide-react";
 import {
   getFeeStructures,
   getFeeHeads,
   saveCompleteFeeStructure,
+  saveDraftFeeStructure,
   duplicateFeeStructure,
   activateStructure,
   deactivateFeeStructure,
@@ -46,6 +52,10 @@ import {
   createFeeHead,
   ensureSystemHeads,
   getStructureStudentCounts,
+  previewStructureAssignment,
+  bulkAssignStructure,
+  type StructureAssignmentPreviewResult,
+  type BulkAssignResult,
 } from "../../../services/feeSetupService";
 import { getCurrentAcademicYear, getAcademicYearsForSchool } from "../../../services/academicService";
 import { getClassesWithSections } from "../../../services/classSectionService";
@@ -126,8 +136,24 @@ export default function FeeStructuresPage() {
   const [academicYearFilter, setAcademicYearFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | StructureStatus>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
+  const [sectionFilter, setSectionFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+
+  // Sorting & Pagination
+  const [sortField, setSortField] = useState<"class" | "name" | "amount" | "installments" | "students" | "status">("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Assignment & Billing Drawer/Modal state
+  const [assignModalStructure, setAssignModalStructure] = useState<DisplayFeeStructure | null>(null);
+  const [assignModalPreview, setAssignModalPreview] = useState<StructureAssignmentPreviewResult | null>(null);
+  const [loadingAssignPreview, setLoadingAssignPreview] = useState(false);
+  const [executingBulkAssign, setExecutingBulkAssign] = useState(false);
+  const [assignGenerateDues, setAssignGenerateDues] = useState(true);
+  const [assignStudentSearch, setAssignStudentSearch] = useState("");
+  const [assignSuccessSummary, setAssignSuccessSummary] = useState<BulkAssignResult | null>(null);
 
   // Wizard state
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -332,6 +358,24 @@ export default function FeeStructuresPage() {
 
   // ─── Filter & Search Logic ──────────────────────────────────────────────────
 
+  const availableSectionsForFilter = useMemo(() => {
+    if (classFilter === "all") {
+      const allSecs: SchoolSection[] = [];
+      const seen = new Set<string>();
+      classes.forEach((c) => {
+        (c.sections || []).forEach((s) => {
+          if (!seen.has(s.id)) {
+            seen.add(s.id);
+            allSecs.push(s);
+          }
+        });
+      });
+      return allSecs;
+    }
+    const matched = classes.find((c) => c.id === classFilter);
+    return matched?.sections || [];
+  }, [classes, classFilter]);
+
   const filteredStructures = useMemo(() => {
     return structures.filter((s) => {
       // Search
@@ -353,11 +397,69 @@ export default function FeeStructuresPage() {
       const matchClass =
         classFilter === "all" ||
         s.class_id === classFilter ||
+        (s.class_ids && s.class_ids.includes(classFilter)) ||
         s.classNameDisplay.toLowerCase() === classFilter.toLowerCase();
 
-      return matchSearch && matchYear && matchStatus && matchClass;
+      // Section Filter
+      const matchSection =
+        sectionFilter === "all" ||
+        (s.section_ids && s.section_ids.includes(sectionFilter)) ||
+        (s.sectionDisplay && s.sectionDisplay.toLowerCase().includes(sectionFilter.toLowerCase()));
+
+      return matchSearch && matchYear && matchStatus && matchClass && matchSection;
     });
-  }, [structures, searchQuery, academicYearFilter, statusFilter, classFilter]);
+  }, [structures, searchQuery, academicYearFilter, statusFilter, classFilter, sectionFilter]);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, academicYearFilter, statusFilter, classFilter, sectionFilter]);
+
+  // Sorting
+  const sortedStructures = useMemo(() => {
+    return [...filteredStructures].sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case "class":
+          comparison = a.classNameDisplay.localeCompare(b.classNameDisplay);
+          break;
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "amount":
+          comparison = a.annualFeeTotalRupees - b.annualFeeTotalRupees;
+          break;
+        case "installments":
+          comparison = a.installmentsDisplay.localeCompare(b.installmentsDisplay);
+          break;
+        case "students":
+          comparison = a.studentCount - b.studentCount;
+          break;
+        case "status":
+          comparison = a.status.localeCompare(b.status);
+          break;
+        default:
+          comparison = 0;
+      }
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
+  }, [filteredStructures, sortField, sortDirection]);
+
+  function handleSort(field: "class" | "name" | "amount" | "installments" | "students" | "status") {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  }
+
+  // Pagination
+  const totalPages = Math.ceil(sortedStructures.length / pageSize) || 1;
+  const paginatedStructures = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedStructures.slice(start, start + pageSize);
+  }, [sortedStructures, currentPage, pageSize]);
 
   // Summary counts scoped to filtered academic year & active school records
   const yearFilteredStructures = useMemo(() => {
@@ -884,29 +986,42 @@ export default function FeeStructuresPage() {
     }
   }
 
-  // ─── Step 4: Publish Structure ───────────────────────────────────────────────
+  // ─── Step 4: Save Structure (Draft vs Publish) ───────────────────────────────
 
-  async function handlePublishStructure() {
+  async function handleSaveStructure(asActive: boolean) {
     setSavingStructure(true);
     setError(null);
     try {
+      if (!step1Name.trim()) {
+        alert("Please enter a valid structure name.");
+        setSavingStructure(false);
+        return;
+      }
+      if (!step1ClassId) {
+        alert("Please select an applicable class.");
+        setSavingStructure(false);
+        return;
+      }
+
       const targetType: StructureTargetType = step1SectionId ? "specific_sections" : "specific_classes";
       const sectionIds = step1SectionId ? [step1SectionId] : [];
 
-      // Check overlaps for conflicts
-      const { hasConflict, conflicts } = await checkStructureOverlaps(
-        activeSchoolId,
-        step1YearId,
-        targetType,
-        step1SectionId ? [step1SectionId] : [step1ClassId],
-        editingStructureId || undefined
-      );
+      // If publishing, check overlaps for conflicts
+      if (asActive) {
+        const { hasConflict, conflicts } = await checkStructureOverlaps(
+          activeSchoolId,
+          step1YearId,
+          targetType,
+          step1SectionId ? [step1SectionId] : [step1ClassId],
+          editingStructureId || undefined
+        );
 
-      if (hasConflict && conflicts.length > 0) {
-        const conflictNames = conflicts.map((c) => c.structureName).join(", ");
-        if (!confirm(`Warning: An active fee structure already exists for this scope (${conflictNames}). Publishing will activate this structure and supersede the previous one. Proceed?`)) {
-          setSavingStructure(false);
-          return;
+        if (hasConflict && conflicts.length > 0) {
+          const conflictNames = conflicts.map((c) => c.structureName).join(", ");
+          if (!confirm(`Warning: An active fee structure already exists for this scope (${conflictNames}). Publishing will activate this structure and supersede the previous one. Proceed?`)) {
+            setSavingStructure(false);
+            return;
+          }
         }
       }
 
@@ -923,11 +1038,11 @@ export default function FeeStructuresPage() {
           term_amounts: {},
         }));
 
-      const { structure: savedStruct, error: saveErr } = await saveCompleteFeeStructure(activeSchoolId, {
+      const savePayload = {
         id: editingStructureId || undefined,
         name: step1Name.trim(),
         academic_year_id: step1YearId,
-        status: "active",
+        status: asActive ? ("active" as const) : ("draft" as const),
         target_type: targetType,
         class_id: step1ClassId,
         class_ids: [step1ClassId],
@@ -941,19 +1056,81 @@ export default function FeeStructuresPage() {
           lateFeeAmount,
           gracePeriodDays,
         },
-      });
+      };
+
+      const { structure: savedStruct, error: saveErr } = asActive
+        ? await saveCompleteFeeStructure(activeSchoolId, savePayload)
+        : await saveDraftFeeStructure(activeSchoolId, savePayload);
 
       if (saveErr || !savedStruct) {
         throw new Error(saveErr || "Failed to save fee structure");
       }
 
-      setSuccessBanner(`Fee structure "${step1Name.trim()}" published and automatically assigned to eligible students.`);
       setIsWizardOpen(false);
       await loadInitialData();
+
+      if (asActive) {
+        setSuccessBanner(`Fee structure "${step1Name.trim()}" published successfully.`);
+        // Offer immediate assignment preview
+        const enriched = structures.find((s) => s.id === savedStruct.id) || {
+          ...savedStruct,
+          classNameDisplay: classes.find((c) => c.id === step1ClassId)?.name || "Class",
+          sectionDisplay: step1SectionId ? "Section" : "All Sections",
+          annualFeeTotalRupees: previewCalculation?.class_base_annual_fee_rupees || 0,
+          installmentsDisplay: billingCycle,
+          studentCount: previewCalculation?.total_enrolled_students_count || 0,
+          transportCount: previewCalculation?.transport_riders_count || 0,
+        };
+        handleOpenAssignModal(enriched as DisplayFeeStructure);
+      } else {
+        setSuccessBanner(`Fee structure "${step1Name.trim()}" saved as draft. No student dues generated.`);
+      }
     } catch (err: any) {
-      alert(`Publish failed: ${err.message}`);
+      alert(`Save failed: ${err.message}`);
     } finally {
       setSavingStructure(false);
+    }
+  }
+
+  // ─── Student Assignment & Billing Workflow ────────────────────────────────────
+
+  async function handleOpenAssignModal(structure: DisplayFeeStructure) {
+    setAssignModalStructure(structure);
+    setLoadingAssignPreview(true);
+    setAssignSuccessSummary(null);
+    setAssignStudentSearch("");
+    try {
+      const res = await previewStructureAssignment(activeSchoolId, structure.id);
+      setAssignModalPreview(res);
+    } catch (err: any) {
+      alert(`Could not preview assignment: ${err.message}`);
+    } finally {
+      setLoadingAssignPreview(false);
+    }
+  }
+
+  async function handleExecuteBulkAssign() {
+    if (!assignModalStructure) return;
+    setExecutingBulkAssign(true);
+    try {
+      const res = await bulkAssignStructure(
+        activeSchoolId,
+        assignModalStructure.id,
+        assignGenerateDues,
+        authSchool?.id
+      );
+      if (!res.success) {
+        throw new Error(res.error || "Failed to assign structure");
+      }
+      setAssignSuccessSummary(res);
+      setSuccessBanner(
+        `Assignment completed: ${res.assigned_count} student(s) assigned, ${res.created_dues_count} installment dues generated (${res.already_assigned_count || 0} already assigned).`
+      );
+      await loadInitialData();
+    } catch (err: any) {
+      alert(`Bulk assignment error: ${err.message}`);
+    } finally {
+      setExecutingBulkAssign(false);
     }
   }
 
@@ -1502,13 +1679,38 @@ export default function FeeStructuresPage() {
             <div className="relative">
               <select aria-label="Filter by class"
                 value={classFilter}
-                onChange={(e) => setClassFilter(e.target.value)}
+                onChange={(e) => {
+                  setClassFilter(e.target.value);
+                  setSectionFilter("all");
+                }}
                 className="appearance-none bg-white border border-[#E6EAF3] rounded-xl pl-3 pr-8 py-1.5 text-xs font-semibold text-[#141A2E] outline-none cursor-pointer hover:border-gray-300"
               >
                 <option value="all">All Classes</option>
                 {classes.map((cls) => (
                   <option key={cls.id} value={cls.id}>
                     {cls.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Section Filter */}
+          <div className="flex flex-col">
+            <span className="text-[9px] font-semibold text-[#8A94A6] uppercase tracking-wider pl-1">
+              Section
+            </span>
+            <div className="relative">
+              <select aria-label="Filter by section"
+                value={sectionFilter}
+                onChange={(e) => setSectionFilter(e.target.value)}
+                className="appearance-none bg-white border border-[#E6EAF3] rounded-xl pl-3 pr-8 py-1.5 text-xs font-semibold text-[#141A2E] outline-none cursor-pointer hover:border-gray-300"
+              >
+                <option value="all">All Sections</option>
+                {availableSectionsForFilter.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
                   </option>
                 ))}
               </select>
@@ -1523,6 +1725,7 @@ export default function FeeStructuresPage() {
                 setSearchQuery("");
                 setStatusFilter("all");
                 setClassFilter("all");
+                setSectionFilter("all");
                 if (selectedYear) setAcademicYearFilter(selectedYear.id);
               }}
               className="px-3 py-1.5 border border-[#E6EAF3] hover:bg-gray-50 rounded-xl text-xs font-semibold text-[#5B6478] transition-colors cursor-pointer"
@@ -1550,12 +1753,84 @@ export default function FeeStructuresPage() {
                     className="rounded border-[#E6EAF3] text-[#2158E0] focus:ring-[#2158E0] cursor-pointer"
                   />
                 </th>
-                <th className="py-3.5 px-4">Class / Section</th>
-                <th className="py-3.5 px-4">Structure Name</th>
-                <th className="py-3.5 px-4">Base Annual Fee</th>
-                <th className="py-3.5 px-4">Installments</th>
-                <th className="py-3.5 px-4">Students & Transport</th>
-                <th className="py-3.5 px-4">Status</th>
+                <th
+                  onClick={() => handleSort("class")}
+                  className="py-3.5 px-4 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Class / Section</span>
+                    {sortField === "class" ? (
+                      sortDirection === "asc" ? <ChevronUp className="w-3.5 h-3.5 text-[#2158E0]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#2158E0]" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("name")}
+                  className="py-3.5 px-4 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Structure Name</span>
+                    {sortField === "name" ? (
+                      sortDirection === "asc" ? <ChevronUp className="w-3.5 h-3.5 text-[#2158E0]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#2158E0]" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("amount")}
+                  className="py-3.5 px-4 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Base Annual Fee</span>
+                    {sortField === "amount" ? (
+                      sortDirection === "asc" ? <ChevronUp className="w-3.5 h-3.5 text-[#2158E0]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#2158E0]" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("installments")}
+                  className="py-3.5 px-4 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Installments</span>
+                    {sortField === "installments" ? (
+                      sortDirection === "asc" ? <ChevronUp className="w-3.5 h-3.5 text-[#2158E0]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#2158E0]" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("students")}
+                  className="py-3.5 px-4 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Students & Transport</span>
+                    {sortField === "students" ? (
+                      sortDirection === "asc" ? <ChevronUp className="w-3.5 h-3.5 text-[#2158E0]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#2158E0]" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("status")}
+                  className="py-3.5 px-4 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Status</span>
+                    {sortField === "status" ? (
+                      sortDirection === "asc" ? <ChevronUp className="w-3.5 h-3.5 text-[#2158E0]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#2158E0]" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -1569,7 +1844,7 @@ export default function FeeStructuresPage() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredStructures.length === 0 ? (
+              ) : paginatedStructures.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-16 text-center">
                     <div className="max-w-xs mx-auto space-y-3">
@@ -1591,7 +1866,7 @@ export default function FeeStructuresPage() {
                   </td>
                 </tr>
               ) : (
-                filteredStructures.map((structure) => {
+                paginatedStructures.map((structure) => {
                   const isSelected = selectedIdSet.has(structure.id);
                   return (
                     <tr
@@ -1713,8 +1988,18 @@ export default function FeeStructuresPage() {
                         {activeMenuId === structure.id && (
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute right-4 mt-1 w-48 bg-white border border-[#E6EAF3] rounded-xl shadow-lg py-1 z-30 text-left text-xs font-medium text-[#141A2E] animate-in fade-in zoom-in-95 duration-100"
+                            className="absolute right-4 mt-1 w-52 bg-white border border-[#E6EAF3] rounded-xl shadow-lg py-1 z-30 text-left text-xs font-medium text-[#141A2E] animate-in fade-in zoom-in-95 duration-100"
                           >
+                            <button
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                handleOpenAssignModal(structure);
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-emerald-50/70 flex items-center gap-2 cursor-pointer font-semibold text-emerald-700"
+                            >
+                              <ClipboardList className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Assign & Generate Dues</span>
+                            </button>
                             <button
                               onClick={() => {
                                 setActiveMenuId(null);
@@ -1798,6 +2083,61 @@ export default function FeeStructuresPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Footer */}
+        <div className="p-4 border-t border-[#E6EAF3] bg-white flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#5B6478]">
+          <div className="flex items-center gap-2">
+            <span>Showing</span>
+            <span className="font-bold text-[#141A2E]">
+              {sortedStructures.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+            </span>
+            <span>to</span>
+            <span className="font-bold text-[#141A2E]">
+              {Math.min(currentPage * pageSize, sortedStructures.length)}
+            </span>
+            <span>of</span>
+            <span className="font-bold text-[#141A2E]">{sortedStructures.length}</span>
+            <span>structures</span>
+
+            <span className="mx-2 text-gray-300">|</span>
+            <span>Page size:</span>
+            <select
+              aria-label="Items per page"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="border border-[#E6EAF3] rounded-lg px-2 py-1 bg-white text-xs text-[#141A2E] outline-none cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="p-1.5 border border-[#E6EAF3] rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title="Previous page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-3 py-1 font-semibold text-[#141A2E]">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="p-1.5 border border-[#E6EAF3] rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title="Next page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2658,28 +2998,41 @@ export default function FeeStructuresPage() {
                 </button>
               )}
 
-              {wizardStep < 4 ? (
+              <div className="flex items-center gap-2">
+                {/* Save as Draft option available across wizard */}
                 <button
-                  onClick={handleNextStep}
-                  className="px-5 py-2.5 bg-[#2158E0] hover:bg-[#1b48b8] text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  type="button"
+                  onClick={() => handleSaveStructure(false)}
+                  disabled={savingStructure || !step1Name.trim() || !step1ClassId}
+                  className="px-4 py-2 border border-[#E6EAF3] hover:bg-amber-50/50 text-amber-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
-                  <span>Next</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <Layers className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Save as Draft</span>
                 </button>
-              ) : (
-                <button
-                  onClick={handlePublishStructure}
-                  disabled={savingStructure}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  {savingStructure ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  <span>Publish Structure</span>
-                </button>
-              )}
+
+                {wizardStep < 4 ? (
+                  <button
+                    onClick={handleNextStep}
+                    className="px-5 py-2.5 bg-[#2158E0] hover:bg-[#1b48b8] text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Next</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSaveStructure(true)}
+                    disabled={savingStructure}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {savingStructure ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>Publish Structure</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -3423,6 +3776,236 @@ export default function FeeStructuresPage() {
                 className="px-5 py-2 bg-[#141A2E] hover:bg-gray-800 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-xs"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 8. ASSIGNMENT & BILLING WORKFLOW MODAL ────────────────────────── */}
+      {assignModalStructure && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-[#E6EAF3] w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-[#E6EAF3] bg-[#F8FAFC] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center">
+                  <ClipboardList className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#141A2E] flex items-center gap-2">
+                    <span>Assign Structure & Generate Dues</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+                      {assignModalStructure.name}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-[#5B6478] mt-0.5">
+                    Target: <span className="font-semibold text-[#141A2E]">{assignModalStructure.classNameDisplay}</span> ({assignModalStructure.sectionDisplay || "All Sections"})
+                  </p>
+                </div>
+              </div>
+              <button
+                aria-label="Close"
+                onClick={() => setAssignModalStructure(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-5">
+              {loadingAssignPreview ? (
+                <div className="py-16 text-center text-[#5B6478] space-y-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#2158E0] mx-auto" />
+                  <p className="text-xs font-semibold">Resolving eligible student enrollments & calculating dues schedule...</p>
+                </div>
+              ) : assignModalPreview ? (
+                <>
+                  {/* Summary Metric Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3">
+                      <div className="text-[10px] font-semibold text-[#8A94A6] uppercase tracking-wider">Eligible Students</div>
+                      <div className="text-lg font-bold text-[#141A2E] mt-1">{assignModalPreview.summary.total_eligible}</div>
+                    </div>
+                    <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3">
+                      <div className="text-[10px] font-semibold text-[#8A94A6] uppercase tracking-wider">Already Assigned</div>
+                      <div className="text-lg font-bold text-blue-700 mt-1">{assignModalPreview.summary.already_assigned}</div>
+                    </div>
+                    <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3">
+                      <div className="text-[10px] font-semibold text-[#8A94A6] uppercase tracking-wider">Newly Eligible</div>
+                      <div className="text-lg font-bold text-emerald-700 mt-1">{assignModalPreview.summary.newly_eligible}</div>
+                    </div>
+                    <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3">
+                      <div className="text-[10px] font-semibold text-[#8A94A6] uppercase tracking-wider">Transport Riders</div>
+                      <div className="text-lg font-bold text-amber-700 mt-1">{assignModalPreview.summary.transport_riders}</div>
+                    </div>
+                    <div className="bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl p-3">
+                      <div className="text-[10px] font-semibold text-[#8A94A6] uppercase tracking-wider">RTE / Waived</div>
+                      <div className="text-lg font-bold text-purple-700 mt-1">{assignModalPreview.summary.rte_count}</div>
+                    </div>
+                    <div className="bg-emerald-50/70 border border-emerald-200/60 rounded-xl p-3">
+                      <div className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider">Projected Demand</div>
+                      <div className="text-base font-bold text-emerald-800 mt-1">{fmtRupees(Math.round(assignModalPreview.summary.projected_dues_paise / 100))}</div>
+                    </div>
+                  </div>
+
+                  {/* Idempotency & Billing Execution Settings */}
+                  <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl space-y-2">
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={assignGenerateDues}
+                        onChange={(e) => setAssignGenerateDues(e.target.checked)}
+                        className="mt-0.5 rounded border-[#E6EAF3] text-[#2158E0] focus:ring-[#2158E0]"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-[#141A2E]">
+                          Generate installment dues and invoices according to schedule
+                        </span>
+                        <p className="text-[11px] text-[#5B6478] mt-0.5">
+                          When checked, dues will be generated for each term and synchronized with the fee ledger.
+                          Existing dues for already-assigned students will not be duplicated.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Success Execution Result Banner */}
+                  {assignSuccessSummary && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3 text-emerald-800 text-xs">
+                      <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
+                      <div>
+                        <div className="font-bold text-sm">Assignment & Billing Executed Successfully!</div>
+                        <div className="mt-1 space-y-0.5 text-xs text-emerald-900">
+                          <div>• Newly assigned students: <span className="font-bold">{assignSuccessSummary.assigned_count}</span></div>
+                          <div>• Installment dues created: <span className="font-bold">{assignSuccessSummary.created_dues_count}</span></div>
+                          <div>• Already assigned students preserved: <span className="font-bold">{assignSuccessSummary.already_assigned_count || 0}</span></div>
+                          <div>• Active transport riders charged: <span className="font-bold">{assignSuccessSummary.transport_riders_count}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Students Table with Search */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold text-[#141A2E]">
+                        Eligible Students ({assignModalPreview.students.length})
+                      </span>
+                      <div className="relative w-64">
+                        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          placeholder="Search student or admission no..."
+                          value={assignStudentSearch}
+                          onChange={(e) => setAssignStudentSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 border border-[#E6EAF3] rounded-lg text-xs outline-none focus:border-[#2158E0]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border border-[#E6EAF3] rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-[#F8FAFC] border-b border-[#E6EAF3] text-[11px] font-semibold text-[#5B6478] uppercase sticky top-0">
+                          <tr>
+                            <th className="py-2.5 px-3">Adm No.</th>
+                            <th className="py-2.5 px-3">Student Name</th>
+                            <th className="py-2.5 px-3">Class & Section</th>
+                            <th className="py-2.5 px-3">RTE Status</th>
+                            <th className="py-2.5 px-3">Transport Status</th>
+                            <th className="py-2.5 px-3 text-right">Assignment State</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#E6EAF3] font-medium text-[#141A2E]">
+                          {assignModalPreview.students
+                            .filter((st) => {
+                              const q = assignStudentSearch.toLowerCase().trim();
+                              if (!q) return true;
+                              return (
+                                st.first_name.toLowerCase().includes(q) ||
+                                st.last_name.toLowerCase().includes(q) ||
+                                st.admission_no.toLowerCase().includes(q)
+                              );
+                            })
+                            .map((st) => (
+                              <tr key={st.student_id} className="hover:bg-[#F8FAFC]">
+                                <td className="py-2 px-3 font-mono text-[#5B6478]">{st.admission_no}</td>
+                                <td className="py-2 px-3 font-semibold text-[#141A2E]">
+                                  {st.first_name} {st.last_name}
+                                </td>
+                                <td className="py-2 px-3 text-[#5B6478]">
+                                  {st.class_name || assignModalStructure.classNameDisplay} {st.section_name ? `• ${st.section_name}` : ""}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {st.is_rte ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                                      RTE 100% Waived
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#8A94A6]">-</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {st.has_transport ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                      <Truck className="w-3 h-3 text-amber-600" />
+                                      <span>Active Rider ({fmtRupees(Math.round(st.monthly_transport_paise / 100))}/mo)</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#8A94A6] text-[11px]">₹0 (Non-Rider)</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  {st.is_already_assigned ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2158E0] border border-blue-200">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Already Assigned
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      Ready to Assign
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="py-12 text-center text-red-600 text-xs font-semibold">
+                  Failed to load assignment preview.
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-[#E6EAF3] bg-white flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => setAssignModalStructure(null)}
+                className="px-4 py-2 border border-[#E6EAF3] hover:bg-gray-50 rounded-xl text-xs font-semibold text-[#5B6478] cursor-pointer"
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteBulkAssign}
+                disabled={executingBulkAssign || !assignModalPreview || assignModalPreview.students.length === 0}
+                className="px-5 py-2.5 bg-[#2158E0] hover:bg-[#1b48b8] disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                {executingBulkAssign ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                <span>
+                  {assignGenerateDues ? "Confirm Assignment & Generate Dues" : "Confirm Assignment (No Dues)"}
+                </span>
               </button>
             </div>
           </div>

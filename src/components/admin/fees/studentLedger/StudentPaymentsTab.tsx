@@ -28,14 +28,28 @@ interface PaymentItem {
   }>;
 }
 
+interface UnreceiptedSettlement {
+  total_settled_paise: number;
+  status: 'legacy_settlement' | 'unbacked_allocations';
+  description: string;
+  settled_dues: Array<{
+    due_id: string;
+    due_description: string;
+    paid_paise: number;
+    billing_period: string;
+  }>;
+}
+
 interface Props {
   payments: PaymentItem[];
+  unreceiptedSettlement?: UnreceiptedSettlement;
   onPrintReceipt: (payment: PaymentItem) => void;
   onCollectPayment: () => void;
 }
 
 export const StudentPaymentsTab: React.FC<Props> = ({
   payments,
+  unreceiptedSettlement,
   onPrintReceipt,
   onCollectPayment,
 }) => {
@@ -44,6 +58,8 @@ export const StudentPaymentsTab: React.FC<Props> = ({
   const toggleExpand = (id: string) => {
     setExpandedPaymentId((prev) => (prev === id ? null : id));
   };
+
+  const hasUnreceipted = Boolean(unreceiptedSettlement && unreceiptedSettlement.total_settled_paise > 0);
 
   return (
     <div className="space-y-4">
@@ -54,30 +70,101 @@ export const StudentPaymentsTab: React.FC<Props> = ({
             Official Payment Receipts & Allocations
           </h4>
           <p className="text-[11px] text-slate-500">
-            Recorded receipts and their specific settlements against assessed fee obligations
+            Recorded receipts and audited historical settlements against assessed fee obligations
           </p>
         </div>
-        <span className="text-xs text-slate-500 font-medium">
-          {payments.length} receipt{payments.length === 1 ? "" : "s"} recorded
-        </span>
-      </div>
-
-      {payments.length === 0 ? (
-        <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
-          <Receipt className="w-8 h-8 mx-auto text-slate-300" />
-          <p className="text-xs font-semibold text-slate-700">No fee payments recorded for this student yet.</p>
-          <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-            When a counter payment or online payment is collected, the receipt reference, mode, and line allocations appear here.
-          </p>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 font-medium">
+            {payments.length} receipt{payments.length === 1 ? "" : "s"} recorded
+          </span>
           <button
             type="button"
             onClick={onCollectPayment}
-            className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
           >
             <CreditCard className="w-3.5 h-3.5" />
             <span>Collect Payment</span>
           </button>
         </div>
+      </div>
+
+      {/* Audited Legacy / Direct Settlements Reconciliation Section */}
+      {hasUnreceipted && unreceiptedSettlement && (
+        <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-bold text-xs text-emerald-950">
+                Audited Fee Settlements (Direct & Legacy Allocations)
+              </span>
+            </div>
+            <span className="font-bold text-xs text-emerald-700 tabular-nums">
+              Total Settled: {formatPaise(unreceiptedSettlement.total_settled_paise)}
+            </span>
+          </div>
+
+          <p className="text-[11px] text-emerald-800 leading-relaxed">
+            {unreceiptedSettlement.description} These allocations directly reduce the student&apos;s assessed fee liabilities.
+            {payments.length === 0 && (
+              <span className="block mt-1 font-medium text-emerald-900">
+                Note: No standalone receipt vouchers exist for these historical settlements. They are accounted for directly in the obligation ledger below:
+              </span>
+            )}
+          </p>
+
+          <div className="border border-emerald-200/80 rounded-lg overflow-hidden bg-white">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-emerald-100/40 text-emerald-900 font-semibold text-[10px] uppercase">
+                <tr>
+                  <th className="py-2 px-3">Obligation Description</th>
+                  <th className="py-2 px-3">Billing Period</th>
+                  <th className="py-2 px-3 text-right">Settled Amount</th>
+                  <th className="py-2 px-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-emerald-50">
+                {unreceiptedSettlement.settled_dues.map((s) => (
+                  <tr key={s.due_id} className="hover:bg-emerald-50/30">
+                    <td className="py-2 px-3 font-medium text-slate-800 text-[11px]">
+                      {s.due_description}
+                    </td>
+                    <td className="py-2 px-3 text-slate-600 text-[11px]">
+                      {s.billing_period}
+                    </td>
+                    <td className="py-2 px-3 text-right font-bold text-emerald-700 tabular-nums text-[11px]">
+                      {formatPaise(s.paid_paise)}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                        Settled
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {payments.length === 0 ? (
+        !hasUnreceipted ? (
+          <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
+            <Receipt className="w-8 h-8 mx-auto text-slate-300" />
+            <p className="text-xs font-semibold text-slate-700">No fee payments recorded for this student yet.</p>
+            <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+              When a counter payment or online payment is collected, the receipt reference, mode, and line allocations appear here.
+            </p>
+            <button
+              type="button"
+              onClick={onCollectPayment}
+              className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              <span>Collect Payment</span>
+            </button>
+          </div>
+        ) : null
       ) : (
         <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs bg-white">
           <div className="overflow-x-auto">

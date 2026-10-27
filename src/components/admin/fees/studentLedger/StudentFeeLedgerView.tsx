@@ -484,6 +484,7 @@ export const StudentFeeLedgerView: React.FC<StudentFeeLedgerViewProps> = ({
           {activeTab === "payments" && (
             <StudentPaymentsTab
               payments={ledgerDetails.payments}
+              unreceiptedSettlement={ledgerDetails.unreceipted_settlement}
               onPrintReceipt={handlePrintReceipt}
               onCollectPayment={() => onCollectPayment(student.student_id)}
             />

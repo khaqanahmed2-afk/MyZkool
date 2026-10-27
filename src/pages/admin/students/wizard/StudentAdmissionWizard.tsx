@@ -198,7 +198,6 @@ export const StudentAdmissionWizard: React.FC = () => {
   // Load existing student data in edit mode
   useEffect(() => {
     if (!isEditMode || !schoolId || !studentId) {
-      if (!isEditMode) setIsLoadingStudent(false);
       return;
     }
     let isMounted = true;
@@ -319,8 +318,8 @@ export const StudentAdmissionWizard: React.FC = () => {
     isEditMode,
   ]);
 
-  // Validation per step
-  const validateStep = useCallback((step: number): boolean => {
+  // Pure step validation logic (no side-effects / no setState)
+  const getStepValidationErrors = useCallback((step: number): Record<string, string> => {
     const errs: Record<string, string> = {};
 
     if (step === 1) {
@@ -403,9 +402,20 @@ export const StudentAdmissionWizard: React.FC = () => {
       }
     }
 
+    return errs;
+  }, [payload]);
+
+  // Pure validity check - SAFE to call during render (no setState)
+  const isStepValid = useCallback((step: number): boolean => {
+    return Object.keys(getStepValidationErrors(step)).length === 0;
+  }, [getStepValidationErrors]);
+
+  // Validation with error state update - ONLY call on user action (handleNext, handleQuickSave, step jumps)
+  const validateStep = useCallback((step: number): boolean => {
+    const errs = getStepValidationErrors(step);
     setStepErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [payload]);
+  }, [getStepValidationErrors]);
 
   const handleNext = useCallback(async () => {
     if (!validateStep(currentStep)) return;
@@ -681,12 +691,16 @@ export const StudentAdmissionWizard: React.FC = () => {
         <div className="hidden md:flex items-center gap-1.5">
           {STEP_TITLES.map((title, idx) => {
             const stepNum = idx + 1;
-            const isClickable = isEditMode || stepNum < currentStep || validateStep(currentStep);
+            const isClickable = isEditMode || stepNum <= currentStep || isStepValid(currentStep);
             return (
               <button
                 key={title}
                 type="button"
                 onClick={() => {
+                  if (stepNum === currentStep) return;
+                  if (!isEditMode && stepNum > currentStep) {
+                    if (!validateStep(currentStep)) return;
+                  }
                   if (isClickable) {
                     setCurrentStep(stepNum);
                     window.scrollTo({ top: 0, behavior: "smooth" });

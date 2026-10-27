@@ -26,6 +26,11 @@ import {
   Lock,
   Undo2,
   Settings,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import {
@@ -51,13 +56,16 @@ const PAYMENT_METHOD_TABS = [
   { id: "reversed", label: "Reversed" },
 ] as const;
 
+type SortColumn = "date" | "amount" | "receipt_no" | "student_name" | "class_name" | "payment_method" | "status";
+
 export default function FeeCollectionsPage() {
   const { schoolId, school } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
   // Filters state
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [academicYearId, setAcademicYearId] = useState("");
   const [selectedClassId, setSelectedClassId] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
@@ -65,7 +73,11 @@ export default function FeeCollectionsPage() {
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [activeTab, setActiveTab] = useState<string>("all");
 
-  // Pagination & Sorting state
+  // Sorting state
+  const [sortBy, setSortBy] = useState<SortColumn>("date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
   const [totalCount, setTotalCount] = useState(0);
@@ -73,6 +85,7 @@ export default function FeeCollectionsPage() {
 
   // Data & loading state
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<EnrichedTransaction[]>([]);
   const allFilteredTransactionsRef = useRef<EnrichedTransaction[]>([]);
   const [classesList, setClassesList] = useState<Array<{ id: string; name: string }>>([]);
@@ -86,6 +99,8 @@ export default function FeeCollectionsPage() {
     onlineCount: 0,
     cashPaise: 0,
     cashCount: 0,
+    cancelledCount: 0,
+    totalAuditedCount: 0,
   });
 
   // Table row selection state
@@ -96,6 +111,15 @@ export default function FeeCollectionsPage() {
   const [isCancelModalMode, setIsCancelModalMode] = useState(false);
   const [activeMenuRowId, setActiveMenuRowId] = useState<string | null>(null);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // Check URL query parameters on mount (e.g. ?student=...) and forward to full page
   useEffect(() => {
@@ -109,9 +133,10 @@ export default function FeeCollectionsPage() {
   const fetchData = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const data = await getCollectionsViewData(schoolId, {
-        search,
+        search: debouncedSearch,
         academicYearId,
         classId: selectedClassId,
         paymentMethod: selectedPaymentMethod,
@@ -120,8 +145,8 @@ export default function FeeCollectionsPage() {
         methodTab: activeTab,
         page: currentPage,
         pageSize,
-        sortBy: "date",
-        sortOrder: "desc",
+        sortBy,
+        sortOrder,
       });
 
       setSummary(data.summary);
@@ -137,14 +162,15 @@ export default function FeeCollectionsPage() {
         const cur = data.academicYears.find((y) => y.is_current) || data.academicYears[0];
         setAcademicYearId(cur.id);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load fee collections:", err);
+      setFetchError(err?.message || "Failed to load fee collection transactions. Please check your network and retry.");
     } finally {
       setLoading(false);
     }
   }, [
     schoolId,
-    search,
+    debouncedSearch,
     academicYearId,
     selectedClassId,
     selectedPaymentMethod,
@@ -153,15 +179,22 @@ export default function FeeCollectionsPage() {
     activeTab,
     currentPage,
     pageSize,
+    sortBy,
+    sortOrder,
   ]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Reset pagination on filter change
-  const handleSearchChange = (val: string) => {
-    setSearch(val);
+  // Sort handler
+  const handleSort = (column: SortColumn) => {
+    if (sortBy === column) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortOrder(column === "date" || column === "amount" ? "desc" : "asc");
+    }
     setCurrentPage(1);
   };
 
@@ -171,7 +204,8 @@ export default function FeeCollectionsPage() {
   };
 
   const handleClearFilters = () => {
-    setSearch("");
+    setSearchInput("");
+    setDebouncedSearch("");
     setSelectedClassId("all");
     setSelectedPaymentMethod("all");
     setDateRange("all");
@@ -194,6 +228,20 @@ export default function FeeCollectionsPage() {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setSelectedRowIds(next);
+  };
+
+  const handleBulkExport = () => {
+    const selectedList = transactions.filter((t) => selectedRowIds.has(t.id));
+    if (selectedList.length > 0) {
+      exportCollectionsCSV(selectedList);
+    }
+  };
+
+  const handleBulkPrint = () => {
+    const selectedList = transactions.filter((t) => selectedRowIds.has(t.id));
+    if (selectedList.length > 0) {
+      setSelectedTransactionForModal(selectedList[0]);
+    }
   };
 
   // Method Badge color resolver
@@ -242,8 +290,33 @@ export default function FeeCollectionsPage() {
     exportCollectionsCSV(toExport);
   };
 
+  const renderSortableHeader = (label: string, field: SortColumn, extraClasses = "") => {
+    const isActive = sortBy === field;
+    return (
+      <th
+        scope="col"
+        onClick={() => handleSort(field)}
+        className={`py-3 px-4 font-semibold text-gray-600 select-none cursor-pointer hover:bg-slate-100/70 transition-colors ${extraClasses}`}
+        title={`Sort by ${label}`}
+      >
+        <div className="flex items-center gap-1.5">
+          <span>{label}</span>
+          {isActive ? (
+            sortOrder === "asc" ? (
+              <ArrowUp className="w-3.5 h-3.5 text-[#2563EB]" />
+            ) : (
+              <ArrowDown className="w-3.5 h-3.5 text-[#2563EB]" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3.5 h-3.5 text-gray-300" />
+          )}
+        </div>
+      </th>
+    );
+  };
+
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-200">
+    <div className="space-y-6 pb-16 animate-in fade-in duration-200">
       {/* 1. Page Header (Matches Reference Image) */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -255,20 +328,21 @@ export default function FeeCollectionsPage() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 1. Quick Date Selector: Today */}
+          {/* Quick Date Selector: Today */}
           <button
             type="button"
             onClick={() => setDateRange(dateRange === "today" ? "all" : "today")}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-2xs shrink-0 ${dateRange === "today"
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-2xs shrink-0 ${
+              dateRange === "today"
                 ? "bg-[#EBF2FE] border-blue-200 text-[#2563EB]"
                 : "bg-white border-[#E6EAF3] text-gray-700 hover:bg-gray-50 hover:border-gray-300"
-              }`}
+            }`}
           >
             <Calendar className={`w-3.5 h-3.5 ${dateRange === "today" ? "text-[#2563EB]" : "text-gray-500"}`} />
             <span>Today</span>
           </button>
 
-          {/* 2. Cheque Register Shortcut */}
+          {/* Cheque Register Shortcut */}
           <Link
             to="/admin/fees/cheques"
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
@@ -278,7 +352,7 @@ export default function FeeCollectionsPage() {
             <span>Cheque Register</span>
           </Link>
 
-          {/* 3. Day Close Shortcut */}
+          {/* Day Close Shortcut */}
           <Link
             to="/admin/fees/day-close"
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
@@ -288,7 +362,7 @@ export default function FeeCollectionsPage() {
             <span>Day Close</span>
           </Link>
 
-          {/* 4. Refunds Register Shortcut */}
+          {/* Refunds Register Shortcut */}
           <Link
             to="/admin/fees/refunds"
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
@@ -298,7 +372,7 @@ export default function FeeCollectionsPage() {
             <span>Refunds Register</span>
           </Link>
 
-          {/* 5. Fee & Receipt Settings Shortcut */}
+          {/* Fee & Receipt Settings Shortcut */}
           <Link
             to="/admin/fees/setup/settings"
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:text-[#2563EB] transition-colors shadow-2xs shrink-0 cursor-pointer"
@@ -308,7 +382,7 @@ export default function FeeCollectionsPage() {
             <span>Fee & Receipt Settings</span>
           </Link>
 
-          {/* 6. Export Dropdown */}
+          {/* Export Dropdown */}
           <div className="relative">
             <button
               type="button"
@@ -334,7 +408,7 @@ export default function FeeCollectionsPage() {
             )}
           </div>
 
-          {/* 7. Primary Blue Collect Fee Action */}
+          {/* Primary Blue Collect Fee Action */}
           <Link
             to="/admin/fees/collect"
             className="flex items-center gap-1.5 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-bold hover:bg-[#1D4ED8] transition-colors shadow-sm cursor-pointer shrink-0"
@@ -373,8 +447,11 @@ export default function FeeCollectionsPage() {
             <h3 className="text-xl sm:text-2xl font-black text-[#141A2E] mt-1.5">
               {formatPaise(summary.thisMonthPaise)}
             </h3>
-            <p className="text-xs text-[#5B6478] mt-1 truncate">
-              {summary.thisMonthCount} transactions
+            <p className="text-xs text-[#5B6478] mt-1 truncate" title={`${summary.thisMonthCount} settled payments`}>
+              <span className="font-semibold text-gray-700">{summary.thisMonthCount}</span> settled payments
+              {summary.cancelledCount && summary.cancelledCount > 0 ? (
+                <span className="text-gray-400 text-[11px] ml-1">({summary.cancelledCount} voided)</span>
+              ) : null}
             </p>
           </div>
         </div>
@@ -414,16 +491,30 @@ export default function FeeCollectionsPage() {
 
       {/* 3. Search and Filters Panel (Matches Reference Image) */}
       <div className="bg-white border border-[#E6EAF3] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
-        {/* Search Input */}
+        {/* Search Input with Debounce & Clear */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input aria-label="Search fee collections"
+          <input
+            aria-label="Search fee collections"
             type="text"
-            value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Search by student name, admission no., receipt no. or transaction id..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by student name, admission no., receipt no. or transaction reference..."
+            className="w-full pl-10 pr-9 py-2.5 bg-white border border-[#E6EAF3] rounded-xl text-xs text-[#141A2E] placeholder:text-gray-400 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors"
           />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput("");
+                setDebouncedSearch("");
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Dropdowns Row */}
@@ -431,9 +522,14 @@ export default function FeeCollectionsPage() {
           {/* Academic Year */}
           <div>
             <label htmlFor="feecollectionspage-academic-year" className="text-[11px] font-semibold text-gray-500 block mb-1">Academic Year</label>
-            <select id="feecollectionspage-academic-year" aria-label="Academic Year"
+            <select
+              id="feecollectionspage-academic-year"
+              aria-label="Academic Year"
               value={academicYearId}
-              onChange={(e) => setAcademicYearId(e.target.value)}
+              onChange={(e) => {
+                setAcademicYearId(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               {yearsList.map((y) => (
@@ -447,9 +543,14 @@ export default function FeeCollectionsPage() {
           {/* Class */}
           <div>
             <label htmlFor="feecollectionspage-class" className="text-[11px] font-semibold text-gray-500 block mb-1">Class</label>
-            <select id="feecollectionspage-class" aria-label="Class"
+            <select
+              id="feecollectionspage-class"
+              aria-label="Class"
               value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
+              onChange={(e) => {
+                setSelectedClassId(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="all">All Classes</option>
@@ -464,9 +565,14 @@ export default function FeeCollectionsPage() {
           {/* Payment Method */}
           <div>
             <label htmlFor="feecollectionspage-payment-method" className="text-[11px] font-semibold text-gray-500 block mb-1">Payment Method</label>
-            <select id="feecollectionspage-payment-method" aria-label="Payment Method"
+            <select
+              id="feecollectionspage-payment-method"
+              aria-label="Payment Method"
               value={selectedPaymentMethod}
-              onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+              onChange={(e) => {
+                setSelectedPaymentMethod(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="all">All Methods</option>
@@ -481,9 +587,14 @@ export default function FeeCollectionsPage() {
           {/* Date Range */}
           <div>
             <label htmlFor="feecollectionspage-date-range" className="text-[11px] font-semibold text-gray-500 block mb-1">Date Range</label>
-            <select id="feecollectionspage-date-range" aria-label="Date Range"
+            <select
+              id="feecollectionspage-date-range"
+              aria-label="Date Range"
               value={dateRange}
-              onChange={(e) => setDateRange(e.target.value as any)}
+              onChange={(e) => {
+                setDateRange(e.target.value as any);
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="today">Today</option>
@@ -497,9 +608,14 @@ export default function FeeCollectionsPage() {
           {/* Status */}
           <div>
             <label htmlFor="feecollectionspage-status" className="text-[11px] font-semibold text-gray-500 block mb-1">Status</label>
-            <select id="feecollectionspage-status" aria-label="Status"
+            <select
+              id="feecollectionspage-status"
+              aria-label="Status"
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#E6EAF3] rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
             >
               <option value="all">All Statuses</option>
@@ -512,19 +628,21 @@ export default function FeeCollectionsPage() {
             </select>
           </div>
 
-          {/* Clear Filters Action */}
+          {/* Reset Filters Action */}
           <div className="flex items-end">
             <button
+              type="button"
               onClick={handleClearFilters}
-              className="w-full py-2 px-3 border border-[#E6EAF3] rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+              className="w-full py-1.5 px-3 bg-white border border-[#E6EAF3] text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
-              Clear Filters
+              <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
+              <span>Reset</span>
             </button>
           </div>
         </div>
 
-        {/* Method Chips / Tabs Row (Matches Reference Image) */}
-        <div className="flex items-center gap-2 overflow-x-auto pt-2 scrollbar-none">
+        {/* Quick Tabs Row */}
+        <div className="pt-2 border-t border-[#E6EAF3] flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {PAYMENT_METHOD_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -532,10 +650,11 @@ export default function FeeCollectionsPage() {
                 key={tab.id}
                 type="button"
                 onClick={() => handleTabChange(tab.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors shrink-0 cursor-pointer ${isActive
-                    ? "bg-[#2563EB] text-white shadow-2xs font-bold"
-                    : "bg-[#F8FAFC] text-gray-600 hover:bg-blue-50 hover:text-[#2563EB] border border-[#E6EAF3]"
-                  }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
+                  isActive
+                    ? "bg-[#2563EB] text-white shadow-2xs"
+                    : "bg-[#F8FAFC] text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-transparent"
+                }`}
               >
                 {tab.label}
               </button>
@@ -544,13 +663,18 @@ export default function FeeCollectionsPage() {
         </div>
       </div>
 
-      {/* 4. Payment Transactions Table (Matches Reference Image) */}
+      {/* 4. Transactions Table Card */}
       <div className="bg-white border border-[#E6EAF3] rounded-2xl shadow-2xs overflow-hidden">
         {/* Table Title Bar */}
         <div className="px-5 py-4 border-b border-[#E6EAF3] flex items-center justify-between">
-          <h2 className="text-base font-bold text-[#141A2E]">
-            Payment Transactions ({totalCount})
-          </h2>
+          <div>
+            <h2 className="text-base font-bold text-[#141A2E]">
+              Payment Transactions ({totalCount})
+            </h2>
+            <p className="text-[11px] text-[#5B6478] mt-0.5">
+              Comprehensive audit log of settled, pending, and voided receipts.
+            </p>
+          </div>
           {selectedRowIds.size > 0 && (
             <span className="text-xs text-[#2563EB] font-semibold bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
               {selectedRowIds.size} selected
@@ -563,33 +687,84 @@ export default function FeeCollectionsPage() {
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-[#F8FAFC] text-gray-500 font-semibold border-b border-[#E6EAF3]">
               <tr>
-                <th className="py-3 px-4 w-10 text-center">
-                  <input aria-label="Select item"
+                <th scope="col" className="py-3 px-4 w-10 text-center">
+                  <input
+                    aria-label="Select all items"
                     type="checkbox"
                     checked={selectedRowIds.size === transactions.length && transactions.length > 0}
                     onChange={handleToggleSelectAll}
                     className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB] accent-[#2563EB] border-gray-300 cursor-pointer"
                   />
                 </th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Receipt No.</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Date & Time</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Student</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Class</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Invoice(s)</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Amount</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Method</th>
-                <th className="py-3 px-4 font-semibold text-gray-600">Status</th>
-                <th className="py-3 px-4 text-center font-semibold text-gray-600">Actions</th>
+                {renderSortableHeader("Receipt No.", "receipt_no")}
+                {renderSortableHeader("Date & Time", "date")}
+                {renderSortableHeader("Student", "student_name")}
+                {renderSortableHeader("Class", "class_name")}
+                <th scope="col" className="py-3 px-4 font-semibold text-gray-600">Invoice(s)</th>
+                {renderSortableHeader("Amount", "amount")}
+                {renderSortableHeader("Method", "payment_method")}
+                {renderSortableHeader("Status", "status")}
+                <th scope="col" className="py-3 px-4 text-center font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-[#E6EAF3]">
               {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="animate-pulse">
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="w-4 h-4 bg-slate-200 rounded mx-auto" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-20 h-4 bg-slate-200 rounded" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-24 h-4 bg-slate-200 rounded" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 bg-slate-200 rounded-full shrink-0" />
+                        <div className="space-y-1">
+                          <div className="w-28 h-3.5 bg-slate-200 rounded" />
+                          <div className="w-16 h-2.5 bg-slate-100 rounded" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-14 h-4 bg-slate-200 rounded" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-20 h-4 bg-slate-200 rounded" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-16 h-4 bg-slate-200 rounded" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-16 h-5 bg-slate-200 rounded-full" />
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="w-20 h-5 bg-slate-200 rounded-full" />
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="w-6 h-6 bg-slate-100 rounded mx-auto" />
+                    </td>
+                  </tr>
+                ))
+              ) : fetchError ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
-                    <div className="flex items-center justify-center gap-2">
-                      <RefreshCw className="w-5 h-5 animate-spin text-[#2563EB]" />
-                      <span>Loading payment transactions...</span>
+                  <td colSpan={10} className="py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
+                      <AlertCircle className="w-8 h-8 text-rose-500" />
+                      <p className="text-sm font-semibold text-gray-800">Failed to load fee collections</p>
+                      <p className="text-xs text-gray-500">{fetchError}</p>
+                      <button
+                        type="button"
+                        onClick={fetchData}
+                        className="mt-2 px-4 py-1.5 bg-[#2563EB] text-white text-xs font-semibold rounded-xl hover:bg-[#1D4ED8] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Retry</span>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -601,6 +776,7 @@ export default function FeeCollectionsPage() {
                       Try clearing filters or click Collect Fee to record a new payment.
                     </p>
                     <button
+                      type="button"
                       onClick={() => navigate("/admin/fees/collect")}
                       className="mt-3 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors cursor-pointer"
                     >
@@ -611,15 +787,18 @@ export default function FeeCollectionsPage() {
               ) : (
                 transactions.map((tx) => {
                   const isRowSelected = selectedRowIds.has(tx.id);
+                  const isCancelled = tx.status === "cancelled";
                   return (
                     <tr
                       key={tx.id}
-                      className={`hover:bg-[#F8FAFC] transition-colors ${isRowSelected ? "bg-blue-50/40" : ""
-                        }`}
+                      className={`hover:bg-[#F8FAFC] transition-colors ${
+                        isRowSelected ? "bg-blue-50/40" : ""
+                      }`}
                     >
                       {/* Checkbox */}
                       <td className="py-3.5 px-4 text-center">
-                        <input aria-label="Select item"
+                        <input
+                          aria-label={`Select receipt ${tx.receipt_no}`}
                           type="checkbox"
                           checked={isRowSelected}
                           onChange={() => handleToggleRow(tx.id)}
@@ -671,7 +850,12 @@ export default function FeeCollectionsPage() {
 
                       {/* Amount */}
                       <td className="py-3.5 px-4 font-bold text-[#141A2E] whitespace-nowrap">
-                        {tx.formatted_amount}
+                        <span className={isCancelled ? "line-through text-gray-400 font-normal" : ""}>
+                          {tx.formatted_amount}
+                        </span>
+                        {isCancelled && (
+                          <span className="block text-[10px] text-gray-400 font-normal">Voided</span>
+                        )}
                       </td>
 
                       {/* Payment Method */}
@@ -686,7 +870,8 @@ export default function FeeCollectionsPage() {
 
                       {/* Actions Menu */}
                       <td className="py-3.5 px-4 text-center relative">
-                        <button aria-label="Actions Menu"
+                        <button
+                          aria-label={`Actions for ${tx.receipt_no}`}
                           type="button"
                           onClick={() => setActiveMenuRowId(activeMenuRowId === tx.id ? null : tx.id)}
                           className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -696,41 +881,45 @@ export default function FeeCollectionsPage() {
 
                         {activeMenuRowId === tx.id && (
                           <>
-                            <div aria-hidden="true"
+                            <div
+                              aria-hidden="true"
                               className="fixed inset-0 z-10"
                               onClick={() => setActiveMenuRowId(null)}
                             />
                             <div className="absolute right-4 top-10 w-44 bg-white border border-[#E6EAF3] rounded-xl shadow-xl z-20 py-1 divide-y divide-gray-100 text-left">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedTransactionForModal(tx);
                                   setIsCancelModalMode(false);
                                   setActiveMenuRowId(null);
                                 }}
-                                className="w-full px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                className="w-full px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
                               >
                                 <Eye className="w-3.5 h-3.5 text-gray-400" />
                                 <span>View Receipt</span>
                               </button>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedTransactionForModal(tx);
                                   setIsCancelModalMode(false);
                                   setActiveMenuRowId(null);
                                 }}
-                                className="w-full px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                className="w-full px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
                               >
                                 <Printer className="w-3.5 h-3.5 text-gray-400" />
                                 <span>Print / PDF</span>
                               </button>
-                              {tx.status !== "refunded" && (
+                              {tx.status !== "refunded" && tx.status !== "cancelled" && (
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     setSelectedTransactionForModal(tx);
                                     setIsCancelModalMode(true);
                                     setActiveMenuRowId(null);
                                   }}
-                                  className="w-full px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                  className="w-full px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
                                 >
                                   <RotateCcw className="w-3.5 h-3.5 text-red-500" />
                                   <span>Cancel / Refund</span>
@@ -759,15 +948,17 @@ export default function FeeCollectionsPage() {
             <span className="font-semibold text-gray-800">
               {Math.min(currentPage * pageSize, totalCount)}
             </span>{" "}
-            of <span className="font-semibold text-gray-800">{totalCount}</span> payments
+            of <span className="font-semibold text-gray-800">{totalCount}</span> records
           </div>
 
           {/* Page numbers navigation */}
           <div className="flex items-center gap-1">
-            <button aria-label="Previous"
+            <button
+              aria-label="Previous page"
+              type="button"
               disabled={currentPage <= 1}
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -778,11 +969,13 @@ export default function FeeCollectionsPage() {
               return (
                 <button
                   key={p}
+                  type="button"
                   onClick={() => setCurrentPage(p)}
-                  className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${isActive
+                  className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    isActive
                       ? "bg-[#2563EB] text-white"
                       : "border border-[#E6EAF3] text-gray-700 hover:bg-gray-50"
-                    }`}
+                  }`}
                 >
                   {p}
                 </button>
@@ -793,16 +986,20 @@ export default function FeeCollectionsPage() {
               <>
                 <span className="px-1 text-gray-400">...</span>
                 <button
+                  type="button"
                   onClick={() => setCurrentPage(totalPages)}
-                  className={`w-7 h-7 rounded-lg text-xs font-semibold border border-[#E6EAF3] text-gray-700 hover:bg-gray-50 cursor-pointer ${currentPage === totalPages ? "bg-[#2563EB] text-white" : ""
-                    }`}
+                  className={`w-7 h-7 rounded-lg text-xs font-semibold border border-[#E6EAF3] text-gray-700 hover:bg-gray-50 cursor-pointer ${
+                    currentPage === totalPages ? "bg-[#2563EB] text-white" : ""
+                  }`}
                 >
                   {totalPages}
                 </button>
               </>
             )}
 
-            <button aria-label="Next"
+            <button
+              aria-label="Next page"
+              type="button"
               disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               className="p-1.5 rounded-lg border border-[#E6EAF3] text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
@@ -813,7 +1010,8 @@ export default function FeeCollectionsPage() {
 
           {/* Page size dropdown */}
           <div className="flex items-center gap-2">
-            <select aria-label="Page size dropdown"
+            <select
+              aria-label="Page size dropdown"
               value={pageSize}
               onChange={(e) => {
                 setPageSize(Number(e.target.value));
@@ -830,7 +1028,42 @@ export default function FeeCollectionsPage() {
         </div>
       </div>
 
-
+      {/* Floating Bulk Actions Bar */}
+      {selectedRowIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#141A2E] text-white px-5 py-3 rounded-2xl shadow-2xl z-40 flex items-center gap-4 animate-in slide-in-from-bottom duration-200 border border-slate-700">
+          <span className="text-xs font-semibold">
+            <span className="bg-[#2563EB] text-white px-2 py-0.5 rounded-full mr-1.5 text-[11px] font-bold">
+              {selectedRowIds.size}
+            </span>
+            {selectedRowIds.size === 1 ? "receipt" : "receipts"} selected
+          </span>
+          <div className="h-4 w-px bg-slate-700" />
+          <button
+            type="button"
+            onClick={handleBulkExport}
+            className="text-xs font-medium text-slate-200 hover:text-white flex items-center gap-1.5 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleBulkPrint}
+            className="text-xs font-medium text-slate-200 hover:text-white flex items-center gap-1.5 cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print</span>
+          </button>
+          <div className="h-4 w-px bg-slate-700" />
+          <button
+            type="button"
+            onClick={() => setSelectedRowIds(new Set())}
+            className="text-xs text-slate-400 hover:text-white cursor-pointer"
+          >
+            Deselect
+          </button>
+        </div>
+      )}
 
       {/* Receipt Details Modal */}
       <ReceiptDetailsModal
