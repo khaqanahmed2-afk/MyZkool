@@ -9,6 +9,8 @@ import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "../context/AuthContext";
 import { ProtectedRoute } from "../components/auth/ProtectedRoute";
+import { MasterAdminAuthProvider } from "../context/MasterAdminAuthContext";
+import { MasterAdminRoute } from "../components/master-admin/MasterAdminRoute";
 
 function PageLoading() {
   return (
@@ -66,7 +68,6 @@ const ConcessionRulesPage = lazy(() => import("../pages/admin/fees/ConcessionRul
 const LateFeeRulesPage = lazy(() => import("../pages/admin/fees/LateFeeRulesPage"));
 const FeeSettingsPage = lazy(() => import("../pages/admin/fees/FeeSettingsPage"));
 const ReceiptPreviewPage = lazy(() => import("../pages/admin/fees/ReceiptPreviewPage"));
-const DuesGenerationPage = lazy(() => import("../pages/admin/fees/DuesGenerationPage"));
 const InvoicesPage = lazy(() => import("../pages/admin/fees/InvoicesPage"));
 const InvoiceDetailPage = lazy(() => import("../pages/admin/fees/InvoiceDetailPage"));
 const ApprovalsPage = lazy(() => import("../pages/admin/approvals/ApprovalsPage"));
@@ -74,7 +75,6 @@ const FeeCollectionsPage = lazy(() => import("../pages/admin/fees/FeeCollections
 const FeeCollectPage = lazy(() => import("../pages/admin/fees/FeeCollectPage"));
 const StudentLedgerPage = lazy(() => import("../pages/admin/fees/StudentLedgerPage"));
 const FeeDashboard = lazy(() => import("../pages/admin/fees/FeeDashboard"));
-const DefaultersPage = lazy(() => import("../pages/admin/fees/DuesRemindersPage"));
 const DuesRemindersPage = lazy(() => import("../pages/admin/fees/DuesRemindersPage"));
 const ChequeRegisterPage = lazy(() => import("../pages/admin/fees/ChequeRegisterPage"));
 const RefundsPage = lazy(() => import("../pages/admin/fees/RefundsPage"));
@@ -94,6 +94,24 @@ const YearRenewalPage = lazy(() =>
   import("../pages/admin/transport/YearRenewalPage").then((m) => ({ default: m.YearRenewalPage }))
 );
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
+
+// Master Admin Control Plane
+const MasterAdminLogin = lazy(() => import("../pages/master-admin/MasterAdminLogin"));
+const MasterAdminShell = lazy(() =>
+  import("../components/master-admin/MasterAdminShell").then((m) => ({ default: m.MasterAdminShell }))
+);
+const MasterAdminDashboard = lazy(() => import("../pages/master-admin/MasterAdminDashboard"));
+const MasterAdminSchools = lazy(() => import("../pages/master-admin/MasterAdminSchools"));
+const MasterAdminSchoolNew = lazy(() => import("../pages/master-admin/MasterAdminSchoolNew"));
+const MasterAdminSchoolDetail = lazy(() => import("../pages/master-admin/MasterAdminSchoolDetail"));
+const MasterAdminSubscriptions = lazy(() => import("../pages/master-admin/MasterAdminSubscriptions"));
+const MasterAdminBilling = lazy(() => import("../pages/master-admin/MasterAdminBilling"));
+const MasterAdminUsers = lazy(() => import("../pages/master-admin/MasterAdminUsers"));
+const MasterAdminSupport = lazy(() => import("../pages/master-admin/MasterAdminSupport"));
+const MasterAdminAnnouncements = lazy(() => import("../pages/master-admin/MasterAdminAnnouncements"));
+const MasterAdminSettings = lazy(() => import("../pages/master-admin/MasterAdminSettings"));
+const MasterAdminMonitoring = lazy(() => import("../pages/master-admin/MasterAdminMonitoring"));
+const MasterAdminAuditLogs = lazy(() => import("../pages/master-admin/MasterAdminAuditLogs"));
 
 export default function AppRoutes() {
   return (
@@ -233,6 +251,46 @@ export default function AppRoutes() {
             <Route path="settings/classes" element={<ClassesSettings />} />
             <Route path="settings/privacy" element={<DataDeletionSettings />} />
             <Route path="settings/deletion" element={<DataDeletionSettings />} />
+          </Route>
+
+          {/* Master Admin Control Plane (Autonomous SaaS Management) */}
+          <Route
+            path="/master-admin/login"
+            element={
+              <MasterAdminAuthProvider>
+                <MasterAdminLogin />
+              </MasterAdminAuthProvider>
+            }
+          />
+          <Route
+            path="/master-admin"
+            element={
+              <MasterAdminAuthProvider>
+                <MasterAdminRoute>
+                  <MasterAdminShell />
+                </MasterAdminRoute>
+              </MasterAdminAuthProvider>
+            }
+          >
+            <Route index element={<MasterAdminDashboard />} />
+            <Route path="dashboard" element={<MasterAdminDashboard />} />
+            <Route path="schools" element={<MasterAdminSchools />} />
+            <Route path="schools/new" element={<MasterAdminSchoolNew />} />
+            <Route path="schools/:id" element={<MasterAdminSchoolDetail />} />
+            <Route path="subscriptions" element={<MasterAdminSubscriptions />} />
+            <Route path="billing" element={<MasterAdminBilling />} />
+            <Route path="users" element={<MasterAdminUsers />} />
+            <Route path="support" element={<MasterAdminSupport />} />
+            <Route path="announcements" element={<MasterAdminAnnouncements />} />
+            <Route path="reports" element={<MasterAdminBilling />} />
+            <Route path="monitoring" element={<MasterAdminMonitoring />} />
+            <Route path="database" element={<MasterAdminMonitoring />} />
+            <Route path="audit-logs" element={<MasterAdminAuditLogs />} />
+            <Route path="settings" element={<MasterAdminSettings />} />
+            <Route path="branding" element={<MasterAdminSettings />} />
+            <Route path="integrations" element={<MasterAdminSettings />} />
+            <Route path="feature-flags" element={<MasterAdminSettings />} />
+            <Route path="policies" element={<MasterAdminSettings />} />
           </Route>
 
           {/* 404 Catch-All */}

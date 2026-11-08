@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  MoreHorizontal,
+  MoreVertical,
   Eye,
   Edit3,
   CreditCard,
@@ -86,11 +86,11 @@ export function StudentRowActions({
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
+        className="p-1.5 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
         aria-label={`Actions for ${student.first_name} ${student.last_name}`}
         aria-expanded={isOpen}
       >
-        <MoreHorizontal className="w-4 h-4" />
+        <MoreVertical className="w-4 h-4" />
       </button>
 
       {isOpen && (

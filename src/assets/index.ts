@@ -9,13 +9,13 @@ export const ASSETS = {
     FAVICON: '/favicon.svg',
   },
   MOCKUPS: {
-    HERO_LAPTOP: '/hero-laptop.png',
-    PARENT_MOBILE: '/myzkoolp.png',
+    HERO_LAPTOP: '/hero-laptop.webp',
+    PARENT_MOBILE: '/myzkoolp.webp',
   },
   FOUNDERS: {
-    KHAQAN: '/Khaqan%20Ahmad.jpg',
-    AHIRI: '/Ahiri%20Naskar.png',
-    AQSA: '/Aqsa%20Ibrahim.jpg',
+    KHAQAN: '/Khaqan%20Ahmad.webp',
+    AHIRI: '/Ahiri%20Naskar.webp',
+    AQSA: '/Aqsa%20Ibrahim.webp',
   },
 } as const;
 

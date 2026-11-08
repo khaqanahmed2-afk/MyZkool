@@ -575,10 +575,12 @@ export default function DataDeletionSettings() {
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-700">
+                  <label htmlFor="account-confirmation-phrase" className="text-xs font-semibold text-gray-700">
                     To confirm, please type <span className="text-red-600 select-all font-mono">DELETE MY ACCOUNT</span>:
                   </label>
                   <input
+                    id="account-confirmation-phrase"
+                    name="accountConfirmationPhrase"
                     type="text"
                     value={accountConfirmationPhrase}
                     onChange={(e) => setAccountConfirmationPhrase(e.target.value)}
@@ -589,10 +591,12 @@ export default function DataDeletionSettings() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-700">
+                  <label htmlFor="account-password" className="text-xs font-semibold text-gray-700">
                     Confirm your current password:
                   </label>
                   <input
+                    id="account-password"
+                    name="accountPassword"
                     type="password"
                     value={accountPassword}
                     onChange={(e) => setAccountPassword(e.target.value)}
@@ -699,8 +703,10 @@ export default function DataDeletionSettings() {
 
                 {/* 3 Explicit Risk Acknowledgments */}
                 <div className="space-y-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">
-                  <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <label htmlFor="purge-risk-all-data" className="flex items-start gap-2 cursor-pointer select-none">
                     <input
+                      id="purge-risk-all-data"
+                      name="riskAllData"
                       type="checkbox"
                       checked={riskAllData}
                       onChange={(e) => setRiskAllData(e.target.checked)}
@@ -708,8 +714,10 @@ export default function DataDeletionSettings() {
                     />
                     <span>I understand all student, staff, fee, and academic records will be permanently erased.</span>
                   </label>
-                  <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <label htmlFor="purge-risk-files" className="flex items-start gap-2 cursor-pointer select-none">
                     <input
+                      id="purge-risk-files"
+                      name="riskFiles"
                       type="checkbox"
                       checked={riskFiles}
                       onChange={(e) => setRiskFiles(e.target.checked)}
@@ -717,8 +725,10 @@ export default function DataDeletionSettings() {
                     />
                     <span>I confirm all uploaded files, documents, and website assets will be irreversibly purged.</span>
                   </label>
-                  <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <label htmlFor="purge-risk-irreversible" className="flex items-start gap-2 cursor-pointer select-none">
                     <input
+                      id="purge-risk-irreversible"
+                      name="riskIrreversible"
                       type="checkbox"
                       checked={riskIrreversible}
                       onChange={(e) => setRiskIrreversible(e.target.checked)}
@@ -735,10 +745,12 @@ export default function DataDeletionSettings() {
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-700">
+                  <label htmlFor="purge-school-name" className="text-xs font-semibold text-gray-700">
                     To confirm, please type the exact school name: <span className="text-red-700 font-bold select-all">"{school?.name}"</span>:
                   </label>
                   <input
+                    id="purge-school-name"
+                    name="schoolNameConfirmation"
                     type="text"
                     value={schoolNameInput}
                     onChange={(e) => setSchoolNameInput(e.target.value)}
@@ -749,10 +761,12 @@ export default function DataDeletionSettings() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-700">
+                  <label htmlFor="purge-school-password" className="text-xs font-semibold text-gray-700">
                     Owner Account Password:
                   </label>
                   <input
+                    id="purge-school-password"
+                    name="ownerAccountPassword"
                     type="password"
                     value={schoolPassword}
                     onChange={(e) => setSchoolPassword(e.target.value)}
@@ -830,10 +844,12 @@ export default function DataDeletionSettings() {
 
             <form onSubmit={handleTransferOwnership} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700">
+                <label htmlFor="transfer-target-email" className="text-xs font-semibold text-gray-700">
                   New Owner's Email Address:
                 </label>
                 <input
+                  id="transfer-target-email"
+                  name="targetEmail"
                   type="email"
                   value={targetEmail}
                   onChange={(e) => setTargetEmail(e.target.value)}

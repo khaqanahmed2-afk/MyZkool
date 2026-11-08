@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ArrowRight, Check, ChevronRight } from "lucide-react";
 import { FEATURE_PILLS, FEATURE_STRIP_ITEMS } from "../../data/landingData";
 
@@ -54,7 +55,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 xl:gap-12 items-center">
 
-            {/* LEFT — Marketing Content */}
+            {/* Left: Marketing Content */}
             <div
               className={`lg:col-span-5 xl:col-span-5 space-y-6 lg:space-y-7 transition duration-700 ease-out ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
                 }`}
@@ -132,6 +133,21 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
                 </button>
               </div>
 
+              {/* Register School subtle CTA */}
+              <div className="pt-0.5">
+                <p className="text-xs sm:text-[13px] text-[#5B6478]">
+                  Ready to get started?{" "}
+                  <Link
+                    to="/register"
+                    id="hero-register-link"
+                    className="font-semibold text-[#2158E0] hover:text-[#1A47B8] hover:underline inline-flex items-center gap-1 transition-colors"
+                  >
+                    <span>Register your school</span>
+                    <span aria-hidden="true">&rarr;</span>
+                  </Link>
+                </p>
+              </div>
+
               {/* Trust points */}
               <div className="flex flex-wrap items-center gap-y-2.5 gap-x-5 text-[13px] text-[#475569] font-medium">
                 {["No setup fee", "Easy to use", "Dedicated support"].map((point) => (
@@ -145,7 +161,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenDemo }) => {
               </div>
             </div>
 
-            {/* RIGHT — Product Showcase Image */}
+            {/* Right: Product Showcase Image */}
             <div
               className={`lg:col-span-7 xl:col-span-7 flex items-center justify-center lg:justify-end transition duration-700 ease-out delay-150 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
                 }`}

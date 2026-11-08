@@ -65,14 +65,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onOpenD
 
         {/* Content */}
         <div className="p-6 space-y-5">
-          {/* Staff / Admin Login */}
+          {/* Staff and Admin Login */}
           <div className="p-5 rounded-2xl border border-[#E6EAF3] bg-[#F8FAFC] space-y-3">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#2158E0] flex items-center justify-center">
                 <Lock className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-sm font-bold text-[#141A2E]">School Admin / Staff Login</div>
+                <div className="text-sm font-bold text-[#141A2E]">School Administrator and Staff Login</div>
                 <div className="text-xs text-[#5B6478]">Use your school's secure login page</div>
               </div>
             </div>

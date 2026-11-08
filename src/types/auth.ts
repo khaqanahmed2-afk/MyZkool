@@ -50,4 +50,5 @@ export interface AuthActionResult {
   success: boolean;
   error?: string;
   needsEmailVerification?: boolean;
+  profile?: UserProfile;
 }

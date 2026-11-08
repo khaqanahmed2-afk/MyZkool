@@ -8,7 +8,25 @@ export interface NavbarProps {
   onOpenLogin: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
+interface NavItem {
+  label: string;
+  href: string;
+  targetId: string;
+  isRoute?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { label: "Product", href: "/#philosophy", targetId: "philosophy" },
+  { label: "Features", href: "/#features", targetId: "features" },
+  { label: "Website Builder", href: "/#website-builder", targetId: "website-builder" },
+  { label: "Academics", href: "/#academics", targetId: "academics" },
+  { label: "Pricing", href: "/#pricing", targetId: "pricing" },
+  { label: "How it works", href: "/#how-it-works", targetId: "how-it-works" },
+  { label: "About", href: "/about", targetId: "about", isRoute: true },
+  { label: "FAQ", href: "/#faq", targetId: "faq" },
+];
+
+export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
 
@@ -21,6 +39,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mobileMenuOpen]);
+
+  // Prevent background scrolling when mobile menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [mobileMenuOpen]);
 
   // Handle section anchor clicks smoothly when already on homepage
@@ -37,95 +67,95 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#E6EAF3] transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
-          {/* Official Logo */}
+    <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/95 border-b border-[#E6EAF3] transition-colors shadow-2xs">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 xl:px-8">
+        <div className="flex items-center justify-between h-20 flex-nowrap gap-4">
+          {/* Official Brand Logo */}
           <Link
             to="/"
-            className="flex items-center gap-2.5 group"
+            className="flex items-center gap-2.5 group shrink-0"
             id="navbar-logo"
             aria-label="MyZkool Homepage"
             onClick={() => setMobileMenuOpen(false)}
           >
-            <MyZkoolLogo size={42} showText={true} />
+            <MyZkoolLogo size={38} showText={true} />
           </Link>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 lg:gap-2" aria-label="Main Navigation">
-            <a
-              href="/#philosophy"
-              onClick={(e) => handleAnchorClick(e, "philosophy")}
-              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
-            >
-              Product
-            </a>
-            <a
-              href="/#features"
-              onClick={(e) => handleAnchorClick(e, "features")}
-              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
-            >
-              Features
-            </a>
-            <a
-              href="/#pricing"
-              onClick={(e) => handleAnchorClick(e, "pricing")}
-              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
-            >
-              Pricing
-            </a>
-            <a
-              href="/#how-it-works"
-              onClick={(e) => handleAnchorClick(e, "how-it-works")}
-              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
-            >
-              How it works
-            </a>
-            <Link
-              to="/about"
-              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
-            >
-              About
-            </Link>
-            <a
-              href="/#faq"
-              onClick={(e) => handleAnchorClick(e, "faq")}
-              className="px-3.5 py-2 text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors"
-            >
-              FAQ
-            </a>
+          {/* Desktop Navigation Links (xl+ screens, single horizontal line) */}
+          <nav
+            className="hidden xl:flex items-center justify-center flex-nowrap gap-1 2xl:gap-1.5 shrink min-w-0"
+            aria-label="Main Navigation"
+          >
+            {NAV_ITEMS.map((item) =>
+              item.isRoute ? (
+                <Link
+                  key={item.label}
+                  to={item.href}
+                  className="px-2.5 py-2 text-[13.5px] 2xl:text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  onClick={(e) => handleAnchorClick(e, item.targetId)}
+                  className="px-2.5 py-2 text-[13.5px] 2xl:text-sm font-medium text-[#5B6478] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {item.label}
+                </a>
+              )
+            )}
           </nav>
 
-          {/* Right Action buttons */}
-          <div className="hidden md:flex items-center gap-3">
+          {/* Desktop Action Buttons (xl+ screens, identical height & single line) */}
+          <div className="hidden xl:flex items-center gap-2 2xl:gap-2.5 shrink-0 flex-nowrap">
             <Link
               to="/login"
               id="navbar-login-btn"
-              className="px-4 py-2 text-sm font-medium text-[#141A2E] hover:text-[#2158E0] transition-colors rounded-full"
+              className="h-10 px-3.5 flex items-center justify-center text-sm font-semibold text-[#141A2E] hover:text-[#2158E0] hover:bg-[#F6F8FC] transition-colors rounded-full whitespace-nowrap"
             >
               Login
+            </Link>
+            <Link
+              to="/register"
+              id="navbar-register-btn"
+              className="h-10 px-4 flex items-center justify-center text-sm font-semibold text-[#2158E0] bg-white border border-[#2158E0] hover:bg-[#2158E0]/5 active:scale-[0.98] transition-all rounded-full shadow-2xs whitespace-nowrap"
+            >
+              Register School
             </Link>
             <button
               onClick={onOpenDemo}
               id="navbar-demo-btn"
-              className="px-5 py-2.5 text-sm font-semibold text-white bg-[#141A2E] hover:bg-[#2158E0] active:scale-[0.98] transition duration-200 rounded-full shadow-sm hover:shadow-lg hover:shadow-[#2158E0]/25 flex items-center gap-2 cursor-pointer"
+              className="h-10 px-4.5 2xl:px-5 flex items-center justify-center text-sm font-semibold text-white bg-[#141A2E] hover:bg-[#2158E0] active:scale-[0.98] transition duration-200 rounded-full shadow-sm hover:shadow-lg hover:shadow-[#2158E0]/25 gap-2 cursor-pointer whitespace-nowrap"
             >
               <span>Book a Free Demo</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Mobile hamburger button */}
-          <div className="flex md:hidden items-center gap-2">
+          {/* Tablet & Mobile Right Action Group (screens below xl) */}
+          <div className="flex xl:hidden items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap">
+            {/* Tablet Register School button */}
+            <Link
+              to="/register"
+              className="hidden md:inline-flex items-center justify-center h-9 px-3.5 text-xs sm:text-sm font-semibold text-[#2158E0] bg-white border border-[#2158E0] hover:bg-[#2158E0]/5 active:scale-[0.98] transition-all rounded-full shadow-2xs whitespace-nowrap"
+            >
+              Register School
+            </Link>
+
+            {/* Quick Demo CTA for tablet and mobile */}
             <button
               onClick={onOpenDemo}
-              className="text-xs px-3 py-1.5 font-semibold bg-[#2158E0] text-white rounded-full cursor-pointer"
+              className="inline-flex items-center justify-center h-9 px-3 sm:px-3.5 text-xs sm:text-sm font-semibold text-white bg-[#141A2E] hover:bg-[#2158E0] active:scale-[0.98] transition-all rounded-full shadow-xs whitespace-nowrap cursor-pointer"
             >
-              Book Demo
+              <span>Book Demo</span>
             </button>
+
+            {/* Hamburger / Close Toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg cursor-pointer"
+              className="h-9 w-9 flex items-center justify-center p-1.5 text-[#141A2E] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-lg transition-colors cursor-pointer"
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
               aria-expanded={mobileMenuOpen}
               aria-controls="mobile-navigation"
@@ -136,77 +166,74 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDemo, onOpenLogin }) => {
         </div>
       </div>
 
-      {/* Mobile menu dropdown & backdrop */}
+      {/* Mobile & Tablet Drawer Menu */}
       {mobileMenuOpen && (
         <>
           <div
-            className="fixed inset-0 top-20 bg-black/30 backdrop-blur-2xs z-30 md:hidden"
+            className="fixed inset-0 top-20 bg-slate-900/40 backdrop-blur-xs z-30 xl:hidden animate-in fade-in duration-200"
             aria-hidden="true"
             onClick={() => setMobileMenuOpen(false)}
           />
           <nav
             id="mobile-navigation"
-            aria-label="Mobile Navigation"
-            className="relative z-40 md:hidden bg-white border-b border-[#E6EAF3] px-4 pt-2 pb-6 space-y-3 shadow-xl animate-in slide-in-from-top duration-200"
+            aria-label="Mobile and Tablet Navigation"
+            className="relative z-40 xl:hidden bg-white border-b border-[#E6EAF3] px-4 sm:px-6 py-5 shadow-2xl animate-in slide-in-from-top duration-200 max-h-[calc(100vh-5rem)] overflow-y-auto"
           >
-            <a
-              href="/#philosophy"
-              onClick={(e) => handleAnchorClick(e, "philosophy")}
-              className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
-            >
-              Product
-            </a>
-            <a
-              href="/#features"
-              onClick={(e) => handleAnchorClick(e, "features")}
-              className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
-            >
-              Features
-            </a>
-            <a
-              href="/#pricing"
-              onClick={(e) => handleAnchorClick(e, "pricing")}
-              className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
-            >
-              Pricing
-            </a>
-            <a
-              href="/#how-it-works"
-              onClick={(e) => handleAnchorClick(e, "how-it-works")}
-              className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
-            >
-              How it works
-            </a>
-            <Link
-              to="/about"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
-            >
-              About
-            </Link>
-            <a
-              href="/#faq"
-              onClick={(e) => handleAnchorClick(e, "faq")}
-              className="block px-3 py-2 text-base font-medium text-[#141A2E] hover:bg-[#F6F8FC] rounded-lg"
-            >
-              FAQ
-            </a>
-            <div className="pt-3 border-t border-[#E6EAF3] flex flex-col gap-2.5">
+            {/* Navigation Links in a responsive grid (2 columns on tablet, 1 on mobile) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1 pb-4">
+              {NAV_ITEMS.map((item) =>
+                item.isRoute ? (
+                  <Link
+                    key={item.label}
+                    to={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-between px-3.5 py-2.5 text-base font-medium text-[#141A2E] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-xl transition-colors"
+                  >
+                    <span>{item.label}</span>
+                    <span className="text-slate-300 font-light">&rarr;</span>
+                  </Link>
+                ) : (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    onClick={(e) => handleAnchorClick(e, item.targetId)}
+                    className="flex items-center justify-between px-3.5 py-2.5 text-base font-medium text-[#141A2E] hover:text-[#2158E0] hover:bg-[#F6F8FC] rounded-xl transition-colors"
+                  >
+                    <span>{item.label}</span>
+                    <span className="text-slate-300 font-light">&rarr;</span>
+                  </a>
+                )
+              )}
+            </div>
+
+            {/* CTA action buttons inside drawer */}
+            <div className="pt-4 border-t border-[#E6EAF3] flex flex-col md:flex-row items-center gap-2.5">
               <Link
                 to="/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full py-2.5 text-center font-medium text-[#141A2E] border border-[#E6EAF3] rounded-full"
+                id="mobile-login-btn"
+                className="w-full md:flex-1 h-11 flex items-center justify-center font-medium text-[#141A2E] border border-[#E6EAF3] hover:border-[#2158E0]/30 hover:bg-[#F6F8FC] rounded-full transition-colors"
               >
                 Login
+              </Link>
+              <Link
+                to="/register"
+                onClick={() => setMobileMenuOpen(false)}
+                id="mobile-register-btn"
+                className="w-full md:flex-1 h-11 flex items-center justify-center font-semibold text-[#2158E0] border border-[#2158E0] bg-white hover:bg-[#2158E0]/5 active:scale-[0.98] rounded-full transition-colors shadow-2xs"
+              >
+                Register School
               </Link>
               <button
                 onClick={() => {
                   setMobileMenuOpen(false);
                   onOpenDemo();
                 }}
-                className="w-full py-3 text-center font-semibold text-white bg-[#2158E0] rounded-full shadow-md shadow-[#2158E0]/20 cursor-pointer"
+                id="mobile-demo-btn"
+                className="w-full md:flex-1 h-11 flex items-center justify-center font-semibold text-white bg-[#2158E0] hover:bg-[#1A47B8] rounded-full shadow-md shadow-[#2158E0]/20 gap-2 cursor-pointer transition-colors"
               >
-                Book a Free Demo
+                <span>Book a Free Demo</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </nav>

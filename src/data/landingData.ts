@@ -172,14 +172,22 @@ export const FAQS: FAQItem[] = [
   },
   {
     question: "Will parents need to download an app?",
-    answer: "No. All parent communication works over WhatsApp, which they already use. Fee reminders, attendance notices, and student report cards arrive in their existing chat window with instant open rates.",
+    answer: "No. All parent communication works over WhatsApp, which they already use. Fee reminders, attendance notices, and student report cards arrive in their existing chat window with instant open rates. A dedicated parent portal is also available for parents who prefer a dashboard.",
   },
   {
     question: "Can we move our existing student data in?",
-    answer: "Yes. Our onboarding team helps migrate student, fee and attendance records from your current registers or spreadsheets. You can share your Excel files or physical registers and we handle the data formatting.",
+    answer: "Yes. Our onboarding team helps migrate student, fee, and attendance records from your current registers or spreadsheets. You can share your Excel files or physical registers and we handle the data formatting.",
   },
   {
     question: "Is our school's data secure?",
-    answer: "Yes. Data is access controlled by role, so only authorized staff see what they should. Teachers only access their assigned classes, accountants handle fee books, and principals maintain total oversight.",
+    answer: "Yes. Data is access controlled by role, so only authorized staff see what they should. Teachers only access their assigned classes, accountants handle fee books, and principals maintain total oversight. All data is protected under Indian DPDP Act standards.",
+  },
+  {
+    question: "Which education boards do you support?",
+    answer: "MyZkool supports CBSE, ICSE, and Indian State Boards out of the box. You can easily configure grading systems, assessment patterns, co-scholastic metrics, and mandatory board disclosure reports.",
+  },
+  {
+    question: "Can parents pay school fees online using UPI or Net Banking?",
+    answer: "Yes. Parents can pay securely through UPI, debit cards, credit cards, or net banking using our integrated payment gateway. Real-time receipts are sent directly to their WhatsApp upon successful payment.",
   },
 ];

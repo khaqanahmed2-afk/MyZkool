@@ -51,10 +51,43 @@ export default function AboutPage() {
   } = useLandingModals();
 
   usePageMetadata({
-    title: "About Us — Built by Students, Designed for Schools",
+    title: "About MyZkool, Built for Indian K-12 Schools",
     description:
-      "Learn how MyZkool was built by students to empower Indian K-12 schools with modern websites, seamless fee management, and instant parent communication.",
+      "Learn how MyZkool empowers Indian K-12 schools with modern websites, seamless fee management, and instant parent communication.",
     canonical: "https://myzkool.in/about",
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "AboutPage",
+      "name": "About MyZkool",
+      "description": "Learn how MyZkool empowers Indian K-12 schools with modern websites, seamless fee management, and instant parent communication.",
+      "url": "https://myzkool.in/about",
+      "mainEntity": {
+        "@type": "Organization",
+        "name": "MyZkool",
+        "url": "https://myzkool.in",
+        "foundingLocation": {
+          "@type": "Place",
+          "name": "Lucknow, Uttar Pradesh, India"
+        }
+      },
+      "breadcrumb": {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://myzkool.in/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "About Us",
+            "item": "https://myzkool.in/about"
+          }
+        ]
+      }
+    },
   });
 
   return (

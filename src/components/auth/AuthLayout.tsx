@@ -30,14 +30,14 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   children,
   title,
   subtitle,
-  badgeText = "School Staff & Administrator Portal",
+  badgeText = "School Staff and Administrator Portal",
   leftHeadline,
-  leftSubtext = "Manage your entire school ecosystem — admissions, attendance, fees, exams, and parent communications — in one intuitive cloud ERP.",
+  leftSubtext = "Manage your entire school ecosystem, including admissions, attendance, fees, examinations, and parent communications, in one intuitive cloud ERP.",
   leftHighlights = [
-    "Real-time attendance registers with instant parent SMS/WhatsApp sync.",
+    "Real time attendance registers with instant parent WhatsApp updates.",
     "Digital fee collection receipts with zero manual ledger reconciliation.",
-    "Role-scoped access for Principals, Teachers, and Accountants.",
-    "Zero setup hardware required; runs in any modern browser on phone or PC.",
+    "Role based access control for Principals, Teachers, and Accountants.",
+    "Zero setup hardware required, accessible in any modern browser on phone or computer.",
   ],
   footerLink,
 }) => {
@@ -115,7 +115,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
               <div className="relative overflow-hidden rounded-xl bg-slate-900">
                 <img
                   src="/hero-laptop.png"
-                  alt="MyZkool School ERP Dashboard & Mobile App Preview"
+                  alt="MyZkool School ERP Dashboard and Mobile App Preview"
                   className="w-full h-auto object-cover transform group-hover:scale-[1.02] transition-transform duration-500"
                   loading="lazy"
                 />
@@ -150,11 +150,11 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
             </div>
           </div>
 
-          {/* Bottom Bar: 256-Bit SSL Encrypted & Back to Home Link */}
+          {/* Bottom Bar: 256 Bit SSL Encryption and Back to Home Link */}
           <div className="relative z-10 pt-4 border-t border-blue-200/60 flex items-center justify-between text-xs text-slate-600">
             <div className="flex items-center gap-1.5 font-medium">
               <ShieldCheck className="w-4 h-4 text-[#10B981]" />
-              <span>256-Bit SSL Encrypted</span>
+              <span>256 Bit SSL Encryption</span>
             </div>
             <Link
               to="/"
@@ -248,7 +248,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
 
           {/* Bottom Copyright */}
           <div className="pt-6 text-center text-[11px] text-slate-400">
-            <span>© {new Date().getFullYear()} MyZkool Platform · Enterprise School Management</span>
+            <span>© {new Date().getFullYear()} MyZkool Platform, Enterprise School Management</span>
           </div>
         </div>
       </div>

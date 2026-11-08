@@ -100,7 +100,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
                 aria-hidden="true"
               />
 
-              {/* Attendance Badge — Upper Left */}
+              {/* Attendance Badge: Upper Left */}
               <div
                 className="
                   absolute
@@ -132,7 +132,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
                 </div>
               </div>
 
-              {/* Notice Badge — Upper Right */}
+              {/* Notice Badge: Upper Right */}
               <div
                 className="
                   absolute
@@ -164,7 +164,7 @@ export const WhatsAppSpotlight: React.FC<WhatsAppSpotlightProps> = ({ onOpenDemo
                 </div>
               </div>
 
-              {/* Fee Badge — Lower Left */}
+              {/* Fee Badge: Lower Left */}
               <div
                 className="
                   absolute

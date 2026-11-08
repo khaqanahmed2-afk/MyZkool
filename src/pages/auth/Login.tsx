@@ -20,14 +20,45 @@ const REMEMBER_ME_STORAGE_KEY = "myzkool_remembered_login_email";
 
 export default function Login() {
   usePageMetadata({
-    title: "Sign In to School Portal",
-    description: "Secure administrative sign-in for school principals, accountants, teachers, and staff members.",
-    noindex: true,
+    title: "School Management Software Sign In, School ERP in India | MyZkool",
+    description:
+      "Access your Online School Management System and School Administration Software. Secure sign in for school principals, administrators, teachers, and staff.",
+    canonical: "https://myzkool.in/login",
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "MyZkool School Portal Sign In",
+      "description":
+        "Secure sign in portal for MyZkool School Management Software and School ERP in India.",
+      "url": "https://myzkool.in/login",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "MyZkool",
+        "url": "https://myzkool.in",
+      },
+      "breadcrumb": {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://myzkool.in/",
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Sign In",
+            "item": "https://myzkool.in/login",
+          },
+        ],
+      },
+    },
   });
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTarget = searchParams.get("redirect") || "/admin";
+  const explicitRedirect = searchParams.get("redirect");
 
   const { signIn, resetPassword, isAuthenticated, profile, loading } = useAuth();
 
@@ -56,113 +87,121 @@ export default function Login() {
     }
   }, []);
 
-  // If already logged in, redirect smoothly
-  if (isAuthenticated && !loading) {
-    const destination =
-      redirectTarget && redirectTarget.startsWith("/")
-        ? redirectTarget
-        : profile?.onboarding_completed
-        ? "/admin"
-        : profile?.current_onboarding_step || "/onboarding/school";
+    // If already logged in and profile is loaded, redirect smoothly
+    if (isAuthenticated && !loading && profile) {
+      const destination =
+      explicitRedirect && explicitRedirect.startsWith("/")
+        ? explicitRedirect
+        : profile.onboarding_completed
+          ? "/admin"
+        : profile.current_onboarding_step || "/onboarding/school";
 
-    return <Navigate to={destination} replace />;
+      return <Navigate to={destination} replace />;
+    }
+
+    const handleLoginSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (isSubmitting) return;
+
+      setErrorMessage(null);
+
+      const identifier = emailOrUsername.trim();
+      if (!identifier) {
+        setErrorMessage("Please enter your school email address or username.");
+        return;
+      }
+      if (!password) {
+        setErrorMessage("Please enter your password.");
+        return;
+      }
+
+      try {
+        setIsSubmitting(true);
+
+        // Handle remember me persistence
+        try {
+          if (rememberMe) {
+            localStorage.setItem(REMEMBER_ME_STORAGE_KEY, identifier);
+          } else {
+            localStorage.removeItem(REMEMBER_ME_STORAGE_KEY);
+          }
+        } catch {
+          // Non-fatal
+        }
+
+        const res = await signIn(identifier, password);
+
+        if (!res.success) {
+          setErrorMessage(res.error || "Failed to sign in. Please verify your credentials.");
+          return;
+        }
+
+        // Successful sign-in: route based on resolved profile or requested redirect
+        const activeProfile = res.profile || profile;
+        const destination =
+        explicitRedirect && explicitRedirect.startsWith("/")
+          ? explicitRedirect
+          : activeProfile?.onboarding_completed
+            ? "/admin"
+          : activeProfile?.current_onboarding_step || "/onboarding/school";
+
+    navigate(destination, { replace: true });
+  } catch (err: any) {
+    setErrorMessage(err?.message || "An unexpected error occurred during login.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (isSubmitting) return;
+
+  setErrorMessage(null);
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const cleanEmail = emailOrUsername.trim();
+  if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+    setErrorMessage(
+      "Please enter a valid school email address to receive password reset instructions."
+    );
+    return;
   }
 
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
+  try {
+    setIsSubmitting(true);
+    const res = await resetPassword(cleanEmail);
 
-    setErrorMessage(null);
-
-    const identifier = emailOrUsername.trim();
-    if (!identifier) {
-      setErrorMessage("Please enter your school email address or username.");
-      return;
-    }
-    if (!password) {
-      setErrorMessage("Please enter your password.");
+    if (!res.success) {
+      setErrorMessage(res.error || "Failed to send reset instructions. Please try again.");
       return;
     }
 
-    try {
-      setIsSubmitting(true);
-
-      // Handle remember me persistence
-      try {
-        if (rememberMe) {
-          localStorage.setItem(REMEMBER_ME_STORAGE_KEY, identifier);
-        } else {
-          localStorage.removeItem(REMEMBER_ME_STORAGE_KEY);
-        }
-      } catch {
-        // Non-fatal
-      }
-
-      const res = await signIn(identifier, password);
-
-      if (!res.success) {
-        setErrorMessage(res.error || "Failed to sign in. Please verify your credentials.");
-        return;
-      }
-
-      // Successful sign-in
-      const destination =
-        redirectTarget && redirectTarget.startsWith("/")
-          ? redirectTarget
-          : profile?.onboarding_completed
-          ? "/admin"
-          : profile?.current_onboarding_step || "/onboarding/school";
-
-      navigate(destination);
-    } catch (err: any) {
-      setErrorMessage(err?.message || "An unexpected error occurred during login.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-
-    setErrorMessage(null);
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const cleanEmail = emailOrUsername.trim();
-    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-      setErrorMessage(
-        "Please enter a valid school email address to receive password reset instructions."
-      );
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const res = await resetPassword(cleanEmail);
-
-      if (!res.success) {
-        setErrorMessage(res.error || "Failed to send reset instructions. Please try again.");
-        return;
-      }
-
-      setResetSentEmail(cleanEmail);
-    } catch (err: any) {
-      setErrorMessage(err?.message || "An unexpected error occurred. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+    setResetSentEmail(cleanEmail);
+  } catch (err: any) {
+    setErrorMessage(err?.message || "An unexpected error occurred. Please try again.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   // ─── FORGOT PASSWORD VIEW ──────────────────────────────────────────────────
   if (viewMode === "forgot_password") {
     return (
       <AuthLayout
-        title="Reset your password"
-        subtitle="Enter the verified email address associated with your school account."
+        title="Reset Your Password"
+        subtitle="Enter the verified email address associated with your school administration account."
         badgeText="Account Recovery"
+        leftHeadline={
+          <>
+            Online School Management System, records and administration at{" "}
+            <span className="text-[#1E5AF6]">your fingertips.</span>
+          </>
+        }
+        leftSubtext="Manage your entire school ecosystem, including admissions, attendance, fees, examinations, and parent communications, through India's premier school ERP software."
         footerLink={{
           text: "Remembered your credentials?",
-          linkText: "Back to sign in",
+          linkText: "Return to sign in",
           href: "/login",
         }}
       >
@@ -195,10 +234,11 @@ export default function Login() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleForgotPasswordSubmit} className="space-y-5">
+          <form onSubmit={handleForgotPasswordSubmit} aria-label="Password reset form" className="space-y-5">
             {errorMessage && (
               <div
                 role="alert"
+                aria-live="assertive"
                 className="p-3.5 rounded-xl bg-red-50/90 border border-red-200 text-xs text-red-700 flex items-start gap-2.5 animate-in fade-in"
               >
                 <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
@@ -211,7 +251,7 @@ export default function Login() {
                 htmlFor="reset-email"
                 className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2"
               >
-                School Email Address <span className="text-red-500">*</span>
+                School Email Address <span className="text-red-500" aria-hidden="true">*</span>
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -219,8 +259,10 @@ export default function Login() {
                 </div>
                 <input
                   id="reset-email"
+                  name="reset-email"
                   type="email"
                   required
+                  autoComplete="email"
                   value={emailOrUsername}
                   onChange={(e) => setEmailOrUsername(e.target.value)}
                   placeholder="admin@yourschool.edu.in"
@@ -256,7 +298,7 @@ export default function Login() {
               }}
               className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors pt-1 cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+              <ArrowLeft className="w-3.5 h-3.5" /> Return to Sign In
             </button>
           </form>
         )}
@@ -264,23 +306,31 @@ export default function Login() {
     );
   }
 
-  // ─── STANDARD LOGIN VIEW (Matches Reference Image) ─────────────────────────
+  // ─── STANDARD LOGIN VIEW (School Administration Software Portal) ─────────
   return (
     <AuthLayout
-      title="Welcome back 👋"
-      subtitle="Sign in to your school management workspace."
-      badgeText="School Staff & Administrator Portal"
+      title="Welcome Back"
+      subtitle="Sign in to your School Administration Software workspace."
+      badgeText="School Administration Software Portal"
+      leftHeadline={
+        <>
+          Online School Management System, records and administration at{" "}
+          <span className="text-[#1E5AF6]">your fingertips.</span>
+        </>
+      }
+      leftSubtext="Manage your entire school ecosystem, including admissions, attendance, fees, examinations, and parent communications, through India's premier school ERP software."
       footerLink={{
-        text: "Don't have an account yet?",
+        text: "Need to onboard a new institution?",
         linkText: "Register your school",
         href: "/register",
       }}
     >
-      <form onSubmit={handleLoginSubmit} className="space-y-4 sm:space-y-5">
+      <form onSubmit={handleLoginSubmit} aria-label="School portal login form" className="space-y-4 sm:space-y-5">
         {/* Error Alert Box */}
         {errorMessage && (
           <div
             role="alert"
+            aria-live="assertive"
             className="p-3.5 rounded-xl bg-red-50/95 border border-red-200 text-xs text-red-700 flex items-start gap-2.5 animate-in fade-in"
           >
             <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
@@ -294,7 +344,7 @@ export default function Login() {
             htmlFor="login-email-username"
             className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2"
           >
-            Email or Username <span className="text-red-500">*</span>
+            School Email or Username <span className="text-red-500" aria-hidden="true">*</span>
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -302,9 +352,11 @@ export default function Login() {
             </div>
             <input
               id="login-email-username"
+              name="username"
               type="text"
               required
               autoComplete="username"
+              aria-required="true"
               value={emailOrUsername}
               onChange={(e) => setEmailOrUsername(e.target.value)}
               placeholder="admin@yourschool.edu.in or username"
@@ -314,17 +366,18 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Password Field with Show/Hide toggle & Forgot Link beside label */}
+        {/* Password Field with Show or Hide toggle and Forgot Link beside label */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label
               htmlFor="login-password"
               className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider"
             >
-              Password <span className="text-red-500">*</span>
+              Password <span className="text-red-500" aria-hidden="true">*</span>
             </label>
             <button
               type="button"
+              id="forgot-password-link"
               onClick={() => {
                 setErrorMessage(null);
                 setViewMode("forgot_password");
@@ -340,9 +393,11 @@ export default function Login() {
             </div>
             <input
               id="login-password"
+              name="password"
               type={showPassword ? "text" : "password"}
               required
               autoComplete="current-password"
+              aria-required="true"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
@@ -362,33 +417,34 @@ export default function Login() {
 
         {/* Remember Me Checkbox */}
         <div className="flex items-center justify-between pt-0.5">
-          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <label htmlFor="remember-me" className="flex items-center gap-2.5 cursor-pointer select-none">
             <input
               type="checkbox"
               id="remember-me"
+              name="remember-me"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
               disabled={isSubmitting}
               className="w-4 h-4 rounded border-slate-300 text-[#1E5AF6] focus:ring-[#1E5AF6] cursor-pointer"
             />
             <span className="text-xs text-slate-600 font-medium">
-              Remember me
+              Remember my credentials on this device
             </span>
           </label>
         </div>
 
-        {/* Full-Width Blue Gradient Sign In Button with Right-Arrow */}
+        {/* Blue Gradient Sign In Button with Right Arrow */}
         <AuthSubmitButton
           isSubmitting={isSubmitting}
           loadingText="Signing in to workspace..."
-          defaultText="Sign In"
+          defaultText="Sign In to Portal"
         />
 
-        {/* Divider with "OR CONTINUE WITH" */}
+        {/* Divider with Or continue with Google */}
         <div className="relative my-4 flex items-center justify-center">
           <div className="w-full border-t border-slate-200" />
           <span className="bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest absolute">
-            Or continue with
+            Or continue with Google
           </span>
         </div>
 

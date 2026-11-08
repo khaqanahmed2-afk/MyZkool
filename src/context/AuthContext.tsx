@@ -322,7 +322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Subscribe to auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (!isMounted) return;
 
       // Avoid redundant execution on INITIAL_SESSION as initializeAuth handles startup
@@ -334,47 +334,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(newSession?.user ?? null);
 
       if (newSession?.user) {
-        const userProfile = await resolveUserProfile(newSession.user);
-        if (isMounted) {
-          setProfile(userProfile);
-          const storedSchoolId = typeof localStorage !== "undefined"
-            ? localStorage.getItem("myzkool_active_school_id")
-            : null;
-          const targetSchoolId = storedSchoolId || userProfile.school_id;
+        // Defer database queries outside GoTrue's synchronous execution tick
+        setTimeout(async () => {
+          if (!isMounted) return;
+          try {
+            const userProfile = await resolveUserProfile(newSession.user);
+            if (!isMounted) return;
+            setProfile(userProfile);
+            const storedSchoolId = typeof localStorage !== "undefined"
+              ? localStorage.getItem("myzkool_active_school_id")
+              : null;
+            const targetSchoolId = storedSchoolId || userProfile.school_id;
 
-          const { school: userSchool } = await getSchoolForCurrentUser(
-            newSession.user.id,
-            targetSchoolId,
-          );
-          const { schools: authSchools } = await getAuthorizedSchoolsForUser(
-            newSession.user.id
-          );
+            const { school: userSchool } = await getSchoolForCurrentUser(
+              newSession.user.id,
+              targetSchoolId,
+            );
+            const { schools: authSchools } = await getAuthorizedSchoolsForUser(
+              newSession.user.id
+            );
 
-          let mergedSchools = [...authSchools];
-          if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
-            mergedSchools.unshift(userSchool);
+            let mergedSchools = [...authSchools];
+            if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
+              mergedSchools.unshift(userSchool);
+            }
+
+            let ay: AcademicYear | null = null;
+            if (userSchool?.id) {
+              const { academicYear } = await getCurrentAcademicYear(userSchool.id);
+              ay = academicYear;
+            }
+
+            if (isMounted) {
+              setSchool(userSchool);
+              setAvailableSchools(mergedSchools);
+              setCurrentAcademicYear(ay);
+            }
+          } catch (err) {
+            console.warn("Failed to resolve user context on auth state change:", err);
+          } finally {
+            if (isMounted) setLoading(false);
           }
-
-          let ay: AcademicYear | null = null;
-          if (userSchool?.id) {
-            const { academicYear } = await getCurrentAcademicYear(userSchool.id);
-            ay = academicYear;
-          }
-
-          if (isMounted) {
-            setSchool(userSchool);
-            setAvailableSchools(mergedSchools);
-            setCurrentAcademicYear(ay);
-          }
-        }
+        }, 0);
       } else {
         setProfile(null);
         setSchool(null);
         setAvailableSchools([]);
         setCurrentAcademicYear(null);
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => {
@@ -406,10 +414,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         return { success: false, error: sanitizeAuthError(error) };
       }
 
+      let resolvedProfile: UserProfile | undefined = undefined;
+
       if (data.user) {
         setUser(data.user);
         setSession(data.session);
         const resolved = await resolveUserProfile(data.user);
+        resolvedProfile = resolved;
         setProfile(resolved);
         const { school: userSchool } = await getSchoolForCurrentUser(
           data.user.id,
@@ -418,8 +429,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setSchool(userSchool);
       }
 
-      return { success: true };
-    } catch (err) {
+      return { success: true, profile: resolvedProfile };
+    } catch (err: any) {
       return { success: false, error: sanitizeAuthError(err) };
     } finally {
       setLoading(false);

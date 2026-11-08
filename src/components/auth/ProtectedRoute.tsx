@@ -18,8 +18,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const { isAuthenticated, loading, profile, role } = useAuth();
   const location = useLocation();
 
-  // 1. Display a clean loading indicator while checking authentication state
-  if (loading) {
+  // 1. Display a clean loading indicator while checking authentication state or resolving profile
+  if (loading || (isAuthenticated && !profile)) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">

@@ -16,7 +16,7 @@ export const FOUNDERS: Founder[] = [
     name: "Khaqan Ahmad",
     role: "Founder & Product Lead",
     badge: "Founder",
-    image: "/Khaqan%20Ahmad.jpg",
+    image: "/Khaqan%20Ahmad.webp",
     description:
       "Handles product strategy, feature planning, subscription model and overall direction of MyZkool.",
     linkedin: "https://www.linkedin.com/in/khaqan-ahmad-91299b40a",
@@ -27,7 +27,7 @@ export const FOUNDERS: Founder[] = [
     name: "Ahiri Naskar",
     role: "Co Founder, Business & Growth",
     badge: "Co Founder",
-    image: "/Ahiri%20Naskar.png",
+    image: "/Ahiri%20Naskar.webp",
     description:
       "Manages online presence, research, marketing, and business development.",
     linkedin: "https://www.linkedin.com/in/ahiri-naskar-769900347/",
@@ -38,7 +38,7 @@ export const FOUNDERS: Founder[] = [
     name: "Aqsa Ibrahim",
     role: "Co Founder, Product & Tech",
     badge: "Co Founder",
-    image: "/Aqsa%20Ibrahim.jpg",
+    image: "/Aqsa%20Ibrahim.webp",
     description:
       "Builds the product with me, handles development and technical execution.",
     linkedin: "https://www.linkedin.com/in/aqsa-ibrahim-0bb7b2434/",

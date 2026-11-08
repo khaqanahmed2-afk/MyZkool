@@ -158,6 +158,14 @@ function getCommunicationConsentsCacheKey(schoolId: string) {
   return `${COMMUNICATION_CONSENTS_CACHE_PREFIX}${schoolId}`;
 }
 
+function getClassesCacheKey(schoolId: string) {
+  return `${CLASSES_CACHE_PREFIX}${schoolId}`;
+}
+
+function getSectionsCacheKey(schoolId: string) {
+  return `${SECTIONS_CACHE_PREFIX}${schoolId}`;
+}
+
 function getNotificationOutboxCacheKey(schoolId: string) {
   return `${NOTIFICATION_OUTBOX_CACHE_PREFIX}${schoolId}`;
 }
@@ -640,16 +648,76 @@ export async function getStudentSummaryMetrics(
         duesQuery = duesQuery.eq("academic_year_id", academicYearId);
       }
 
-      const [totalRes, enrolledRes, newAdmRes, duesRes] = await Promise.all([
+      // 5. Inactive / On Hold Students
+      const onHoldPromise = supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .eq("status", "inactive")
+        .is("deleted_at", null);
+
+      // 6. Transferred Students
+      const transferredPromise = supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .eq("status", "transferred")
+        .is("deleted_at", null);
+
+      // 7. Left / Inactive (withdrawn, passed_out)
+      const leftPromise = supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("school_id", schoolId)
+        .in("status", ["withdrawn", "passed_out"])
+        .is("deleted_at", null);
+
+      // 8. Classes & Enrollments for Students by Class Chart
+      const classesPromise = supabase
+        .from("classes")
+        .select("id, name, sort_order")
+        .eq("school_id", schoolId)
+        .eq("status", "active")
+        .order("sort_order", { ascending: true });
+
+      let enrollmentsPromise = supabase
+        .from("student_enrollments")
+        .select("class_id, student_id")
+        .eq("school_id", schoolId)
+        .eq("status", "active");
+
+      if (academicYearId) {
+        enrollmentsPromise = enrollmentsPromise.eq("academic_year_id", academicYearId);
+      }
+
+      const [
+        totalRes,
+        enrolledRes,
+        newAdmRes,
+        duesRes,
+        onHoldRes,
+        transferredRes,
+        leftRes,
+        classesRes,
+        enrollmentsRes,
+      ] = await Promise.all([
         totalPromise,
         enrolledPromise,
         newAdmissionsQuery,
         duesQuery,
+        onHoldPromise,
+        transferredPromise,
+        leftPromise,
+        classesPromise,
+        enrollmentsPromise,
       ]);
 
       const totalStudents = totalRes.count ?? 0;
       const enrolledCount = enrolledRes.count ?? 0;
       const newAdmissionsCount = newAdmRes.count ?? 0;
+      const onHoldCount = onHoldRes.count ?? 0;
+      const transferredCount = transferredRes.count ?? 0;
+      const leftInactiveCount = leftRes.count ?? 0;
 
       let feePendingCount = 0;
       if (duesRes.data) {
@@ -657,12 +725,46 @@ export async function getStudentSummaryMetrics(
         feePendingCount = uniqueStudentIds.size;
       }
 
+      // Map class strength from database
+      const classStrength: { id: string; name: string; shortName: string; studentCount: number }[] = [];
+      const enrollmentsByClass: Record<string, number> = {};
+      (enrollmentsRes.data || []).forEach((row: any) => {
+        if (row.class_id) {
+          enrollmentsByClass[row.class_id] = (enrollmentsByClass[row.class_id] || 0) + 1;
+        }
+      });
+      (classesRes.data || []).forEach((c: any) => {
+        let shortName = c.name;
+        const lower = c.name.toLowerCase().trim();
+        if (lower.startsWith("class ")) {
+          shortName = lower.replace("class ", "").trim();
+        } else if (lower.startsWith("grade ")) {
+          shortName = lower.replace("grade ", "").trim();
+        } else if (lower === "nursery") {
+          shortName = "Nur";
+        } else if (lower === "lkg") {
+          shortName = "LKG";
+        } else if (lower === "ukg") {
+          shortName = "UKG";
+        }
+        classStrength.push({
+          id: c.id,
+          name: c.name,
+          shortName,
+          studentCount: enrollmentsByClass[c.id] || 0,
+        });
+      });
+
       return {
         metrics: {
           totalStudents,
           enrolledCount,
           newAdmissionsCount,
           feePendingCount,
+          onHoldCount,
+          transferredCount,
+          leftInactiveCount,
+          classStrength,
         },
       };
     } catch (err: any) {
@@ -706,12 +808,53 @@ export async function getStudentSummaryMetrics(
       feePendingCount = pendingStudentIds.size;
     }
 
+    const onHoldCount = activeStudents.filter((s) => s.status === "inactive").length;
+    const transferredCount = activeStudents.filter((s) => s.status === "transferred").length;
+    const leftInactiveCount = activeStudents.filter((s) => s.status === "withdrawn" || s.status === "passed_out").length;
+
+    // Class strength fallback
+    const cCacheKey = getClassesCacheKey(schoolId);
+    const cCached = typeof localStorage !== "undefined" ? localStorage.getItem(cCacheKey) : null;
+    const allClasses: any[] = cCached ? JSON.parse(cCached) : [];
+    const enrCacheKey = getStudentEnrollmentsCacheKey(schoolId);
+    const enrCached = typeof localStorage !== "undefined" ? localStorage.getItem(enrCacheKey) : null;
+    const allEnrollments: any[] = enrCached ? JSON.parse(enrCached) : [];
+
+    const enrollmentsByClass: Record<string, number> = {};
+    allEnrollments.filter((e) => e.status === "active").forEach((e) => {
+      if (e.class_id) enrollmentsByClass[e.class_id] = (enrollmentsByClass[e.class_id] || 0) + 1;
+    });
+
+    const classStrength = allClasses.map((c) => {
+      let shortName = c.name;
+      const lower = c.name.toLowerCase().trim();
+      if (lower.startsWith("class ")) {
+        shortName = lower.replace("class ", "").trim();
+      } else if (lower === "nursery") {
+        shortName = "Nur";
+      } else if (lower === "lkg") {
+        shortName = "LKG";
+      } else if (lower === "ukg") {
+        shortName = "UKG";
+      }
+      return {
+        id: c.id,
+        name: c.name,
+        shortName,
+        studentCount: enrollmentsByClass[c.id] || 0,
+      };
+    });
+
     return {
       metrics: {
         totalStudents,
         enrolledCount,
         newAdmissionsCount,
         feePendingCount,
+        onHoldCount,
+        transferredCount,
+        leftInactiveCount,
+        classStrength,
       },
     };
   } catch (err: any) {
@@ -1856,7 +1999,22 @@ export async function getStudentSiblings(schoolId: string, studentId: string): P
         .from("v_student_siblings")
         .select("*")
         .eq("student_id", studentId);
-      return { siblings: data as StudentSibling[] || [], error: error?.message };
+      if (error) return { error: error.message };
+      const rawSiblings = (data as StudentSibling[]) || [];
+      if (rawSiblings.length > 0) {
+        const sibIds = rawSiblings.map(s => s.sibling_id);
+        const { data: studentsData } = await supabase
+          .from("students")
+          .select("id, photo_path")
+          .in("id", sibIds);
+        const photoMap = new Map((studentsData || []).map((s: any) => [s.id, s.photo_path]));
+        const enriched = rawSiblings.map(s => ({
+          ...s,
+          sibling_photo_path: photoMap.get(s.sibling_id) || null
+        }));
+        return { siblings: enriched };
+      }
+      return { siblings: [] };
     } catch (err) {
       return { error: String(err) };
     }
@@ -1880,19 +2038,635 @@ export async function getStudentSiblings(schoolId: string, studentId: string): P
     const studentsCached = localStorage.getItem(studentsKey);
     const students: Student[] = studentsCached ? JSON.parse(studentsCached) : [];
 
+    const enrollmentsKey = getStudentEnrollmentsCacheKey(schoolId);
+    const enrollmentsCached = localStorage.getItem(enrollmentsKey);
+    const enrollments: StudentEnrollment[] = enrollmentsCached ? JSON.parse(enrollmentsCached) : [];
+    const classesKey = getClassesCacheKey(schoolId);
+    const classesCached = localStorage.getItem(classesKey);
+    const classes: any[] = classesCached ? JSON.parse(classesCached) : [];
+    const sectionsKey = getSectionsCacheKey(schoolId);
+    const sectionsCached = localStorage.getItem(sectionsKey);
+    const sections: any[] = sectionsCached ? JSON.parse(sectionsCached) : [];
+
+    const classMap = new Map(classes.map(c => [c.id, c.name]));
+    const sectionMap = new Map(sections.map(s => [s.id, s.name]));
+
     const siblings: StudentSibling[] = students
       .filter(s => siblingStudentIdSet.has(s.id) && !s.deleted_at)
-      .map(s => ({
-        student_id: studentId,
-        sibling_id: s.id,
-        sibling_first_name: s.first_name,
-        sibling_last_name: s.last_name,
-        sibling_admission_no: s.admission_no,
-      }));
+      .map(s => {
+        const enr = enrollments.find(e => e.student_id === s.id && e.status === "active");
+        return {
+          student_id: studentId,
+          sibling_id: s.id,
+          sibling_first_name: s.first_name,
+          sibling_last_name: s.last_name,
+          sibling_admission_no: s.admission_no,
+          sibling_class_id: enr?.class_id || null,
+          sibling_section_id: enr?.section_id || null,
+          sibling_class_name: enr?.class_id ? classMap.get(enr.class_id) || null : null,
+          sibling_section_name: enr?.section_id ? sectionMap.get(enr.section_id) || null : null,
+          sibling_photo_path: s.photo_path || null,
+        };
+      });
     return { siblings };
   } catch {
     return { siblings: [] };
   }
+}
+
+/**
+ * Link two students as siblings by connecting them to a shared parent
+ */
+export async function linkStudentSibling(
+  schoolId: string,
+  studentId: string,
+  siblingId: string,
+  actorId: string = "admin"
+): Promise<{ success: boolean; error?: string }> {
+  if (!schoolId || !studentId || !siblingId) {
+    return { success: false, error: "Missing required parameters" };
+  }
+  if (studentId === siblingId) {
+    return { success: false, error: "Cannot link a student to themselves as a sibling." };
+  }
+
+  const timestamp = new Date().toISOString();
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Get existing parents for both students
+      const [sp1Res, sp2Res] = await Promise.all([
+        supabase.from("student_parents").select("*").eq("school_id", schoolId).eq("student_id", studentId),
+        supabase.from("student_parents").select("*").eq("school_id", schoolId).eq("student_id", siblingId),
+      ]);
+
+      const sp1 = sp1Res.data || [];
+      const sp2 = sp2Res.data || [];
+
+      // Check if already linked
+      const sharedParent = sp1.find(p1 => sp2.some(p2 => p2.parent_id === p1.parent_id));
+      if (sharedParent) {
+        return { success: true };
+      }
+
+      if (sp1.length > 0) {
+        // Use student 1's primary or first parent
+        const target = sp1.find(p => p.is_primary_contact) || sp1[0];
+        const newLink = {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: siblingId,
+          parent_id: target.parent_id,
+          relation: target.relation || "father",
+          is_primary_contact: false,
+          is_fee_payer: false,
+          is_emergency_contact: false,
+          can_pickup: false,
+          created_at: timestamp,
+        };
+        const { error: insErr } = await supabase.from("student_parents").insert(newLink);
+        if (insErr) throw insErr;
+      } else if (sp2.length > 0) {
+        // Use sibling's parent
+        const target = sp2.find(p => p.is_primary_contact) || sp2[0];
+        const newLink = {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: studentId,
+          parent_id: target.parent_id,
+          relation: target.relation || "father",
+          is_primary_contact: false,
+          is_fee_payer: false,
+          is_emergency_contact: false,
+          can_pickup: false,
+          created_at: timestamp,
+        };
+        const { error: insErr } = await supabase.from("student_parents").insert(newLink);
+        if (insErr) throw insErr;
+      } else {
+        // Neither has parents in student_parents yet -> Create a new shared family parent
+        const { data: studentsData } = await supabase
+          .from("students")
+          .select("id, first_name, last_name, phone")
+          .in("id", [studentId, siblingId]);
+        const s1 = studentsData?.find((s: any) => s.id === studentId);
+        const newParentId = crypto.randomUUID();
+        const newParent = {
+          id: newParentId,
+          school_id: schoolId,
+          full_name: `Parent of ${s1?.first_name || "Student"}`,
+          phone: s1?.phone || `98${Math.floor(10000000 + Math.random() * 90000000)}`,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        const { error: pErr } = await supabase.from("parents").insert(newParent);
+        if (pErr) throw pErr;
+
+        const links = [
+          {
+            id: crypto.randomUUID(),
+            school_id: schoolId,
+            student_id: studentId,
+            parent_id: newParentId,
+            relation: "father" as ParentRelation,
+            is_primary_contact: true,
+            is_fee_payer: true,
+            is_emergency_contact: true,
+            can_pickup: true,
+            created_at: timestamp,
+          },
+          {
+            id: crypto.randomUUID(),
+            school_id: schoolId,
+            student_id: siblingId,
+            parent_id: newParentId,
+            relation: "father" as ParentRelation,
+            is_primary_contact: false,
+            is_fee_payer: false,
+            is_emergency_contact: false,
+            can_pickup: false,
+            created_at: timestamp,
+          },
+        ];
+        const { error: spErr } = await supabase.from("student_parents").insert(links);
+        if (spErr) throw spErr;
+      }
+
+      // Record student events
+      await supabase.from("student_events").insert([
+        {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: studentId,
+          event_type: "general",
+          summary: "Sibling relationship linked",
+          description: `Linked sibling with ID ${siblingId}`,
+          created_at: timestamp,
+          created_by: actorId,
+        },
+        {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: siblingId,
+          event_type: "general",
+          summary: "Sibling relationship linked",
+          description: `Linked sibling with ID ${studentId}`,
+          created_at: timestamp,
+          created_by: actorId,
+        }
+      ]);
+
+      return { success: true };
+    } catch (err: any) {
+      console.error("Error linking sibling in supabase:", err);
+      return { success: false, error: err.message || "Failed to link sibling" };
+    }
+  }
+
+  // Local storage fallback
+  try {
+    const spKey = getStudentParentsCacheKey(schoolId);
+    const spCached = localStorage.getItem(spKey);
+    const studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+
+    const s1Parents = studentParents.filter(sp => sp.student_id === studentId);
+    const s2Parents = studentParents.filter(sp => sp.student_id === siblingId);
+
+    const shared = s1Parents.find(p1 => s2Parents.some(p2 => p2.parent_id === p1.parent_id));
+    if (shared) return { success: true };
+
+    if (s1Parents.length > 0) {
+      const target = s1Parents.find(p => p.is_primary_contact) || s1Parents[0];
+      studentParents.push({
+        id: crypto.randomUUID(),
+        school_id: schoolId,
+        student_id: siblingId,
+        parent_id: target.parent_id,
+        relation: target.relation || "father",
+        is_primary_contact: false,
+        is_fee_payer: false,
+        is_emergency_contact: false,
+        can_pickup: false,
+        lives_with: false,
+        created_at: timestamp,
+        updated_at: timestamp,
+      });
+    } else if (s2Parents.length > 0) {
+      const target = s2Parents.find(p => p.is_primary_contact) || s2Parents[0];
+      studentParents.push({
+        id: crypto.randomUUID(),
+        school_id: schoolId,
+        student_id: studentId,
+        parent_id: target.parent_id,
+        relation: target.relation || "father",
+        is_primary_contact: false,
+        is_fee_payer: false,
+        is_emergency_contact: false,
+        can_pickup: false,
+        lives_with: false,
+        created_at: timestamp,
+        updated_at: timestamp,
+      });
+    } else {
+      const newParentId = crypto.randomUUID();
+      const pKey = getParentsCacheKey(schoolId);
+      const pCached = localStorage.getItem(pKey);
+      const parentsList: Parent[] = pCached ? JSON.parse(pCached) : [];
+      parentsList.push({
+        id: newParentId,
+        school_id: schoolId,
+        full_name: "Family Parent",
+        phone: "9876543210",
+        created_at: timestamp,
+        updated_at: timestamp,
+      });
+      localStorage.setItem(pKey, JSON.stringify(parentsList));
+
+      studentParents.push(
+        {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: studentId,
+          parent_id: newParentId,
+          relation: "father",
+          is_primary_contact: true,
+          is_fee_payer: true,
+          is_emergency_contact: true,
+          can_pickup: true,
+          lives_with: true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+        {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: siblingId,
+          parent_id: newParentId,
+          relation: "father",
+          is_primary_contact: false,
+          is_fee_payer: false,
+          is_emergency_contact: false,
+          can_pickup: false,
+          lives_with: true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        }
+      );
+    }
+
+    localStorage.setItem(spKey, JSON.stringify(studentParents));
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to link sibling in local storage" };
+  }
+}
+
+/**
+ * Unlink two students as siblings
+ */
+export async function unlinkStudentSibling(
+  schoolId: string,
+  studentId: string,
+  siblingId: string,
+  actorId: string = "admin"
+): Promise<{ success: boolean; error?: string }> {
+  if (!schoolId || !studentId || !siblingId) {
+    return { success: false, error: "Missing required parameters" };
+  }
+
+  const timestamp = new Date().toISOString();
+
+  if (isSupabaseConfigured) {
+    try {
+      const [sp1Res, sp2Res] = await Promise.all([
+        supabase.from("student_parents").select("parent_id").eq("school_id", schoolId).eq("student_id", studentId),
+        supabase.from("student_parents").select("parent_id").eq("school_id", schoolId).eq("student_id", siblingId),
+      ]);
+
+      const p1Ids = new Set((sp1Res.data || []).map((p: any) => p.parent_id));
+      const sharedParentIds = (sp2Res.data || []).map((p: any) => p.parent_id).filter((pid: string) => p1Ids.has(pid));
+
+      if (sharedParentIds.length > 0) {
+        const { error } = await supabase
+          .from("student_parents")
+          .delete()
+          .eq("school_id", schoolId)
+          .eq("student_id", siblingId)
+          .in("parent_id", sharedParentIds);
+
+        if (error) throw error;
+      }
+
+      await supabase.from("student_events").insert([
+        {
+          id: crypto.randomUUID(),
+          school_id: schoolId,
+          student_id: studentId,
+          event_type: "general",
+          summary: "Sibling unlinked",
+          description: `Unlinked sibling connection`,
+          created_at: timestamp,
+          created_by: actorId,
+        }
+      ]);
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Failed to unlink sibling" };
+    }
+  }
+
+  // Local storage fallback
+  try {
+    const spKey = getStudentParentsCacheKey(schoolId);
+    const spCached = localStorage.getItem(spKey);
+    let studentParents: StudentParent[] = spCached ? JSON.parse(spCached) : [];
+
+    const p1Ids = new Set(studentParents.filter(sp => sp.student_id === studentId).map(sp => sp.parent_id));
+    studentParents = studentParents.filter(
+      sp => !(sp.student_id === siblingId && p1Ids.has(sp.parent_id))
+    );
+
+    localStorage.setItem(spKey, JSON.stringify(studentParents));
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to unlink sibling" };
+  }
+}
+
+/**
+ * Search students to link as siblings
+ */
+export async function searchStudentsForSibling(
+  schoolId: string,
+  currentStudentId: string,
+  query: string
+): Promise<{
+  students: Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    admission_no: string;
+    class_name?: string | null;
+    section_name?: string | null;
+    photo_path?: string | null;
+    parent_name?: string | null;
+    parent_phone?: string | null;
+  }>;
+  error?: string;
+}> {
+  if (!schoolId) return { students: [] };
+  const cleanQ = (query || "").trim().toLowerCase();
+  if (!cleanQ) return { students: [] };
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from("students")
+        .select(`
+          id,
+          first_name,
+          last_name,
+          admission_no,
+          photo_path,
+          student_enrollments(
+            class_id,
+            section_id,
+            status,
+            class:classes(name),
+            section:sections(name)
+          ),
+          student_parents(
+            is_primary_contact,
+            parent:parents(full_name, phone)
+          )
+        `)
+        .eq("school_id", schoolId)
+        .neq("id", currentStudentId)
+        .is("deleted_at", null)
+        .or(`first_name.ilike.%${cleanQ}%,last_name.ilike.%${cleanQ}%,admission_no.ilike.%${cleanQ}%`)
+        .limit(12);
+
+      if (error) throw error;
+
+      const students = (data || []).map((s: any) => {
+        const activeEnr = s.student_enrollments?.find((e: any) => e.status === "active") || s.student_enrollments?.[0];
+        const primaryParent = s.student_parents?.find((sp: any) => sp.is_primary_contact) || s.student_parents?.[0];
+        return {
+          id: s.id,
+          first_name: s.first_name,
+          last_name: s.last_name,
+          admission_no: s.admission_no,
+          photo_path: s.photo_path || null,
+          class_name: activeEnr?.class?.name || null,
+          section_name: activeEnr?.section?.name || null,
+          parent_name: primaryParent?.parent?.full_name || null,
+          parent_phone: primaryParent?.parent?.phone || null,
+        };
+      });
+
+      return { students };
+    } catch (err: any) {
+      console.warn("Supabase searchStudentsForSibling failed, falling back to local:", err);
+    }
+  }
+
+  // Local storage fallback
+  try {
+    const studentsKey = getStudentsCacheKey(schoolId);
+    const studentsCached = localStorage.getItem(studentsKey);
+    const allStudents: Student[] = studentsCached ? JSON.parse(studentsCached) : [];
+
+    const enrollmentsKey = getStudentEnrollmentsCacheKey(schoolId);
+    const enrollments: StudentEnrollment[] = JSON.parse(localStorage.getItem(enrollmentsKey) || "[]");
+    const classes: any[] = JSON.parse(localStorage.getItem(getClassesCacheKey(schoolId)) || "[]");
+    const sections: any[] = JSON.parse(localStorage.getItem(getSectionsCacheKey(schoolId)) || "[]");
+    const parents: Parent[] = JSON.parse(localStorage.getItem(getParentsCacheKey(schoolId)) || "[]");
+    const studentParents: StudentParent[] = JSON.parse(localStorage.getItem(getStudentParentsCacheKey(schoolId)) || "[]");
+
+    const classMap = new Map(classes.map(c => [c.id, c.name]));
+    const sectionMap = new Map(sections.map(s => [s.id, s.name]));
+    const parentMap = new Map(parents.map(p => [p.id, p]));
+
+    const filtered = allStudents
+      .filter(s => s.id !== currentStudentId && !s.deleted_at)
+      .filter(s => {
+        const fullName = `${s.first_name} ${s.last_name}`.toLowerCase();
+        const adm = (s.admission_no || "").toLowerCase();
+        return fullName.includes(cleanQ) || adm.includes(cleanQ);
+      })
+      .slice(0, 12)
+      .map(s => {
+        const enr = enrollments.find(e => e.student_id === s.id && e.status === "active");
+        const sp = studentParents.find(p => p.student_id === s.id && p.is_primary_contact) || studentParents.find(p => p.student_id === s.id);
+        const pObj = sp ? parentMap.get(sp.parent_id) : undefined;
+        return {
+          id: s.id,
+          first_name: s.first_name,
+          last_name: s.last_name,
+          admission_no: s.admission_no,
+          photo_path: s.photo_path || null,
+          class_name: enr ? classMap.get(enr.class_id) || null : null,
+          section_name: enr ? sectionMap.get(enr.section_id) || null : null,
+          parent_name: pObj?.full_name || null,
+          parent_phone: pObj?.phone || null,
+        };
+      });
+
+    return { students: filtered };
+  } catch {
+    return { students: [] };
+  }
+}
+
+export interface StudentTimelineItem {
+  id: string;
+  created_at: string;
+  category: "admission" | "enrollment" | "fee_payment" | "fee_invoice" | "fee_refund" | "status" | "profile" | "transport" | "audit";
+  summary: string;
+  description?: string;
+  financial?: {
+    amountPaise: number;
+    amountFormatted: string;
+    paymentMode?: string;
+    receiptNo?: string;
+    status?: string;
+  };
+}
+
+/**
+ * Aggregates real student activity from student events, fee receipts, dues, enrollments, and audit logs
+ */
+export async function getStudentActivityTimeline(
+  schoolId: string,
+  studentId: string
+): Promise<StudentTimelineItem[]> {
+  const items: StudentTimelineItem[] = [];
+
+  // 1. Fetch student_events
+  try {
+    const eventsRes = await getStudentEvents(schoolId, studentId);
+    for (const ev of eventsRes.events || []) {
+      const metaDesc = typeof ev.meta?.description === "string" ? ev.meta.description : undefined;
+      const category = 
+        ev.kind === "status_changed" || ev.kind === "tc_issued" ? "status" :
+        ev.kind === "admitted" || ev.kind === "readmitted" ? "admission" :
+        ev.kind === "promoted" || ev.kind === "class_changed" ? "enrollment" : "admission";
+      items.push({
+        id: `ev-${ev.id}`,
+        created_at: ev.created_at,
+        category,
+        summary: ev.summary || "Student event recorded",
+        description: metaDesc,
+      });
+    }
+  } catch (e) {
+    console.warn("Error fetching student_events:", e);
+  }
+
+  // 2. Fetch fee receipts / payments from ledger or fee_receipts
+  if (isSupabaseConfigured) {
+    try {
+      const [receiptsRes, duesRes, auditRes] = await Promise.all([
+        supabase
+          .from("fee_receipts")
+          .select("id, receipt_no, receipt_date, total_amount_paise, payment_mode, status, created_at, remarks")
+          .eq("school_id", schoolId)
+          .eq("student_id", studentId),
+        supabase
+          .from("student_dues")
+          .select("id, amount_paise, due_date, status, created_at, fee_heads(name), fee_terms(name)")
+          .eq("school_id", schoolId)
+          .eq("student_id", studentId),
+        supabase
+          .from("audit_logs")
+          .select("id, action, entity_type, changes, created_at")
+          .eq("school_id", schoolId)
+          .eq("entity_id", studentId)
+          .limit(20),
+      ]);
+
+      // Fee receipts (Payments)
+      for (const rec of receiptsRes.data || []) {
+        const amt = Number(rec.total_amount_paise || 0);
+        items.push({
+          id: `rec-${rec.id}`,
+          created_at: rec.created_at || `${rec.receipt_date}T10:00:00Z`,
+          category: "fee_payment",
+          summary: `Fee Payment Received: ₹${(amt / 100).toLocaleString("en-IN")}`,
+          description: `Receipt #${rec.receipt_no} via ${(rec.payment_mode || "cash").toUpperCase()}${rec.remarks ? ` • ${rec.remarks}` : ""}`,
+          financial: {
+            amountPaise: amt,
+            amountFormatted: `₹${(amt / 100).toLocaleString("en-IN")}`,
+            paymentMode: rec.payment_mode || "cash",
+            receiptNo: rec.receipt_no,
+            status: rec.status || "completed",
+          },
+        });
+      }
+
+      // Invoiced dues
+      for (const due of duesRes.data || []) {
+        const headName = (due as any).fee_heads?.name || "Fee Due";
+        const termName = (due as any).fee_terms?.name ? ` (${(due as any).fee_terms.name})` : "";
+        const amt = Number(due.amount_paise || 0);
+        items.push({
+          id: `due-${due.id}`,
+          created_at: due.created_at || new Date().toISOString(),
+          category: "fee_invoice",
+          summary: `Fee Obligation: ${headName}${termName}`,
+          description: `Assessed ₹${(amt / 100).toLocaleString("en-IN")}, due date: ${due.due_date}`,
+          financial: {
+            amountPaise: amt,
+            amountFormatted: `₹${(amt / 100).toLocaleString("en-IN")}`,
+            status: due.status,
+          },
+        });
+      }
+
+      // Audit logs
+      for (const al of auditRes.data || []) {
+        items.push({
+          id: `audit-${al.id}`,
+          created_at: al.created_at,
+          category: "audit",
+          summary: `Record ${al.action.replace(/_/g, " ")}`,
+          description: al.changes ? `Updated fields: ${Object.keys(al.changes).slice(0, 3).join(", ")}` : undefined,
+        });
+      }
+    } catch (e) {
+      console.warn("Supabase activity fetch failed:", e);
+    }
+  } else {
+    // Local storage fallback for receipts
+    try {
+      const receiptsKey = `myzkool_fee_receipts_${schoolId}`;
+      const receipts = JSON.parse(localStorage.getItem(receiptsKey) || "[]").filter((r: any) => r.student_id === studentId);
+      for (const rec of receipts) {
+        const amt = Number(rec.total_amount_paise || 0);
+        items.push({
+          id: `rec-${rec.id}`,
+          created_at: rec.created_at || `${rec.receipt_date}T10:00:00Z`,
+          category: "fee_payment",
+          summary: `Fee Payment Received: ₹${(amt / 100).toLocaleString("en-IN")}`,
+          description: `Receipt #${rec.receipt_no} via ${(rec.payment_mode || "cash").toUpperCase()}`,
+          financial: {
+            amountPaise: amt,
+            amountFormatted: `₹${(amt / 100).toLocaleString("en-IN")}`,
+            paymentMode: rec.payment_mode || "cash",
+            receiptNo: rec.receipt_no,
+            status: rec.status || "completed",
+          },
+        });
+      }
+    } catch {}
+  }
+
+  // Deduplicate and sort descending by timestamp
+  const uniqueItems = Array.from(new Map(items.map(it => [it.id, it])).values());
+  uniqueItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return uniqueItems;
 }
 
 /**

@@ -20,7 +20,7 @@ import { usePageMetadata } from "../../hooks/usePageMetadata";
 
 export default function Register() {
   usePageMetadata({
-    title: "Register Your School — Free Setup",
+    title: "Register Your School, Start Free Setup",
     description: "Create your school website and setup your management ERP in minutes. Built for Indian K-12 schools.",
     canonical: "https://myzkool.in/register",
   });
@@ -193,6 +193,7 @@ export default function Register() {
               </div>
               <input
                 id="full-name"
+                name="name"
                 type="text"
                 required
                 autoComplete="name"
@@ -219,6 +220,7 @@ export default function Register() {
               </div>
               <input
                 id="email"
+                name="email"
                 type="email"
                 required
                 autoComplete="email"
@@ -245,6 +247,7 @@ export default function Register() {
               </div>
               <input
                 id="phone"
+                name="tel"
                 type="tel"
                 required
                 autoComplete="tel"
@@ -276,6 +279,7 @@ export default function Register() {
                 </div>
                 <input
                   id="password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
                   required
                   autoComplete="new-password"
@@ -310,6 +314,7 @@ export default function Register() {
                 </div>
                 <input
                   id="confirm-password"
+                  name="confirm-password"
                   type={showConfirmPassword ? "text" : "password"}
                   required
                   autoComplete="new-password"
@@ -379,6 +384,7 @@ export default function Register() {
             <div className="flex items-start gap-2.5 select-none">
               <input
                 id="agreeTerms"
+                name="agreeTerms"
                 type="checkbox"
                 required
                 checked={agreeTerms}

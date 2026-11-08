@@ -10,17 +10,17 @@ import {
   X,
   HelpCircle,
   IndianRupee,
-  Shield,
   Bus,
   Lock,
-  Globe,
   ChevronDown,
+  ChevronRight,
   UserPlus,
   Award,
   MessageSquare,
   BookOpen,
   Package,
-  School as SchoolIcon,
+  BarChart3,
+  LogOut,
 } from "lucide-react";
 import { MyZkoolLogo } from "../common/MyZkoolLogo";
 import type { School } from "../../types/school";
@@ -44,55 +44,86 @@ interface NavItem {
   children?: SubNavItem[];
 }
 
+interface NavGroup {
+  groupTitle?: string;
+  items: NavItem[];
+}
+
 interface SidebarProps {
   school: School | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
-const NAVIGATION: NavItem[] = [
-  { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { label: "Students", href: "/admin/students", icon: Users },
-  { label: "Admissions", href: "/admin/students/new", icon: UserPlus },
-  { label: "Academics", href: "/admin/academics", icon: GraduationCap },
-  { label: "Attendance", href: "/admin/attendance", icon: CalendarCheck },
-  { label: "Examinations", href: "/admin/exams", icon: Award },
+const NAVIGATION_GROUPS: NavGroup[] = [
   {
-    label: "Fees",
-    href: "/admin/fees",
-    icon: IndianRupee,
-    children: [
-      { label: "Overview", href: "/admin/fees", exact: true },
-      { label: "Fee Structures", href: "/admin/fees/setup/structures" },
-      { label: "Invoices", href: "/admin/fees/invoices" },
-      { label: "Collections", href: "/admin/fees/collections" },
-      { label: "Discounts & Concessions", href: "/admin/fees/setup/concessions" },
-      { label: "Dues & Reminders", href: "/admin/fees/reminders" },
-      { label: "Reports", href: "/admin/fees/reports" },
+    items: [
+      { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     ],
   },
-  { label: "Transport", href: "/admin/transport", icon: Bus, featureKey: "transport" },
-  { label: "Communication", href: "/admin/communication", icon: MessageSquare },
-  { label: "Library", href: "/admin/library", icon: BookOpen },
-  { label: "Inventory", href: "/admin/inventory", icon: Package },
-  { label: "Staff", href: "/admin/staff", icon: Briefcase },
   {
-    label: "Settings",
-    href: "/admin/settings",
-    icon: Settings,
-    children: [
-      { label: "Classes & Sections", href: "/admin/settings/classes" },
-      { label: "Data Purge & Privacy", href: "/admin/settings/privacy" },
+    groupTitle: "School Management",
+    items: [
+      { label: "Students", href: "/admin/students", icon: Users },
+      { label: "Admissions", href: "/admin/students/new", icon: UserPlus },
+      { label: "Academics", href: "/admin/settings/classes", icon: GraduationCap },
+      { label: "Attendance", href: "/admin/attendance", icon: CalendarCheck },
+      { label: "Examinations", href: "/admin/exams", icon: Award },
+    ],
+  },
+  {
+    groupTitle: "Fees & Accounts",
+    items: [
+      {
+        label: "Fees",
+        href: "/admin/fees",
+        icon: IndianRupee,
+        children: [
+          { label: "Overview", href: "/admin/fees", exact: true },
+          { label: "Fee Structures", href: "/admin/fees/setup/structures" },
+          { label: "Invoices", href: "/admin/fees/invoices" },
+          { label: "Collections", href: "/admin/fees/collections" },
+          { label: "Discounts & Concessions", href: "/admin/fees/setup/concessions" },
+          { label: "Dues & Reminders", href: "/admin/fees/reminders" },
+          { label: "Reports", href: "/admin/fees/reports" },
+        ],
+      },
+      { label: "Transport", href: "/admin/transport", icon: Bus, featureKey: "transport" },
+      { label: "Staff & HR", href: "/admin/staff", icon: Briefcase },
+    ],
+  },
+  {
+    groupTitle: "School Operations",
+    items: [
+      { label: "Communication", href: "/admin/communication", icon: MessageSquare },
+      { label: "Library", href: "/admin/library", icon: BookOpen },
+      { label: "Inventory", href: "/admin/inventory", icon: Package },
+    ],
+  },
+  {
+    groupTitle: "Reports & Settings",
+    items: [
+      { label: "Reports & Analytics", href: "/admin/fees/reports", icon: BarChart3 },
+      {
+        label: "Settings",
+        href: "/admin/settings",
+        icon: Settings,
+        children: [
+          { label: "Classes & Sections", href: "/admin/settings/classes" },
+          { label: "Data Purge & Privacy", href: "/admin/settings/privacy" },
+        ],
+      },
     ],
   },
 ];
 
 export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   const location = useLocation();
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [hasTransport, setHasTransport] = useState<boolean>(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!school?.id) return;
@@ -107,13 +138,15 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   // Auto-expand sections when on a child route
   useEffect(() => {
     const expanded = new Set<string>();
-    for (const item of NAVIGATION) {
-      if (
-        item.children &&
-        item.href !== "/admin" &&
-        location.pathname.startsWith(item.href)
-      ) {
-        expanded.add(item.href);
+    for (const group of NAVIGATION_GROUPS) {
+      for (const item of group.items) {
+        if (
+          item.children &&
+          item.href !== "/admin" &&
+          location.pathname.startsWith(item.href)
+        ) {
+          expanded.add(item.href);
+        }
       }
     }
     setExpandedSections(expanded);
@@ -160,12 +193,22 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
     return location.pathname.startsWith(child.href);
   };
 
+  // User initials
+  const initials = profile?.full_name
+    ? profile.full_name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "RK";
+
   return (
     <>
       {/* Mobile Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-40 md:hidden transition-opacity"
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs z-40 md:hidden transition-opacity"
           aria-hidden="true"
           onClick={onClose}
         />
@@ -173,10 +216,11 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen w-64 bg-white border-r border-[#E6EAF3] z-50 flex flex-col transition-transform duration-300 ease-in-out shadow-lg md:shadow-none ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-          }`}
+        className={`fixed top-0 left-0 h-screen w-64 bg-white border-r border-[#E6EAF3] z-50 flex flex-col transition-transform duration-300 ease-in-out shadow-xl md:shadow-none ${
+          isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
       >
-        {/* Logo */}
+        {/* Brand Logo Header */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-[#E6EAF3] shrink-0">
           <Link to="/admin" className="flex items-center" onClick={() => onClose()}>
             <MyZkoolLogo size={28} showText={true} />
@@ -184,7 +228,7 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
           <button
             onClick={onClose}
             aria-label="Close sidebar"
-            className="p-1.5 md:hidden text-[#5B6478] hover:bg-gray-100 rounded-md"
+            className="p-1.5 md:hidden text-[#5B6478] hover:bg-gray-100 rounded-lg cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -193,113 +237,199 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
         {/* School Identity Selector */}
         <SchoolSelector variant="sidebar" />
 
-        {/* Navigation */}
-        <div className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5 scrollbar-thin scrollbar-thumb-gray-200">
-          {NAVIGATION.map((item) => {
-            const Icon = item.icon;
-            const hasChildren = !!(item.children && item.children.length > 0);
-            const isExpanded = expandedSections.has(item.href);
-            const parentOnRoute =
-              item.href !== "/admin" && location.pathname.startsWith(item.href);
-            const exactActive =
-              !hasChildren &&
-              (location.pathname === item.href ||
-                (item.href !== "/admin" && location.pathname.startsWith(item.href)));
-            const badge =
-              item.badgeKey === "approvals" && pendingApprovals > 0 ? pendingApprovals : 0;
+        {/* Navigation Groups */}
+        <div className="flex-1 overflow-y-auto py-3 px-3 space-y-4 scrollbar-thin scrollbar-thumb-gray-200">
+          {NAVIGATION_GROUPS.map((group, gIdx) => (
+            <div key={gIdx} className="space-y-0.5">
+              {group.groupTitle && (
+                <div className="px-3 pt-2 pb-1 text-[11px] font-bold text-[#8A94A6] uppercase tracking-wider">
+                  {group.groupTitle}
+                </div>
+              )}
 
-            return (
-              <div key={item.href}>
-                {hasChildren ? (
-                  <button
-                    type="button"
-                    onClick={() => toggleSection(item.href)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${parentOnRoute
-                        ? "bg-blue-50 text-[#2158E0] font-semibold"
-                        : "text-[#5B6478] hover:bg-gray-50 hover:text-[#141A2E]"
-                      }`}
-                  >
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${parentOnRoute
-                          ? "text-[#2158E0]"
-                          : "text-[#5B6478]"
-                        }`}
-                    />
-                    <span className="flex-1 text-left">{item.label}</span>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""
-                        } ${parentOnRoute
-                          ? "text-[#2158E0]"
-                          : "text-[#94A3B8]"
-                        }`}
-                    />
-                  </button>
-                ) : (
-                  <Link
-                    to={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${exactActive
-                        ? "bg-[#2158E0] text-white shadow-sm"
-                        : "text-[#5B6478] hover:bg-[#F0F5FE] hover:text-[#2158E0]"
-                      }`}
-                    onClick={() => { if (window.innerWidth < 768) onClose(); }}
-                  >
-                    <Icon className={`w-4 h-4 shrink-0 ${exactActive ? "text-white" : "text-[#5B6478]"}`} />
-                    <span className="flex-1">{item.label}</span>
-                    {item.featureKey === "transport" && !hasTransport && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-1 shrink-0">
-                        <Lock className="w-2.5 h-2.5" /> PRO
-                      </span>
-                    )}
-                    {badge > 0 && (
-                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center ${exactActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>
-                        {badge > 99 ? "99+" : badge}
-                      </span>
-                    )}
-                  </Link>
-                )}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const hasChildren = !!(item.children && item.children.length > 0);
+                const isExpanded = expandedSections.has(item.href);
+                const parentOnRoute =
+                  item.href !== "/admin" && location.pathname.startsWith(item.href);
+                const isDashboard = item.href === "/admin";
+                const exactActive = isDashboard
+                  ? location.pathname === "/admin"
+                  : !hasChildren && location.pathname.startsWith(item.href);
 
-                {/* Sub-items */}
-                {hasChildren && isExpanded && (
-                  <div className="ml-3.5 mt-0.5 mb-1 border-l-2 border-blue-100 pl-3 space-y-0.5">
-                    {item.children!.map((child) => {
-                      const childActive = isChildActive(child);
-                      return (
-                        <Link
-                          key={child.href}
-                          to={child.href}
-                          className={`flex items-center px-2.5 py-2 rounded-lg text-xs font-medium transition-colors ${childActive
-                              ? "bg-blue-50 text-[#2158E0] font-bold"
-                              : "text-[#5B6478] hover:bg-slate-50 hover:text-[#141A2E]"
+                const badge =
+                  item.badgeKey === "approvals" && pendingApprovals > 0 ? pendingApprovals : 0;
+
+                return (
+                  <div key={item.href}>
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(item.href)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
+                          parentOnRoute
+                            ? "bg-blue-50/80 text-[#2158E0]"
+                            : "text-[#5B6478] hover:bg-[#F8FAFC] hover:text-[#141A2E]"
+                        }`}
+                      >
+                        <Icon
+                          className={`w-4 h-4 shrink-0 ${
+                            parentOnRoute ? "text-[#2158E0]" : "text-[#64748B]"
+                          }`}
+                        />
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                            isExpanded ? "rotate-180" : ""
+                          } ${parentOnRoute ? "text-[#2158E0]" : "text-[#94A3B8]"}`}
+                        />
+                      </button>
+                    ) : (
+                      <Link
+                        to={item.href}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
+                          exactActive
+                            ? "bg-[#2158E0] text-white shadow-xs"
+                            : "text-[#5B6478] hover:bg-[#F8FAFC] hover:text-[#141A2E]"
+                        }`}
+                        onClick={() => {
+                          if (window.innerWidth < 768) onClose();
+                        }}
+                      >
+                        <Icon
+                          className={`w-4 h-4 shrink-0 ${
+                            exactActive ? "text-white" : "text-[#64748B]"
+                          }`}
+                        />
+                        <span className="flex-1 truncate">{item.label}</span>
+
+                        {item.featureKey === "transport" && (
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5 shrink-0 ${
+                              !hasTransport
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-amber-100 text-amber-800 font-extrabold"
                             }`}
-                          onClick={() => { if (window.innerWidth < 768) onClose(); }}
-                        >
-                          {child.label}
-                        </Link>
-                      );
-                    })}
+                          >
+                            {!hasTransport && <Lock className="w-2.5 h-2.5" />} PRO
+                          </span>
+                        )}
+
+                        {item.label === "Academics" && (
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                        )}
+
+                        {badge > 0 && (
+                          <span
+                            className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center ${
+                              exactActive ? "bg-white/20 text-white" : "bg-red-500 text-white"
+                            }`}
+                          >
+                            {badge > 99 ? "99+" : badge}
+                          </span>
+                        )}
+                      </Link>
+                    )}
+
+                    {/* Collapsible Sub-items */}
+                    {hasChildren && isExpanded && (
+                      <div className="ml-3.5 mt-0.5 mb-1 border-l-2 border-blue-100 pl-3 space-y-0.5">
+                        {item.children!.map((child) => {
+                          const childActive = isChildActive(child);
+                          return (
+                            <Link
+                              key={child.href}
+                              to={child.href}
+                              className={`flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                childActive
+                                  ? "bg-blue-50 text-[#2158E0] font-bold"
+                                  : "text-[#5B6478] hover:bg-slate-50 hover:text-[#141A2E]"
+                              }`}
+                              onClick={() => {
+                                if (window.innerWidth < 768) onClose();
+                              }}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          ))}
         </div>
 
-        {/* Bottom */}
-        <div className="p-3.5 border-t border-[#E6EAF3] shrink-0 space-y-1.5">
-          <button className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-gray-50 rounded-lg transition-colors">
-            <HelpCircle className="w-4 h-4" />
-            Help & Support
-          </button>
-          <div className="flex items-center gap-2.5 px-3 py-2 bg-[#F8FAFC] rounded-lg border border-[#E6EAF3]/60">
-            <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
-              {profile?.full_name?.charAt(0) || "A"}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-[#141A2E] truncate">{profile?.full_name || "Admin User"}</p>
-              <p className="text-[10px] text-[#5B6478] capitalize truncate">
-                {profile?.role?.replace(/_/g, " ") || "School Admin"}
-              </p>
-            </div>
+        {/* Bottom User Area & Support */}
+        <div className="p-3 border-t border-[#E6EAF3] shrink-0 space-y-2 relative">
+          <Link
+            to="/admin/settings"
+            className="flex items-center gap-2.5 w-full px-3 py-2 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] hover:bg-slate-50 rounded-xl transition-colors"
+          >
+            <HelpCircle className="w-4 h-4 text-[#64748B]" />
+            <span>Help & Support</span>
+          </Link>
+
+          {/* User profile card */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+              className="w-full flex items-center justify-between p-2 bg-[#F8FAFC] hover:bg-slate-100 rounded-xl border border-[#E6EAF3] transition-colors cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-[#E2E8F0] text-[#141A2E] flex items-center justify-center text-xs font-bold shrink-0">
+                  {initials}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[#141A2E] truncate">
+                    {profile?.full_name || "Rashid Khan"}
+                  </p>
+                  <p className="text-[10px] text-[#64748B] capitalize truncate">
+                    {profile?.role?.replace(/_/g, " ") || "School Admin"}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${
+                  isProfileMenuOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {/* Profile Dropdown Popup */}
+            {isProfileMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setIsProfileMenuOpen(false)}
+                />
+                <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-[#E6EAF3] rounded-xl shadow-lg p-1 z-40 animate-in fade-in zoom-in-95">
+                  <Link
+                    to="/admin/settings"
+                    onClick={() => setIsProfileMenuOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 rounded-lg"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Settings</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsProfileMenuOpen(false);
+                      await signOut();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </aside>

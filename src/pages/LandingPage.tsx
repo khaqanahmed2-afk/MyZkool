@@ -1,18 +1,22 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
 import { Navbar } from "../components/layout/Navbar";
 import { Hero } from "../components/sections/Hero";
+import { DashboardPreview } from "../components/sections/DashboardPreview";
 import { TrustStrip } from "../components/sections/TrustStrip";
 import { Philosophy } from "../components/sections/Philosophy";
 import { Features } from "../components/sections/Features";
-import { Roadmap } from "../components/sections/Roadmap";
-import { HowItWorks } from "../components/sections/HowItWorks";
+import { WebsiteBuilderShowcase } from "../components/sections/WebsiteBuilderShowcase";
+import { AcademicsShowcase } from "../components/sections/AcademicsShowcase";
 import { WhatsAppSpotlight } from "../components/sections/WhatsAppSpotlight";
+import { HowItWorks } from "../components/sections/HowItWorks";
+import { Roadmap } from "../components/sections/Roadmap";
 import { Pricing } from "../components/sections/Pricing";
 import { FAQ } from "../components/sections/FAQ";
 import { FinalCTA } from "../components/sections/FinalCTA";
 import { Footer } from "../components/layout/Footer";
 import { useLandingModals } from "../hooks/useLandingModals";
 import { usePageMetadata } from "../hooks/usePageMetadata";
+import { FAQS } from "../data/landingData";
 
 // ── Lazy-load heavy modals and AI widget (not needed for first paint) ──────────
 const DemoModal = lazy(() =>
@@ -44,10 +48,34 @@ export default function LandingPage() {
   } = useLandingModals();
 
   usePageMetadata({
-    title: "MyZkool — School Website Builder & Management ERP with WhatsApp",
+    title: "MyZkool, School Website Builder and Management ERP with WhatsApp",
     description:
       "One unified platform for school websites, fee collections, attendance, report cards, and automated WhatsApp parent notifications. Zero IT team required.",
     canonical: "https://myzkool.in/",
+    structuredData: {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://myzkool.in/#website",
+          "url": "https://myzkool.in/",
+          "name": "MyZkool",
+          "description": "School website builder and cloud ERP management platform with WhatsApp for Indian K-12 schools."
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://myzkool.in/#faq",
+          "mainEntity": FAQS.map((faq) => ({
+            "@type": "Question",
+            "name": faq.question,
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": faq.answer,
+            },
+          })),
+        },
+      ],
+    },
   });
 
   // Delay mounting the AI advisor until browser is idle / after initial paint
@@ -65,49 +93,58 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-white text-[#141A2E] font-body selection:bg-blue-100 selection:text-[#2158E0]">
-      {/* Top Navigation */}
+      {/* 1. Professional Navigation Bar */}
       <Navbar
         onOpenDemo={() => handleOpenDemo()}
         onOpenLogin={handleOpenLogin}
       />
 
-      {/* Main Page Flow */}
+      {/* Main Page Flow following the 17-section structure */}
       <main id="main-content">
-        {/* Section 1: Hero Moment */}
+        {/* 2. Hero Section with Value Proposition */}
         <Hero onOpenDemo={() => handleOpenDemo()} />
 
-        {/* Section 2: Trust & Qualitative Claims Strip */}
+        {/* 3. Product Dashboard Preview */}
+        <DashboardPreview onOpenDemo={() => handleOpenDemo()} />
+
+        {/* 4. Trust & Product Highlights */}
         <TrustStrip />
 
-        {/* Section 3: Core Philosophy (Why MyZkool) */}
+        {/* 5. Problems MyZkool Solves for Schools */}
         <Philosophy />
 
-        {/* Section 4: Full Feature Set (3-Column Grid) */}
+        {/* 6, 8, 9. Core ERP Features, Fee Management & Smart Attendance */}
         <Features />
 
-        {/* Section 5: Product Roadmap */}
-        <Roadmap />
+        {/* 7. School Website Builder Showcase */}
+        <WebsiteBuilderShowcase onOpenDemo={() => handleOpenDemo()} />
 
-        {/* Section 6: How It Works (4-Step Onboarding) */}
-        <HowItWorks />
+        {/* 10. Staff, Examinations and Academic Management */}
+        <AcademicsShowcase onOpenDemo={() => handleOpenDemo()} />
 
-        {/* Section 7: WhatsApp Spotlight */}
+        {/* 11. Parent Communication and Mobile App */}
         <WhatsAppSpotlight onOpenDemo={() => handleOpenDemo()} />
 
-        {/* Section 8: Pricing & Full Comparison Table */}
+        {/* 12. How MyZkool Works (4-Step Onboarding) */}
+        <HowItWorks />
+
+        {/* Innovation Pipeline: Product Roadmap */}
+        <Roadmap />
+
+        {/* 13 & 14. Pricing Plans & Feature Comparison Table */}
         <Pricing onOpenDemo={(plan) => handleOpenDemo(plan)} />
 
-        {/* Section 9: FAQ Accordion */}
+        {/* 15. Frequently Asked Questions */}
         <FAQ />
 
-        {/* Section 10: Final High-Impact CTA Band */}
+        {/* 16. Strong Conversion Section */}
         <FinalCTA onOpenDemo={() => handleOpenDemo()} />
       </main>
 
-      {/* Footer */}
+      {/* 17. Professional Footer */}
       <Footer onOpenLegal={handleOpenLegal} />
 
-      {/* Interactive Modals — only mount JS bundle when actually opened */}
+      {/* Interactive Modals: only mount JS bundle when actually opened */}
       <Suspense fallback={null}>
         {isDemoModalOpen && (
           <DemoModal
@@ -135,7 +172,7 @@ export default function LandingPage() {
         )}
       </Suspense>
 
-      {/* AI School Advisor — deferred until browser is idle */}
+      {/* AI School Advisor: deferred until browser is idle */}
       {showAdvisor && (
         <Suspense fallback={null}>
           <AiSchoolAdvisor />

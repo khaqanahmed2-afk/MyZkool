@@ -357,7 +357,10 @@ export const AiSchoolAdvisor: React.FC = () => {
                 }}
                 className="p-3 bg-white border-t border-[#E6EAF3] flex items-center gap-2"
               >
-                <input aria-label="Ask a question"
+                <input
+                  id="ai-advisor-input-message"
+                  name="advisorMessage"
+                  aria-label="Ask a question"
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
@@ -393,6 +396,8 @@ export const AiSchoolAdvisor: React.FC = () => {
                 </div>
 
                 <input
+                  id="ai-advisor-file-upload"
+                  name="advisorDocumentFile"
                   type="file"
                   accept="image/*"
                   ref={fileInputRef}

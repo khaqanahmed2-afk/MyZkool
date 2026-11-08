@@ -50,6 +50,16 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
                 </a>
               </li>
               <li>
+                <a href="/#website-builder" className="hover:text-[#2158E0] transition-colors">
+                  School Website Builder
+                </a>
+              </li>
+              <li>
+                <a href="/#academics" className="hover:text-[#2158E0] transition-colors">
+                  Academics &amp; Examinations
+                </a>
+              </li>
+              <li>
                 <a href="/#pricing" className="hover:text-[#2158E0] transition-colors">
                   Pricing &amp; Plans
                 </a>
@@ -178,7 +188,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
 
         {/* Bottom Line */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#5B6478]">
-          <p>© 2024–{new Date().getFullYear()} MyZkool Technologies. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} MyZkool Technologies. All rights reserved.</p>
           <div className="flex items-center gap-4 text-[11px]">
             <button onClick={() => onOpenLegal?.("privacy")} className="hover:underline cursor-pointer">Privacy Policy</button>
             <span>•</span>

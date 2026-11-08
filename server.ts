@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { Request, Response } from "express";
 import http from "http";
 import path from "path";
@@ -7,10 +8,20 @@ import dotenv from "dotenv";
 import { transportRouter } from "./src/routes/transportRoutes";
 import { razorpayRouter } from "./src/routes/razorpayRoutes";
 import { deletionRouter } from "./src/routes/deletionRoutes";
+import { masterAdminAuthRouter } from "./src/routes/api/masterAdminAuthRoutes";
+import { masterAdminDashboardRouter } from "./src/routes/api/masterAdminDashboardRoutes";
+import { masterAdminSchoolRouter } from "./src/routes/api/masterAdminSchoolRoutes";
+import { masterAdminSubscriptionRouter } from "./src/routes/api/masterAdminSubscriptionRoutes";
+import { masterAdminBillingRouter } from "./src/routes/api/masterAdminBillingRoutes";
+import { masterAdminSupportRouter } from "./src/routes/api/masterAdminSupportRoutes";
+import { masterAdminUserRouter } from "./src/routes/api/masterAdminUserRoutes";
+import { masterAdminAnnouncementRouter } from "./src/routes/api/masterAdminAnnouncementRoutes";
+import { masterAdminSettingsRouter } from "./src/routes/api/masterAdminSettingsRoutes";
+import { masterAdminMonitoringRouter } from "./src/routes/api/masterAdminMonitoringRoutes";
 import { getSchoolBySubdomain } from "./src/services/schoolService";
 import { apiErrorHandler } from "./src/middleware/errorHandler";
 
-dotenv.config();
+
 
 const app = express();
 app.disable("x-powered-by");
@@ -20,6 +31,16 @@ app.use(express.json({ limit: "25mb" }));
 app.use(razorpayRouter);
 app.use("/api/transport", transportRouter);
 app.use("/api/deletion", deletionRouter);
+app.use("/api/master-admin/auth", masterAdminAuthRouter);
+app.use("/api/master-admin/dashboard", masterAdminDashboardRouter);
+app.use("/api/master-admin/schools", masterAdminSchoolRouter);
+app.use("/api/master-admin/subscriptions", masterAdminSubscriptionRouter);
+app.use("/api/master-admin/billing", masterAdminBillingRouter);
+app.use("/api/master-admin/support", masterAdminSupportRouter);
+app.use("/api/master-admin/users", masterAdminUserRouter);
+app.use("/api/master-admin/announcements", masterAdminAnnouncementRouter);
+app.use("/api/master-admin/settings", masterAdminSettingsRouter);
+app.use("/api/master-admin/monitoring", masterAdminMonitoringRouter);
 
 // Lazy initialize Gemini AI SDK
 let aiClient: GoogleGenAI | null = null;
@@ -305,6 +326,13 @@ async function startServer() {
     console.log(`MyZkool Server running on http://localhost:${PORT}`);
   });
 
+  server.on("clientError", (err: any, socket: any) => {
+    if (err.code === "ECONNRESET" || !socket.writable) {
+      return;
+    }
+    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  });
+
   server.on("error", (err: any) => {
     if (err.code === "EADDRINUSE") {
       console.warn(`Port ${PORT} is already in use. A dev server may already be running.`);
@@ -313,5 +341,12 @@ async function startServer() {
     }
   });
 }
+
+process.on("uncaughtException", (err: any) => {
+  if (err.code === "ECONNRESET" || err.code === "EBUSY") {
+    return;
+  }
+  console.error("Server uncaughtException:", err);
+});
 
 startServer();

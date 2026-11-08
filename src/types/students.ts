@@ -603,6 +603,7 @@ export interface StudentSibling {
   sibling_section_id?: string | null;
   sibling_class_name?: string | null;
   sibling_section_name?: string | null;
+  sibling_photo_path?: string | null;
 }
 
 /**
@@ -1134,9 +1135,18 @@ export interface StudentSummaryData {
   enrolledCount: number;
   newAdmissionsCount: number;
   feePendingCount: number;
+  onHoldCount?: number;
+  transferredCount?: number;
+  leftInactiveCount?: number;
   boysCount?: number;
   girlsCount?: number;
   documentsPending?: number;
   transportCount?: number;
+  classStrength?: {
+    id: string;
+    name: string;
+    shortName: string;
+    studentCount: number;
+  }[];
 }
 

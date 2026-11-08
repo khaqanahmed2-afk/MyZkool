@@ -879,6 +879,7 @@ export default function PublicSchoolWebsite() {
                       Parent's full name <span className="text-red-500">*</span>
                     </label>
                     <input id="publicschoolwebsite-parent-s-full-name"
+                      name="parentName"
                       type="text"
                       required
                       value={parentName}
@@ -894,6 +895,7 @@ export default function PublicSchoolWebsite() {
                         Phone number <span className="text-red-500">*</span>
                       </label>
                       <input id="publicschoolwebsite-phone-number"
+                        name="parentPhone"
                         type="tel"
                         required
                         value={parentPhone}
@@ -908,6 +910,7 @@ export default function PublicSchoolWebsite() {
                         Email address
                       </label>
                       <input id="publicschoolwebsite-email-address"
+                        name="parentEmail"
                         type="email"
                         value={parentEmail}
                         onChange={(e) => setParentEmail(e.target.value)}
@@ -922,6 +925,7 @@ export default function PublicSchoolWebsite() {
                       Seeking class / grade <span className="text-red-500">*</span>
                     </label>
                     <select id="publicschoolwebsite-seeking-class-grade" aria-label="Seeking class / grade"
+                      name="studentGrade"
                       value={studentGrade}
                       onChange={(e) => setStudentGrade(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-[#eadfd3] bg-[#fffaf5] text-xs text-[#14213d] focus:border-[#2158E0] focus:outline-hidden"
@@ -949,6 +953,7 @@ export default function PublicSchoolWebsite() {
                       Message / questions (optional)
                     </label>
                     <textarea id="publicschoolwebsite-message-questions-optional"
+                      name="enquiryMessage"
                       rows={2}
                       value={enquiryMessage}
                       onChange={(e) => setEnquiryMessage(e.target.value)}
@@ -1141,7 +1146,10 @@ export default function PublicSchoolWebsite() {
                   }}
                   className="flex gap-1.5 pt-1"
                 >
-                  <input aria-label="Newsletter subscription email"
+                  <input
+                    id="publicschoolwebsite-newsletter-email"
+                    name="newsletterEmail"
+                    aria-label="Newsletter subscription email"
                     type="email"
                     required
                     value={newsletterEmail}
