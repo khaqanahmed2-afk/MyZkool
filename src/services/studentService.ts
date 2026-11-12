@@ -1697,7 +1697,7 @@ export async function getStudentProfile(
 }
 
 // Helper functions for related data
-async function getStudentAddresses(schoolId: string, studentId: string): Promise<{ addresses?: StudentAddress[]; error?: string }> {
+export async function getStudentAddresses(schoolId: string, studentId: string): Promise<{ addresses?: StudentAddress[]; error?: string }> {
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
@@ -4835,7 +4835,7 @@ export async function getStudentWizardData(
     line2: currentAddr?.line2 || undefined,
     city: currentAddr?.city || "",
     district: currentAddr?.district || "",
-    state: currentAddr?.state || "Uttar Pradesh",
+    state: currentAddr?.state || "",
     pin: currentAddr?.pin || "",
   };
 
@@ -4852,7 +4852,7 @@ export async function getStudentWizardData(
     line2: permAddr.line2 || undefined,
     city: permAddr.city || "",
     district: permAddr.district || "",
-    state: permAddr.state || "Uttar Pradesh",
+    state: permAddr.state || "",
     pin: permAddr.pin || "",
   } : undefined;
 

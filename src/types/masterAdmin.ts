@@ -70,19 +70,31 @@ export interface MasterAdminAuthState {
 export interface DashboardKPIs {
   totalSchools: {
     count: number;
-    trendPercent: number;
+    trendPercent: number | null;
+    trendLabel?: string;
     isPositive: boolean;
     totalRegisteredSchools: number;
     onboardingCompleted: number;
     onboardingPending: number;
     activeSchools: number;
   };
-  totalStudents: { count: number; trendPercent: number; isPositive: boolean };
+  totalStudents: {
+    count: number;
+    trendPercent: number | null;
+    trendLabel?: string;
+    isPositive: boolean;
+  };
   totalRevenuePaise: number;
   totalRevenueFormatted: string;
-  revenueTrendPercent: number;
+  revenueTrendPercent: number | null;
+  revenueTrendLabel?: string;
   isRevenuePositive: boolean;
-  activeSubscriptions: { count: number; trendPercent: number; isPositive: boolean };
+  activeSubscriptions: {
+    count: number;
+    trendPercent: number | null;
+    trendLabel?: string;
+    isPositive: boolean;
+  };
 }
 
 export interface RegistrationTrendPoint {
@@ -104,7 +116,8 @@ export interface PlanDistributionStats {
 }
 
 export interface SystemServiceHealth {
-  status: "operational" | "degraded" | "outage";
+  status: "operational" | "degraded" | "outage" | "unavailable";
+  label?: string;
   latencyMs?: number;
   lastChecked: string;
 }
@@ -112,6 +125,7 @@ export interface SystemServiceHealth {
 export interface SystemHealthOverview {
   overall: "operational" | "degraded" | "outage";
   uptimePercent: number;
+  serverUptimeFormatted?: string;
   avgResponseMs: number;
   services: {
     webApp: SystemServiceHealth;
@@ -140,12 +154,43 @@ export interface PendingAttentionSummary {
 
 export interface KeyInsightSummary {
   schoolGrowthPercent: number;
+  schoolGrowthLabel?: string;
   studentGrowthPercent: number;
+  studentGrowthLabel?: string;
   pendingPaymentsPaise: number;
   pendingPaymentsFormatted: string;
   pendingPaymentsSchoolCount: number;
   expiringSoonDaysCount: number;
 }
+
+import type {
+  MasterAdminSchoolSummary,
+  SchoolsOverviewKPIs,
+  SubscriptionHistoryRecord,
+  GetSchoolsFilterOptions,
+} from "../services/masterAdminSchoolService";
+
+export type {
+  MasterAdminSchoolSummary,
+  SchoolsOverviewKPIs,
+  SubscriptionHistoryRecord,
+  GetSchoolsFilterOptions,
+};
+
+export type MasterAdminSchoolKpis = SchoolsOverviewKPIs;
+
+export type SchoolActionType =
+  | "edit"
+  | "change_plan"
+  | "extend_trial"
+  | "extend_subscription"
+  | "reactivate"
+  | "suspend"
+  | "manage_users"
+  | "manage_modules"
+  | "activity_logs"
+  | "subscription_history"
+  | string;
 
 export interface DashboardMetricsPayload {
   kpis: DashboardKPIs;

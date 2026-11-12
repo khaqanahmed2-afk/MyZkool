@@ -3062,12 +3062,14 @@ export interface StudentIdCardItem {
   class_name: string;
   section_id?: string | null;
   section_name?: string | null;
+  father_name?: string | null;
   guardian_name: string;
   guardian_phone: string;
   blood_group?: string | null;
   dob: string;
   qr_payload: string; // MYZKOOL:STUDENT:{admission_no}:{student_id}
   school_name?: string;
+  school_logo_url?: string | null;
 }
 
 export async function getStudentIdCardData(
@@ -3077,76 +3079,168 @@ export async function getStudentIdCardData(
     sectionId?: string;
     academicYearId?: string;
     studentId?: string;
+    studentIds?: string[];
   }
 ): Promise<StudentIdCardItem[]> {
+  if (!schoolId) {
+    return [];
+  }
+
   let students: Student[] = [];
   let enrollments: StudentEnrollment[] = [];
   let parents: Parent[] = [];
   let studentParents: any[] = [];
   let classes: any[] = [];
   let sections: any[] = [];
+  let schoolName = "MyZkool Academy";
+  let schoolLogoUrl: string | null = null;
+
+  const hasSpecificTarget = Boolean(options?.studentId || (options?.studentIds && options.studentIds.length > 0));
 
   if (isSupabaseConfigured) {
+    // 1. Fetch Students (strictly filtered by school and target IDs)
     let q = supabase.from("students").select("*").eq("school_id", schoolId).is("deleted_at", null);
     if (options?.studentId) {
       q = q.eq("id", options.studentId);
+    } else if (options?.studentIds && options.studentIds.length > 0) {
+      q = q.in("id", options.studentIds);
     } else {
       q = q.eq("status", "enrolled");
     }
     const sRes = await q;
     if (sRes.data) students = sRes.data;
 
-    const [enrRes, pRes, spRes, clsRes, secRes] = await Promise.all([
-      supabase.from("student_enrollments").select("*").eq("school_id", schoolId).eq("status", "active"),
-      supabase.from("parents").select("*").eq("school_id", schoolId).is("deleted_at", null),
-      supabase.from("student_parents").select("*").eq("school_id", schoolId),
+    if (students.length === 0) {
+      return [];
+    }
+
+    const targetStudentIds = students.map((s) => s.id);
+
+    // 2. Fetch School Profile for accurate name & logo
+    const scRes = await supabase
+      .from("schools")
+      .select("name, logo_url")
+      .eq("id", schoolId)
+      .maybeSingle();
+    if (scRes.data?.name) schoolName = scRes.data.name;
+    if (scRes.data?.logo_url) schoolLogoUrl = scRes.data.logo_url;
+
+    // 3. Fetch Related Data (strictly scoped to target students if specified)
+    let enrQuery = supabase.from("student_enrollments").select("*").eq("school_id", schoolId);
+    let spQuery = supabase.from("student_parents").select("*").eq("school_id", schoolId);
+
+    if (hasSpecificTarget) {
+      enrQuery = enrQuery.in("student_id", targetStudentIds);
+      spQuery = spQuery.in("student_id", targetStudentIds);
+    } else {
+      enrQuery = enrQuery.eq("status", "active");
+    }
+
+    const [enrRes, spRes, clsRes, secRes] = await Promise.all([
+      enrQuery,
+      spQuery,
       supabase.from("classes").select("*").eq("school_id", schoolId),
       supabase.from("sections").select("*").eq("school_id", schoolId),
     ]);
+
     if (enrRes.data) enrollments = enrRes.data;
-    if (pRes.data) parents = pRes.data;
     if (spRes.data) studentParents = spRes.data;
     if (clsRes.data) classes = clsRes.data;
     if (secRes.data) sections = secRes.data;
+
+    // 4. Fetch Parents (strictly scoped to referenced parent IDs)
+    const referencedParentIds = Array.from(new Set(studentParents.map((sp) => sp.parent_id))).filter(Boolean);
+    if (referencedParentIds.length > 0) {
+      const pRes = await supabase
+        .from("parents")
+        .select("*")
+        .eq("school_id", schoolId)
+        .in("id", referencedParentIds)
+        .is("deleted_at", null);
+      if (pRes.data) parents = pRes.data;
+    } else if (!hasSpecificTarget) {
+      const pRes = await supabase.from("parents").select("*").eq("school_id", schoolId).is("deleted_at", null);
+      if (pRes.data) parents = pRes.data;
+    }
   } else if (typeof localStorage !== "undefined") {
     const rawS = localStorage.getItem(getStudentsCacheKey(schoolId));
     const allS: Student[] = rawS ? JSON.parse(rawS) : [];
-    students = allS.filter((s) => !s.deleted_at);
+    const nonDeleted = allS.filter((s) => !s.deleted_at);
+
     if (options?.studentId) {
-      students = students.filter((s) => s.id === options.studentId);
+      students = nonDeleted.filter((s) => s.id === options.studentId);
+    } else if (options?.studentIds && options.studentIds.length > 0) {
+      const idSet = new Set(options.studentIds);
+      students = nonDeleted.filter((s) => idSet.has(s.id));
     } else {
-      students = students.filter((s) => s.status === "enrolled");
+      students = nonDeleted.filter((s) => s.status === "enrolled");
     }
 
-    const rawE = localStorage.getItem(getStudentEnrollmentsCacheKey(schoolId));
-    enrollments = rawE ? JSON.parse(rawE) : [];
+    if (students.length === 0) {
+      return [];
+    }
 
-    const rawP = localStorage.getItem(getParentsCacheKey(schoolId));
-    parents = rawP ? JSON.parse(rawP) : [];
+    const targetStudentIdSet = new Set(students.map((s) => s.id));
+
+    const rawE = localStorage.getItem(getStudentEnrollmentsCacheKey(schoolId));
+    const allE: StudentEnrollment[] = rawE ? JSON.parse(rawE) : [];
+    enrollments = hasSpecificTarget
+      ? allE.filter((e) => targetStudentIdSet.has(e.student_id))
+      : allE.filter((e) => e.status === "active");
 
     const rawSP = localStorage.getItem(getStudentParentsCacheKey(schoolId));
-    studentParents = rawSP ? JSON.parse(rawSP) : [];
+    const allSP: any[] = rawSP ? JSON.parse(rawSP) : [];
+    studentParents = hasSpecificTarget
+      ? allSP.filter((sp) => targetStudentIdSet.has(sp.student_id))
+      : allSP;
+
+    const referencedParentIds = new Set(studentParents.map((sp) => sp.parent_id));
+    const rawP = localStorage.getItem(getParentsCacheKey(schoolId));
+    const allP: Parent[] = rawP ? JSON.parse(rawP) : [];
+    parents = allP.filter(
+      (p) => !p.deleted_at && (referencedParentIds.size > 0 ? referencedParentIds.has(p.id) : !hasSpecificTarget)
+    );
 
     const rawC = localStorage.getItem(getClassesCacheKey(schoolId));
     classes = rawC ? JSON.parse(rawC) : [];
 
     const rawSec = localStorage.getItem(getSectionsCacheKey(schoolId));
     sections = rawSec ? JSON.parse(rawSec) : [];
+
+    // Read school profile for name and logo
+    const scRaw =
+      localStorage.getItem(`myzkool_school_profile_school_${schoolId}`) ||
+      localStorage.getItem("myzkool_school_profile");
+    if (scRaw) {
+      try {
+        const sc = JSON.parse(scRaw);
+        if (sc.name) schoolName = sc.name;
+        if (sc.logo_url) schoolLogoUrl = sc.logo_url;
+      } catch {}
+    }
   }
 
   const enrollmentMap = new Map<string, StudentEnrollment>();
   enrollments.forEach((e) => {
-    if (e.status === "active") enrollmentMap.set(e.student_id, e);
+    if (e.status === "active" || !enrollmentMap.has(e.student_id)) {
+      enrollmentMap.set(e.student_id, e);
+    }
   });
 
   const parentMap = new Map<string, Parent>();
   parents.forEach((p) => parentMap.set(p.id, p));
 
+  const fatherMap = new Map<string, Parent>();
   const primaryParentMap = new Map<string, Parent>();
+
   studentParents.forEach((sp) => {
+    const p = parentMap.get(sp.parent_id);
+    if (!p) return;
+    if (sp.relation === "father" && !fatherMap.has(sp.student_id)) {
+      fatherMap.set(sp.student_id, p);
+    }
     if (sp.is_primary_contact || !primaryParentMap.has(sp.student_id)) {
-      const p = parentMap.get(sp.parent_id);
-      if (p) primaryParentMap.set(sp.student_id, p);
+      primaryParentMap.set(sp.student_id, p);
     }
   });
 
@@ -3156,7 +3250,7 @@ export async function getStudentIdCardData(
   const sectionMap = new Map<string, string>();
   sections.forEach((s) => sectionMap.set(s.id, s.name));
 
-  // Filter by class / section
+  // Filter by class / section if not single student target
   if (options?.classId) {
     students = students.filter((s) => {
       const enr = enrollmentMap.get(s.id);
@@ -3173,10 +3267,14 @@ export async function getStudentIdCardData(
 
   return students.map((s) => {
     const enr = enrollmentMap.get(s.id);
-    const parent = primaryParentMap.get(s.id);
+    const father = fatherMap.get(s.id);
+    const primaryParent = primaryParentMap.get(s.id);
     const className = (enr?.class_id && classMap.get(enr.class_id)) || enr?.class_id || "Class 1";
     const sectionName = (enr?.section_id && sectionMap.get(enr.section_id)) || enr?.section_id || null;
-    const fullName = `${s.first_name} ${s.middle_name ? `${s.middle_name} ` : ""}${s.last_name}`;
+    const fullName = `${s.first_name}${s.middle_name ? ` ${s.middle_name}` : ""} ${s.last_name}`.trim();
+    const guardianName = primaryParent?.full_name || father?.full_name || "Parent/Guardian";
+    const fatherName = father?.full_name || null;
+    const guardianPhone = primaryParent?.phone || father?.phone || "N/A";
 
     return {
       student_id: s.id,
@@ -3189,12 +3287,14 @@ export async function getStudentIdCardData(
       class_name: className,
       section_id: enr?.section_id || null,
       section_name: sectionName,
-      guardian_name: parent?.full_name || "Parent/Guardian",
-      guardian_phone: parent?.phone || "N/A",
+      father_name: fatherName,
+      guardian_name: guardianName,
+      guardian_phone: guardianPhone,
       blood_group: s.blood_group || null,
       dob: s.dob,
       qr_payload: `MYZKOOL:STUDENT:${s.admission_no}:${s.id}`,
-      school_name: "MyZkool Academy",
+      school_name: schoolName,
+      school_logo_url: schoolLogoUrl,
     };
   });
 }

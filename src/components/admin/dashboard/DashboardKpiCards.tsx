@@ -109,7 +109,7 @@ export function DashboardKpiCards({ kpis, loading = false }: DashboardKpiCardsPr
           <Link
             key={card.label}
             to={card.href}
-            className="group relative rounded-2xl border border-[#E6EAF3] bg-white p-4 sm:p-5 shadow-2xs hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:border-[#BFDBFE] flex flex-col justify-between"
+            className="group relative rounded-2xl border border-[#E6EAF3] bg-white p-4 sm:p-5 shadow-2xs hover:shadow-md transition-colors duration-200 hover:-translate-y-0.5 hover:border-[#BFDBFE] flex flex-col justify-between"
           >
             <div className="flex items-center justify-between">
               {/* Icon Container */}
@@ -137,7 +137,7 @@ export function DashboardKpiCards({ kpis, loading = false }: DashboardKpiCardsPr
                 <p className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#141A2E] font-heading">
                   {card.value}
                 </p>
-                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-[#2158E0] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-[#2158E0] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-colors" />
               </div>
 
               <div className="mt-1 flex items-center justify-between">

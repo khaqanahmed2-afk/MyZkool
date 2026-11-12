@@ -4,6 +4,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { updateCachedSchoolOnboardingStep } from "./schoolService";
 import type { School } from "../types/school";
 import {
   type SchoolWebsite,
@@ -763,9 +764,11 @@ export async function publishWebsite({
 export async function saveWebsiteSetupProgress({
   schoolId,
   userId,
+  preserveAdminSession = false,
 }: {
   schoolId: string;
   userId: string;
+  preserveAdminSession?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   if (!schoolId || !userId) {
     return {
@@ -796,38 +799,30 @@ export async function saveWebsiteSetupProgress({
         .update(schoolUpdate)
         .eq("id", schoolId);
 
-      const profileUpdate = {
-        current_onboarding_step: "/onboarding/complete",
-        updated_at: timestamp,
-      };
-      await supabase
-        .from("profiles")
-        .update(profileUpdate)
-        .eq("auth_id", userId);
-
-      await supabase.auth.updateUser({
-        data: {
-          onboarding_step: newStep,
+      if (!preserveAdminSession) {
+        const profileUpdate = {
           current_onboarding_step: "/onboarding/complete",
-        },
-      });
+          updated_at: timestamp,
+        };
+        await supabase
+          .from("profiles")
+          .update(profileUpdate)
+          .eq("auth_id", userId);
+
+        await supabase.auth.updateUser({
+          data: {
+            onboarding_step: newStep,
+            current_onboarding_step: "/onboarding/complete",
+          },
+        });
+      }
     } catch (err) {
       console.warn("Supabase onboarding progress update error:", err);
     }
   }
 
   // Local storage update with non-regression
-  try {
-    const schoolKey = `myzkool_school_profile_${userId}`;
-    const raw = localStorage.getItem(schoolKey);
-    if (raw) {
-      const cached = JSON.parse(raw);
-      cached.onboarding_step = Math.max(cached.onboarding_step || 5, 6);
-      localStorage.setItem(schoolKey, JSON.stringify(cached));
-    }
-  } catch {
-    // Non-fatal
-  }
+  updateCachedSchoolOnboardingStep(userId, schoolId, 6);
 
   return { success: true };
 }

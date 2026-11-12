@@ -17,6 +17,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+import { buildOnboardingUrl, type OnboardingRouteOptions } from "../../../utils/onboardingRoute";
+
 export type WebsiteBuilderTab =
   | "identity"
   | "theme"
@@ -32,6 +34,7 @@ interface WebsiteBuilderSidebarProps {
   isSavingDraft: boolean;
   onSaveDraft: () => void;
   schoolSubdomain?: string;
+  onboardingRouteOptions?: OnboardingRouteOptions;
 }
 
 const ONBOARDING_STEPS_CONFIG = [
@@ -59,6 +62,7 @@ export const WebsiteBuilderSidebar: React.FC<WebsiteBuilderSidebarProps> = ({
   isSavingDraft,
   onSaveDraft,
   schoolSubdomain,
+  onboardingRouteOptions,
 }) => {
   // Steps 1 to 4 are completed; Step 5 is current active (4/6 = 67% or current in progress)
   const completedStepsCount = 4;
@@ -99,7 +103,7 @@ export const WebsiteBuilderSidebar: React.FC<WebsiteBuilderSidebarProps> = ({
               <div key={item.step}>
                 {isCompleted ? (
                   <Link
-                    to={item.route}
+                    to={buildOnboardingUrl(item.route, onboardingRouteOptions)}
                     className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#141A2E] hover:bg-slate-50 transition-colors group"
                   >
                     <span className="w-4 h-4 rounded-full bg-[#10B981] text-white flex items-center justify-center shrink-0">

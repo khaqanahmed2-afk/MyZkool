@@ -58,7 +58,7 @@ const INITIAL_PAYLOAD: AdmissionWizardPayload = {
       line1: "",
       city: "",
       district: "",
-      state: "Uttar Pradesh",
+      state: "",
       pin: "",
     },
     same_as_current: true,

@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useId } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
 import { useAuth } from "../../hooks/useAuth";
+import {
+  buildOnboardingUrl,
+  parseOnboardingSearchParams,
+} from "../../utils/onboardingRoute";
 import {
   normalizeSubdomain,
   checkSubdomainAvailability,
@@ -181,9 +185,11 @@ function validateField(
   }
 }
 
-export default function SchoolProfile() {
-  const { user, profile, refreshSession } = useAuth();
+export default function SchoolProfile({ forceNewSchool = false }: { forceNewSchool?: boolean }) {
+  const { user, profile, refreshSession, refreshSchool } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isNewSchoolMode, targetSchoolId } = parseOnboardingSearchParams(searchParams, forceNewSchool);
 
   // Unique IDs for accessibility
   const nameId = useId();
@@ -204,7 +210,7 @@ export default function SchoolProfile() {
     subdomain: "",
     school_type: "k12",
     affiliation_board: "cbse",
-    official_email: user?.email || "",
+    official_email: isNewSchoolMode && !targetSchoolId ? "" : user?.email || "",
     contact_phone: "",
     address: "",
     city: "",
@@ -239,23 +245,56 @@ export default function SchoolProfile() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSubdomainRequestRef = useRef<string>("");
 
-  // Redirect to /admin if school admin already finished onboarding
+  // Redirect to /admin if school admin already finished primary onboarding (unless registering a new school)
   useEffect(() => {
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && !isNewSchoolMode && !targetSchoolId) {
       navigate("/admin", { replace: true });
     }
-  }, [profile?.onboarding_completed, navigate]);
+  }, [profile?.onboarding_completed, isNewSchoolMode, targetSchoolId, navigate]);
 
-  // 1. Initial Load: Check for existing school record (Resume Onboarding)
+  // 1. Initial Load: Check for existing school record (or initialize blank form for Register New School)
   useEffect(() => {
     let isMounted = true;
 
     async function loadExistingSchool() {
       if (!user) return;
 
+      if (isNewSchoolMode && !targetSchoolId) {
+        existingSchoolIdRef.current = null;
+        setExistingOnboardingStep(1);
+        setIsSubdomainManuallyEdited(false);
+        setFormData({
+          name: "",
+          subdomain: "",
+          school_type: "k12",
+          affiliation_board: "cbse",
+          official_email: "",
+          contact_phone: "",
+          address: "",
+          city: "",
+          district: "",
+          state: "",
+          pin_code: "",
+        });
+        setSubdomainCheck({
+          status: "idle",
+          isAvailable: false,
+          message: "",
+          subdomain: "",
+        });
+        setTouched({});
+        setFormErrors({});
+        setGlobalError(null);
+        setIsSubmitted(false);
+        setSaveSuccess(false);
+        setIsLoadingExisting(false);
+        return;
+      }
+
       try {
         setIsLoadingExisting(true);
-        const { school } = await getSchoolForCurrentUser(user.id, profile?.school_id);
+        const lookupSchoolId = targetSchoolId || profile?.school_id;
+        const { school } = await getSchoolForCurrentUser(user.id, lookupSchoolId);
 
         if (isMounted && school) {
           existingSchoolIdRef.current = school.id;
@@ -287,7 +326,7 @@ export default function SchoolProfile() {
           }
         } else if (isMounted) {
           // If fresh user, default official email to their authenticated account email
-          if (user.email) {
+          if (!isNewSchoolMode && user.email) {
             setFormData((prev) => (prev.official_email ? prev : { ...prev, official_email: user.email || "" }));
           }
         }
@@ -304,7 +343,7 @@ export default function SchoolProfile() {
       isMounted = false;
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [user, profile?.school_id]);
+  }, [user, profile?.school_id, isNewSchoolMode, targetSchoolId]);
 
   // 2. Real-time debounced subdomain availability check
   const triggerSubdomainCheck = useCallback(
@@ -541,6 +580,8 @@ export default function SchoolProfile() {
         userEmail: user.email || "",
         profileInput: formData,
         existingSchoolId: existingSchoolIdRef.current,
+        isNewSchool: isNewSchoolMode && !existingSchoolIdRef.current,
+        preserveProfileSession: isNewSchoolMode,
       });
 
       if (!result.success || !result.school) {
@@ -551,11 +592,21 @@ export default function SchoolProfile() {
 
       setSaveSuccess(true);
 
-      // Sync context state
-      await refreshSession();
+      if (isNewSchoolMode) {
+        // Refresh availableSchools without mutating active admin session or primary profile
+        await refreshSchool();
+      } else {
+        // Sync context state
+        await refreshSession();
+      }
 
       // Proceed to Step 2: Academic Setup
-      navigate("/onboarding/academics");
+      navigate(
+        buildOnboardingUrl("/onboarding/academics", {
+          isNewSchool: isNewSchoolMode,
+          schoolId: result.school.id,
+        })
+      );
     } catch (err: any) {
       console.error("Error submitting school profile:", err);
       setGlobalError(err?.message || "An unexpected error occurred while saving. Please try again.");
@@ -573,6 +624,7 @@ export default function SchoolProfile() {
         subtitle="Establish your school's foundational identity, portal address, and campus details."
         maxWidth="max-w-3xl"
         showCardWrapper={false}
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="space-y-5 animate-pulse">
           <div className="h-44 bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-3">
@@ -608,20 +660,23 @@ export default function SchoolProfile() {
       subtitle=""
       maxWidth="max-w-3xl"
       showCardWrapper={false}
+      isNewSchoolMode={isNewSchoolMode}
     >
       <div className="w-full">
         {/* Page Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl sm:text-2xl font-bold font-heading text-[#141A2E] tracking-tight">
-              School Profile
+              {isNewSchoolMode ? "Register New School" : "School Profile"}
             </h1>
             <span className="text-xs font-semibold text-[#2158E0] bg-[#2158E0]/10 px-2.5 py-1 rounded-full shrink-0">
               Step 1 of 6
             </span>
           </div>
           <p className="text-sm text-[#5B6478] mt-1">
-            Set up your institution's official identity, custom portal address, and campus details to begin.
+            {isNewSchoolMode
+              ? "Add a new school institution to your workspace while keeping your existing admin session active."
+              : "Set up your institution's official identity, custom portal address, and campus details to begin."}
           </p>
         </div>
 
@@ -640,7 +695,10 @@ export default function SchoolProfile() {
               </div>
             </div>
             <Link
-              to="/onboarding/academics"
+              to={buildOnboardingUrl("/onboarding/academics", {
+                isNewSchool: isNewSchoolMode,
+                schoolId: existingSchoolIdRef.current || targetSchoolId,
+              })}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#2158E0] hover:text-white bg-white hover:bg-[#2158E0] border border-[#2158E0]/30 rounded-lg transition-colors shrink-0 shadow-2xs"
             >
               <span>Academic Setup</span>
@@ -1208,11 +1266,11 @@ export default function SchoolProfile() {
           {/* Form Actions */}
           <div className="pt-2 flex flex-col-reverse sm:flex-row items-center justify-between gap-3">
             <Link
-              to="/"
+              to={isNewSchoolMode ? "/admin" : "/"}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] transition-colors py-2 px-1"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to home</span>
+              <span>{isNewSchoolMode ? "Back to Dashboard" : "Back to home"}</span>
             </Link>
 
             <button

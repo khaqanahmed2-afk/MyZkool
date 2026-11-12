@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { MyZkoolLogo } from "../common/MyZkoolLogo";
 import { OnboardingProgress } from "./OnboardingProgress";
 import { useAuth } from "../../hooks/useAuth";
-import { LogOut, HelpCircle, ShieldCheck } from "lucide-react";
+import { LogOut, HelpCircle, ShieldCheck, ArrowLeft } from "lucide-react";
 
 interface OnboardingLayoutProps {
   currentStepNumber: number;
@@ -15,6 +15,7 @@ interface OnboardingLayoutProps {
   showCardWrapper?: boolean;
   onSaveAndExit?: () => Promise<void> | void;
   isSavingAndExiting?: boolean;
+  isNewSchoolMode?: boolean;
 }
 
 const EMPTY_COMPLETED_STEP_NUMBERS: number[] = [];
@@ -29,13 +30,17 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
   showCardWrapper = true,
   onSaveAndExit,
   isSavingAndExiting = false,
+  isNewSchoolMode = false,
 }) => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
+  const returnToDashboard = isNewSchoolMode || Boolean(profile?.onboarding_completed);
 
   const handleSignOut = async () => {
     if (onSaveAndExit) {
       await onSaveAndExit();
+    } else if (returnToDashboard) {
+      navigate("/admin");
     } else {
       await signOut();
       navigate("/login");
@@ -66,20 +71,39 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
               </span>
             </div>
 
+            {returnToDashboard && onSaveAndExit && (
+              <Link
+                to="/admin"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0]"
+                title="Return to Admin Dashboard without signing out"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Back to Dashboard</span>
+              </Link>
+            )}
+
             <button
               onClick={handleSignOut}
               disabled={isSavingAndExiting}
               id="onboarding-signout-btn"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0] cursor-pointer disabled:opacity-50"
-              title="Save progress and log out"
+              title={returnToDashboard ? "Save progress and return to Admin Dashboard" : "Save progress and log out"}
             >
               {isSavingAndExiting ? (
                 <div className="w-3.5 h-3.5 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin" />
+              ) : returnToDashboard ? (
+                <ArrowLeft className="w-3.5 h-3.5" />
               ) : (
                 <LogOut className="w-3.5 h-3.5" />
               )}
               <span className="hidden sm:inline">
-                {isSavingAndExiting ? "Saving..." : "Save & Exit"}
+                {isSavingAndExiting
+                  ? "Saving..."
+                  : returnToDashboard
+                  ? onSaveAndExit
+                    ? "Save & Return"
+                    : "Back to Dashboard"
+                  : "Save & Exit"}
               </span>
             </button>
           </div>

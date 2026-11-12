@@ -295,8 +295,17 @@ export default function FeeCollectionsPage() {
     return (
       <th
         scope="col"
+        tabIndex={0}
+        role="columnheader"
+        aria-sort={isActive ? (sortOrder === "asc" ? "ascending" : "descending") : "none"}
         onClick={() => handleSort(field)}
-        className={`py-3 px-4 font-semibold text-gray-600 select-none cursor-pointer hover:bg-slate-100/70 transition-colors ${extraClasses}`}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleSort(field);
+          }
+        }}
+        className={`py-3 px-4 font-semibold text-gray-600 select-none cursor-pointer hover:bg-slate-100/70 transition-colors focus:outline-none focus:bg-slate-100 ${extraClasses}`}
         title={`Sort by ${label}`}
       >
         <div className="flex items-center gap-1.5">

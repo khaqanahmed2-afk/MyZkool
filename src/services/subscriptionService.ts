@@ -10,6 +10,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { updateCachedSchoolOnboardingStep } from "./schoolService";
 import type {
   SubscriptionPlan,
   BillingCycle,
@@ -636,6 +637,7 @@ export async function selectSchoolPlan(
   const progressResult = await saveSubscriptionSetupProgress({
     schoolId,
     userId,
+    preserveAdminSession: Boolean(input.preserveAdminSession),
   });
 
   if (!progressResult.success) {
@@ -659,9 +661,11 @@ export async function selectSchoolPlan(
 export async function saveSubscriptionSetupProgress({
   schoolId,
   userId,
+  preserveAdminSession = false,
 }: {
   schoolId: string;
   userId: string;
+  preserveAdminSession?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   if (!schoolId || !userId) {
     return {
@@ -692,38 +696,30 @@ export async function saveSubscriptionSetupProgress({
         .update(schoolUpdate)
         .eq("id", schoolId);
 
-      const profileUpdate = {
-        current_onboarding_step: "/onboarding/website",
-        updated_at: timestamp,
-      };
-      await supabase
-        .from("profiles")
-        .update(profileUpdate)
-        .eq("auth_id", userId);
-
-      await supabase.auth.updateUser({
-        data: {
-          onboarding_step: newStep,
+      if (!preserveAdminSession) {
+        const profileUpdate = {
           current_onboarding_step: "/onboarding/website",
-        },
-      });
+          updated_at: timestamp,
+        };
+        await supabase
+          .from("profiles")
+          .update(profileUpdate)
+          .eq("auth_id", userId);
+
+        await supabase.auth.updateUser({
+          data: {
+            onboarding_step: newStep,
+            current_onboarding_step: "/onboarding/website",
+          },
+        });
+      }
     } catch (err) {
       console.warn("Supabase onboarding progress update error:", err);
     }
   }
 
   // Local storage update with non-regression
-  try {
-    const schoolKey = `myzkool_school_profile_${userId}`;
-    const raw = localStorage.getItem(schoolKey);
-    if (raw) {
-      const cached = JSON.parse(raw);
-      cached.onboarding_step = Math.max(cached.onboarding_step || 4, 5);
-      localStorage.setItem(schoolKey, JSON.stringify(cached));
-    }
-  } catch {
-    // Non-fatal
-  }
+  updateCachedSchoolOnboardingStep(userId, schoolId, 5);
 
   return { success: true };
 }

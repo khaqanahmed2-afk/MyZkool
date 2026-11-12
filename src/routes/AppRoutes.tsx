@@ -28,6 +28,7 @@ const Register = lazy(() => import("../pages/auth/Register"));
 const Login = lazy(() => import("../pages/auth/Login"));
 const Verify = lazy(() => import("../pages/auth/Verify"));
 const ResetPassword = lazy(() => import("../pages/auth/ResetPassword"));
+const StudentCardVerificationPage = lazy(() => import("../pages/public/StudentCardVerificationPage"));
 
 // Onboarding Routes
 const SchoolProfile = lazy(() => import("../pages/onboarding/SchoolProfile"));
@@ -122,9 +123,18 @@ export default function AppRoutes() {
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
           <Route path="/verify" element={<Verify />} />
+          <Route path="/verify/student/:token" element={<StudentCardVerificationPage />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Onboarding (protected, pre-onboarding) */}
+          {/* Onboarding (protected, pre-onboarding & additional school registration) */}
+          <Route
+            path="/onboarding/new-school"
+            element={
+              <ProtectedRoute allowedRoles={["school_admin", "super_admin"]} requireCompletedOnboarding={false}>
+                <SchoolProfile forceNewSchool={true} />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/onboarding/school"
             element={

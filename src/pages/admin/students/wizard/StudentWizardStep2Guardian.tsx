@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Users, Phone, CheckCircle2, AlertCircle, Home, Link2, MapPin } from "lucide-react";
 import { AdmissionWizardPayload, ParentInput, StudentAddressInput } from "../../../../types/students";
 import { lookupParentByPhone } from "../../../../services/studentService";
+import { INDIAN_STATES_AND_UTS } from "../../../../constants/indianStates";
 
 interface Step2Props {
   schoolId: string;
@@ -244,7 +245,7 @@ export const StudentWizardStep2Guardian: React.FC<Step2Props> = ({
       line1: "",
       city: "",
       district: "",
-      state: "Uttar Pradesh",
+      state: "",
       pin: "",
     };
     onChange({
@@ -384,17 +385,29 @@ export const StudentWizardStep2Guardian: React.FC<Step2Props> = ({
             <label htmlFor="address-state" className="block text-xs font-medium text-slate-700 mb-1">
               State
             </label>
-            <input
+            <select
               id="address-state"
-              type="text"
-              value={data.current_address.state || "Uttar Pradesh"}
+              value={data.current_address.state || ""}
               onChange={(e) =>
                 onChange({
                   current_address: { ...data.current_address, state: e.target.value },
                 })
               }
               className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
-            />
+            >
+              <option value="">Select State</option>
+              {INDIAN_STATES_AND_UTS.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+              {data.current_address.state &&
+                !INDIAN_STATES_AND_UTS.includes(data.current_address.state as any) && (
+                  <option value={data.current_address.state}>
+                    {data.current_address.state}
+                  </option>
+                )}
+            </select>
           </div>
         </div>
 
@@ -503,13 +516,25 @@ export const StudentWizardStep2Guardian: React.FC<Step2Props> = ({
                 <label htmlFor="permanent-address-state" className="block text-xs font-medium text-slate-700 mb-1">
                   State
                 </label>
-                <input
+                <select
                   id="permanent-address-state"
-                  type="text"
-                  value={data.permanent_address?.state || "Uttar Pradesh"}
+                  value={data.permanent_address?.state || ""}
                   onChange={(e) => updatePermanentAddress({ state: e.target.value })}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2158E0]"
-                />
+                >
+                  <option value="">Select State</option>
+                  {INDIAN_STATES_AND_UTS.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                  {data.permanent_address?.state &&
+                    !INDIAN_STATES_AND_UTS.includes(data.permanent_address.state as any) && (
+                      <option value={data.permanent_address.state}>
+                        {data.permanent_address.state}
+                      </option>
+                    )}
+                </select>
               </div>
             </div>
           </div>

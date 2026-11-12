@@ -36,6 +36,8 @@ import {
   Plus,
   ExternalLink,
   GraduationCap,
+  Home,
+  MapPin,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import type {
@@ -1696,6 +1698,59 @@ export default function StudentProfileView() {
               </div>
             ))}
           </div>
+
+          {/* Residential & Permanent Addresses */}
+          {profile.addresses && profile.addresses.length > 0 && (
+            <div className="bg-white border border-[#E6EAF3] rounded-xl p-5 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <Home className="w-4 h-4 text-[#2158E0]" />
+                  <h4 className="font-bold text-slate-900 text-sm">Residential & Permanent Address</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/admin/students/${profile.id}/edit?step=2`)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#2158E0] hover:underline cursor-pointer"
+                >
+                  <Edit2 className="w-3 h-3" /> Edit Address
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {profile.addresses.map((addr) => (
+                  <div key={addr.id || addr.kind} className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-700 capitalize text-xs">
+                        {addr.kind === "current" ? "Current Residential Address" : "Permanent Address"}
+                      </span>
+                      {addr.kind === "current" && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-blue-50 text-[#2158E0] rounded border border-blue-200">
+                          Residential
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-medium text-slate-800">
+                      {addr.line1}
+                      {addr.line2 ? `, ${addr.line2}` : ""}
+                      {addr.landmark ? `, Near ${addr.landmark}` : ""}
+                    </p>
+                    <div className="text-slate-600 space-y-0.5 text-[11px]">
+                      <div>
+                        <span className="text-slate-500">City / District:</span> {addr.city}{addr.district ? `, ${addr.district}` : ""}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">State:</span>{" "}
+                        <strong className="text-slate-800 font-semibold">{addr.state || "—"}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">PIN Code:</span> <span className="font-mono">{addr.pin || "—"}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -127,8 +127,15 @@ export const StudentTransportTab: React.FC<Props> = ({
                       return (
                         <tr
                           key={o.id}
+                          tabIndex={0}
                           onClick={() => onSelectObligation(o)}
-                          className="hover:bg-amber-50/20 transition-colors cursor-pointer"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onSelectObligation(o);
+                            }
+                          }}
+                          className="hover:bg-amber-50/20 transition-colors cursor-pointer focus:outline-none focus:bg-amber-50/40"
                         >
                           <td className="py-2 px-3 font-semibold text-slate-800 text-[11px]">
                             {o.billing_period}

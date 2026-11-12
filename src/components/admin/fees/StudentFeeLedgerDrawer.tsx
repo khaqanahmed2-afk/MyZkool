@@ -44,6 +44,9 @@ export function StudentFeeLedgerDrawer({
       aria-label="Student Fee Ledger Drawer"
       className="fixed inset-0 z-50 overflow-hidden bg-slate-900/50 backdrop-blur-xs flex justify-end animate-in fade-in duration-200"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
       <div
         className="relative w-full max-w-4xl lg:max-w-5xl bg-white shadow-2xl h-full flex flex-col transform transition-transform ease-out duration-300 animate-in slide-in-from-right duration-200"

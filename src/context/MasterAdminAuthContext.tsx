@@ -15,7 +15,7 @@ import type {
 
 interface MasterAdminAuthContextType extends MasterAdminAuthState {
   token: string | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
   hasRole: (role: PlatformRoleSlug | PlatformRoleSlug[]) => boolean;
@@ -76,19 +76,44 @@ export const MasterAdminAuthProvider: React.FC<{ children: React.ReactNode }> = 
       setLoading(true);
       setError(null);
 
+      // Check remember me status
+      const isRemembered =
+        typeof window !== "undefined" &&
+        localStorage.getItem("myzkool_master_remember_me") === "true";
+      const isSessionActive =
+        typeof window !== "undefined" &&
+        sessionStorage.getItem("myzkool_master_session_active") === "true";
+
       // 1. Check existing stored token
       const storedToken = typeof window !== "undefined" ? localStorage.getItem(MASTER_TOKEN_KEY) : null;
 
       if (storedToken) {
+        // If user restarted browser without Remember Me, clear stored token
+        if (!isRemembered && !isSessionActive) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(MASTER_TOKEN_KEY);
+            localStorage.removeItem("myzkool_master_remember_me");
+          }
+          setAdmin(null);
+          setToken(null);
+          setLoading(false);
+          return;
+        }
+
         const resolved = await fetchAdminDetails(storedToken);
         if (isMounted) {
           if (resolved && resolved.is_active) {
             setAdmin(resolved);
             setToken(storedToken);
+            if (typeof window !== "undefined") {
+              sessionStorage.setItem("myzkool_master_session_active", "true");
+            }
           } else {
             // Invalidate stale token
             if (typeof window !== "undefined") {
               localStorage.removeItem(MASTER_TOKEN_KEY);
+              localStorage.removeItem("myzkool_master_remember_me");
+              sessionStorage.removeItem("myzkool_master_session_active");
             }
             setAdmin(null);
             setToken(null);
@@ -103,13 +128,18 @@ export const MasterAdminAuthProvider: React.FC<{ children: React.ReactNode }> = 
         try {
           const { data } = await supabase.auth.getSession();
           if (data.session?.access_token) {
-            const resolved = await fetchAdminDetails(data.session.access_token);
-            if (isMounted) {
-              if (resolved && resolved.is_active) {
-                setAdmin(resolved);
-                setToken(data.session.access_token);
-                if (typeof window !== "undefined") {
-                  localStorage.setItem(MASTER_TOKEN_KEY, data.session.access_token);
+            if (!isRemembered && !isSessionActive) {
+              await supabase.auth.signOut().catch(() => {});
+            } else {
+              const resolved = await fetchAdminDetails(data.session.access_token);
+              if (isMounted) {
+                if (resolved && resolved.is_active) {
+                  setAdmin(resolved);
+                  setToken(data.session.access_token);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem(MASTER_TOKEN_KEY, data.session.access_token);
+                    sessionStorage.setItem("myzkool_master_session_active", "true");
+                  }
                 }
               }
             }
@@ -135,16 +165,17 @@ export const MasterAdminAuthProvider: React.FC<{ children: React.ReactNode }> = 
    * Signs in a Master Administrator via Supabase Auth + Platform Verification
    */
   const login = useCallback(
-    async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    async (email: string, password: string, rememberMe: boolean = false): Promise<{ success: boolean; error?: string }> => {
       setLoading(true);
       setError(null);
 
       try {
         let sessionToken: string | null = null;
+        const cleanEmail = email.trim().toLowerCase();
 
         if (isSupabaseConfigured) {
           const { data, error: authError } = await supabase.auth.signInWithPassword({
-            email,
+            email: cleanEmail,
             password,
           });
 
@@ -158,7 +189,7 @@ export const MasterAdminAuthProvider: React.FC<{ children: React.ReactNode }> = 
           sessionToken = data.session.access_token;
         } else {
           // Dev / local testing fallback
-          sessionToken = `test-token-admin:${email}`;
+          sessionToken = `test-token-admin:${cleanEmail}`;
         }
 
         // Establish session with Express Master Admin backend
@@ -186,6 +217,13 @@ export const MasterAdminAuthProvider: React.FC<{ children: React.ReactNode }> = 
         setToken(sessionToken);
         if (typeof window !== "undefined") {
           localStorage.setItem(MASTER_TOKEN_KEY, sessionToken);
+          sessionStorage.setItem("myzkool_master_session_active", "true");
+          if (rememberMe) {
+            localStorage.setItem("myzkool_master_remember_me", "true");
+            localStorage.setItem("myzkool_master_remembered_email", cleanEmail);
+          } else {
+            localStorage.removeItem("myzkool_master_remember_me");
+          }
         }
         setLoading(false);
         return { success: true };
@@ -218,6 +256,8 @@ export const MasterAdminAuthProvider: React.FC<{ children: React.ReactNode }> = 
 
     if (typeof window !== "undefined") {
       localStorage.removeItem(MASTER_TOKEN_KEY);
+      localStorage.removeItem("myzkool_master_remember_me");
+      sessionStorage.removeItem("myzkool_master_session_active");
     }
 
     setAdmin(null);

@@ -1,0 +1,902 @@
+[
+  {
+    "id": "9436fef1-cb5e-4d36-8b4c-2a8baea23d65",
+    "first_name": "Tanish",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0001",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "a7ffeb3a-4609-4b0d-a42f-9db3bdbb897e",
+    "first_name": "Saanvi",
+    "last_name": "Meena",
+    "admission_no": "ADM-2026-0002",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "16ca64dd-797c-41a3-bc40-78b7484b49c5",
+    "first_name": "Tanya",
+    "last_name": "Singh",
+    "admission_no": "ADM-2026-0003",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "da2161f1-1e10-4bf1-bf61-6d4475b1435e",
+    "first_name": "Ishita",
+    "last_name": "Das",
+    "admission_no": "ADM-2026-0004",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "dd5c2645-3d5f-4edb-9c97-11e91c348d22",
+    "first_name": "Jiya",
+    "last_name": "Gupta",
+    "admission_no": "ADM-2026-0005",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "5234bc1b-2725-49c4-b006-3d7f8759a597",
+    "first_name": "Aditi",
+    "last_name": "Bansal",
+    "admission_no": "ADM-2026-0006",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "f5264be9-c69f-4722-b9cd-4ebb31b32c6e",
+    "first_name": "Abhishek",
+    "last_name": "Goyal",
+    "admission_no": "ADM-2026-0007",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "bfd01872-36b0-45ae-ac78-36f6f3e6da67",
+    "first_name": "Meera",
+    "last_name": "Chauhan",
+    "admission_no": "ADM-2026-0008",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "7ae15102-4f59-44a3-a2dc-936d4f292767",
+    "first_name": "Aarohi",
+    "last_name": "Saini",
+    "admission_no": "ADM-2026-0009",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "313ebbb4-f6d2-4771-abc2-b95de861628b",
+    "first_name": "Aadhya",
+    "last_name": "Sharma",
+    "admission_no": "ADM-2026-0010",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "dd778d40-bcab-4f44-a771-0e3e9c3637e3",
+    "first_name": "Laksh",
+    "last_name": "Purohit",
+    "admission_no": "ADM-2026-0011",
+    "admission_class_id": "ad599837-f109-49ca-9863-b610933463f9",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "48f2711e-0d6f-453a-b237-45c0b68bff34",
+    "first_name": "Rudra",
+    "last_name": "Sharma",
+    "admission_no": "ADM-2026-0012",
+    "admission_class_id": "8a360a14-5d59-4451-b750-fc82f7cde943",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "c9ba0b0e-deeb-44dd-8391-2c364845096c",
+    "first_name": "Anika",
+    "last_name": "Purohit",
+    "admission_no": "ADM-2026-0013",
+    "admission_class_id": "cff8c6a1-f177-4fc8-8ffa-4a25ca53cde5",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "106da630-38b8-406e-b6d2-9256fa75fe16",
+    "first_name": "Pari",
+    "last_name": "Patel",
+    "admission_no": "ADM-2026-0014",
+    "admission_class_id": "1b699a7d-cf79-4ac0-ba16-e3fa0dd86df2",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "e0f859c5-7207-4757-92c4-f51bc305469f",
+    "first_name": "Siddharth",
+    "last_name": "Bhardwaj",
+    "admission_no": "ADM-2026-0015",
+    "admission_class_id": "7905198e-85a3-4736-9b92-2edd4726fdab",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "92c37a0e-c82b-41d1-9f55-49b1e0937bd2",
+    "first_name": "Ira",
+    "last_name": "Roy",
+    "admission_no": "ADM-2026-0016",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "85cea998-5dfb-49fb-98df-1ae1e9a06774",
+    "first_name": "Vivaan",
+    "last_name": "Tiwari",
+    "admission_no": "ADM-2026-0017",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "5a1f6f31-e50b-451a-ab1d-8628e9c7e092",
+    "first_name": "Aryan",
+    "last_name": "Patel",
+    "admission_no": "ADM-2026-0018",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "02f30b6e-3541-4870-9502-b7b1b5d0e451",
+    "first_name": "Ishaan",
+    "last_name": "Joshi",
+    "admission_no": "ADM-2026-0019",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "329f8717-23e1-40c9-a96c-f69786d7fdc3",
+    "first_name": "Myra",
+    "last_name": "Sheikh",
+    "admission_no": "ADM-2026-0020",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "2467f540-45d0-4886-b4b1-7bca2c365c37",
+    "first_name": "Myra",
+    "last_name": "Meena",
+    "admission_no": "ADM-2026-0021",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "fac8d764-ae2c-4e87-b921-3d0635f2068b",
+    "first_name": "Mohit",
+    "last_name": "Malik",
+    "admission_no": "ADM-2026-0022",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "763bd9aa-7b48-41ac-bb92-3fe5f312712f",
+    "first_name": "Khushi",
+    "last_name": "Joshi",
+    "admission_no": "ADM-2026-0023",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "a5882a15-56c4-4d58-93ac-b6a4da2a288c",
+    "first_name": "Laksh",
+    "last_name": "Purohit",
+    "admission_no": "ADM-2026-0024",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "0b4118de-9f17-4006-a7ce-094edcce3693",
+    "first_name": "Jiya",
+    "last_name": "Singh",
+    "admission_no": "ADM-2026-0025",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "9aee4ade-40c7-451a-96c0-89b28e6c55ca",
+    "first_name": "Ayesha",
+    "last_name": "Rathore",
+    "admission_no": "ADM-2026-0026",
+    "admission_class_id": "ad599837-f109-49ca-9863-b610933463f9",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "fc980ad3-3114-4638-a60a-6ad54aa16a92",
+    "first_name": "Avni",
+    "last_name": "Ansari",
+    "admission_no": "ADM-2026-0027",
+    "admission_class_id": "8a360a14-5d59-4451-b750-fc82f7cde943",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "cf0633ce-9a70-4dc2-85fe-8ccf1c446a05",
+    "first_name": "Tanvi",
+    "last_name": "Rathore",
+    "admission_no": "ADM-2026-0028",
+    "admission_class_id": "cff8c6a1-f177-4fc8-8ffa-4a25ca53cde5",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "77e63981-7325-47a9-a075-81c1c8efa5e2",
+    "first_name": "Yash",
+    "last_name": "Tiwari",
+    "admission_no": "ADM-2026-0029",
+    "admission_class_id": "1b699a7d-cf79-4ac0-ba16-e3fa0dd86df2",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "cd285db8-a2f9-4afd-8a32-49e40c66c091",
+    "first_name": "Kiara",
+    "last_name": "Choudhary",
+    "admission_no": "ADM-2026-0030",
+    "admission_class_id": "7905198e-85a3-4736-9b92-2edd4726fdab",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "eb8498df-ee80-44b7-a01e-681ab9d6eb41",
+    "first_name": "Kunal",
+    "last_name": "Singh",
+    "admission_no": "ADM-2026-0031",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "69c2f064-5982-4787-9c1c-3719152b3aca",
+    "first_name": "Aman",
+    "last_name": "Verma",
+    "admission_no": "ADM-2026-0032",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "499aef92-2e5c-4c71-b640-4d781c886b2b",
+    "first_name": "Sneha",
+    "last_name": "Saxena",
+    "admission_no": "ADM-2026-0033",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "e11e3484-f74e-4580-8537-5f960eab504b",
+    "first_name": "Sara",
+    "last_name": "Choudhary",
+    "admission_no": "ADM-2026-0034",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "9c7f8616-9c77-47ad-9471-bae9440c3ef7",
+    "first_name": "Atharv",
+    "last_name": "Agarwal",
+    "admission_no": "ADM-2026-0035",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "95f12a1e-d1fb-4c1b-8ca7-f3a851ae1bcb",
+    "first_name": "Shivansh",
+    "last_name": "Yadav",
+    "admission_no": "ADM-2026-0036",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "748597b9-1f32-4692-81be-d78f29aced4a",
+    "first_name": "Aadhya",
+    "last_name": "Choudhary",
+    "admission_no": "ADM-2026-0037",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "06848091-b8b5-40a4-b1f4-40c0cc64b313",
+    "first_name": "Dhruv",
+    "last_name": "Qureshi",
+    "admission_no": "ADM-2026-0038",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "b963c78f-40d3-4649-811a-1912cb0bc70e",
+    "first_name": "Priya",
+    "last_name": "Qureshi",
+    "admission_no": "ADM-2026-0039",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "fa496147-7118-4090-8f4c-ac22f16a5c06",
+    "first_name": "Shreya",
+    "last_name": "Chauhan",
+    "admission_no": "ADM-2026-0040",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "95295219-f3d6-41df-afd9-dc30cbd7bee3",
+    "first_name": "Ishaan",
+    "last_name": "Verma",
+    "admission_no": "ADM-2026-0041",
+    "admission_class_id": "ad599837-f109-49ca-9863-b610933463f9",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "f2a41e77-72f7-43de-bc38-f8f502a445f7",
+    "first_name": "Pihu",
+    "last_name": "Das",
+    "admission_no": "ADM-2026-0042",
+    "admission_class_id": "8a360a14-5d59-4451-b750-fc82f7cde943",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "73d9cf76-248b-4397-afb7-cc596cfcc8bd",
+    "first_name": "Ananya",
+    "last_name": "Choudhary",
+    "admission_no": "ADM-2026-0043",
+    "admission_class_id": "cff8c6a1-f177-4fc8-8ffa-4a25ca53cde5",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "f486b9dc-9a3a-4043-b24d-1fd68ab70df8",
+    "first_name": "Tanya",
+    "last_name": "Yadav",
+    "admission_no": "ADM-2026-0044",
+    "admission_class_id": "1b699a7d-cf79-4ac0-ba16-e3fa0dd86df2",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "a5ade0aa-6cc8-4922-82ec-de72d6295ab8",
+    "first_name": "Ayaan",
+    "last_name": "Bansal",
+    "admission_no": "ADM-2026-0045",
+    "admission_class_id": "7905198e-85a3-4736-9b92-2edd4726fdab",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "3179d3d4-9ee0-4b76-932a-9acea1ea8a66",
+    "first_name": "Muskan",
+    "last_name": "Saxena",
+    "admission_no": "ADM-2026-0046",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "278f5e34-7fef-40d4-85f5-3941be718be4",
+    "first_name": "Ishita",
+    "last_name": "Yadav",
+    "admission_no": "ADM-2026-0047",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "4763772c-4995-417c-a551-6a38676de5ed",
+    "first_name": "Aman",
+    "last_name": "Goyal",
+    "admission_no": "ADM-2026-0048",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "9453763e-7d75-4e60-9614-e94b748bd227",
+    "first_name": "Krishna",
+    "last_name": "Verma",
+    "admission_no": "ADM-2026-0049",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "65c9bc16-04e5-404c-b321-ebd7e3561040",
+    "first_name": "Aditya",
+    "last_name": "Jain",
+    "admission_no": "ADM-2026-0050",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "851b778c-b311-46b9-8362-4349605d82ef",
+    "first_name": "Diya",
+    "last_name": "Solanki",
+    "admission_no": "ADM-2026-0051",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "ab07a9a6-cc5d-49ad-9359-25aeacbd3960",
+    "first_name": "Ira",
+    "last_name": "Qureshi",
+    "admission_no": "ADM-2026-0052",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "bcd7ceb8-d411-4cbf-97fe-053f2ca606ec",
+    "first_name": "Imran",
+    "last_name": "Joshi",
+    "admission_no": "ADM-2026-0053",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "64c72876-6ad2-4ac6-8a6c-34ea707e96a1",
+    "first_name": "Tanvi",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0054",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "9538e7f1-a752-4df0-a98b-a0e5eabd5d8c",
+    "first_name": "Farhan",
+    "last_name": "Tiwari",
+    "admission_no": "ADM-2026-0055",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "e3bc419a-0564-4043-a872-3175b216e565",
+    "first_name": "Prisha",
+    "last_name": "Yadav",
+    "admission_no": "ADM-2026-0056",
+    "admission_class_id": "ad599837-f109-49ca-9863-b610933463f9",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "19ac2471-9592-4990-97f9-c10e4f40e95e",
+    "first_name": "Nisha",
+    "last_name": "Sharma",
+    "admission_no": "ADM-2026-0057",
+    "admission_class_id": "8a360a14-5d59-4451-b750-fc82f7cde943",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "17499a3a-fa60-4a20-bdad-6461102a0f1a",
+    "first_name": "Myra",
+    "last_name": "Saini",
+    "admission_no": "ADM-2026-0058",
+    "admission_class_id": "cff8c6a1-f177-4fc8-8ffa-4a25ca53cde5",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "adc3d8b8-22b9-42e0-94a7-0a66ae233631",
+    "first_name": "Pranav",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0059",
+    "admission_class_id": "1b699a7d-cf79-4ac0-ba16-e3fa0dd86df2",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "bd1fa7f9-f713-4f3e-afd5-0750ef489426",
+    "first_name": "Krishna",
+    "last_name": "Khan",
+    "admission_no": "ADM-2026-0060",
+    "admission_class_id": "7905198e-85a3-4736-9b92-2edd4726fdab",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "899e02ab-d52b-4990-853c-62bbb7960563",
+    "first_name": "Abhishek",
+    "last_name": "Agarwal",
+    "admission_no": "ADM-2026-0061",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "425a7432-5c50-4dc9-b75a-af03b2b0b0a8",
+    "first_name": "Aarohi",
+    "last_name": "Agarwal",
+    "admission_no": "ADM-2026-0062",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "e00acce9-9284-4954-a7d2-e70a589ce8c9",
+    "first_name": "Siddharth",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0063",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "f23f7a7a-3ad6-47ef-9c88-e107ce8fd44d",
+    "first_name": "Ayaan",
+    "last_name": "Sharma",
+    "admission_no": "ADM-2026-0064",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "c64af697-c434-4f3a-8fe5-2d3a7f94948f",
+    "first_name": "Laksh",
+    "last_name": "Bansal",
+    "admission_no": "ADM-2026-0065",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "9f7695eb-3795-4482-a558-470c7c557aac",
+    "first_name": "Ira",
+    "last_name": "Bansal",
+    "admission_no": "ADM-2026-0066",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "adc045e7-73dc-4c82-bdda-036b64db89a0",
+    "first_name": "Ira",
+    "last_name": "Ansari",
+    "admission_no": "ADM-2026-0067",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "f7bc91ff-d1c9-478f-9f23-ea76195e86e4",
+    "first_name": "Aarohi",
+    "last_name": "Bhardwaj",
+    "admission_no": "ADM-2026-0068",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "b98ea1de-3706-4212-b67f-46c19330c40c",
+    "first_name": "Harsh",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0069",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "32d99c9d-95bf-424e-b55f-cec54fc6122b",
+    "first_name": "Aman",
+    "last_name": "Mishra",
+    "admission_no": "ADM-2026-0070",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "8a29b05d-eeaa-4395-9265-6e51def8b1fa",
+    "first_name": "Riya",
+    "last_name": "Singh",
+    "admission_no": "ADM-2026-0071",
+    "admission_class_id": "ad599837-f109-49ca-9863-b610933463f9",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "b4c2c21b-13c6-4497-b610-1c3cbdc8303c",
+    "first_name": "Rohan",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0072",
+    "admission_class_id": "8a360a14-5d59-4451-b750-fc82f7cde943",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "700492bf-9d33-49e0-84d7-81f124f59471",
+    "first_name": "Fatima",
+    "last_name": "Verma",
+    "admission_no": "ADM-2026-0073",
+    "admission_class_id": "cff8c6a1-f177-4fc8-8ffa-4a25ca53cde5",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "74e2b05a-1e91-460b-b9bf-f61544d56182",
+    "first_name": "Aanya",
+    "last_name": "Choudhary",
+    "admission_no": "ADM-2026-0074",
+    "admission_class_id": "1b699a7d-cf79-4ac0-ba16-e3fa0dd86df2",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "af584621-8b73-4dcd-9a40-c06abe88793c",
+    "first_name": "Aryan",
+    "last_name": "Patel",
+    "admission_no": "ADM-2026-0075",
+    "admission_class_id": "7905198e-85a3-4736-9b92-2edd4726fdab",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "51778142-5e9f-43b6-89b0-e8a1db660dee",
+    "first_name": "Pari",
+    "last_name": "Goyal",
+    "admission_no": "ADM-2026-0076",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "ed782375-46bd-4fcb-9301-c0d008cd44c2",
+    "first_name": "Shreya",
+    "last_name": "Sheikh",
+    "admission_no": "ADM-2026-0077",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "93dfdbea-6b5d-451d-aa0f-34804b1d4199",
+    "first_name": "Ananya",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0078",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "d6437e3e-faf0-433a-bbb2-7a0fc7345009",
+    "first_name": "Zoya",
+    "last_name": "Joshi",
+    "admission_no": "ADM-2026-0079",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "d97113e6-9d24-4736-b265-06e90831877e",
+    "first_name": "Khushi",
+    "last_name": "Tiwari",
+    "admission_no": "ADM-2026-0080",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "1d150300-8574-4993-bfe7-9a9b293ea8a8",
+    "first_name": "Anika",
+    "last_name": "Jain",
+    "admission_no": "ADM-2026-0081",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "da92a3fe-04a8-4532-89cf-34d21d4e9ff4",
+    "first_name": "Sara",
+    "last_name": "Yadav",
+    "admission_no": "ADM-2026-0082",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "51249a19-eb9f-43e4-90fd-298c0db57325",
+    "first_name": "Vivaan",
+    "last_name": "Goyal",
+    "admission_no": "ADM-2026-0083",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "674fa33b-9c67-4d24-99c2-b292089fce70",
+    "first_name": "Ananya",
+    "last_name": "Mishra",
+    "admission_no": "ADM-2026-0084",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "38d8c5bf-d767-4d16-99dc-c1c819745302",
+    "first_name": "Dhruv",
+    "last_name": "Sheikh",
+    "admission_no": "ADM-2026-0085",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "bf935f7a-0323-481b-a2ef-f216f5fdc88d",
+    "first_name": "Ayesha",
+    "last_name": "Roy",
+    "admission_no": "ADM-2026-0086",
+    "admission_class_id": "ad599837-f109-49ca-9863-b610933463f9",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "3608e9a5-c934-40b2-afae-0c249555efa0",
+    "first_name": "Imran",
+    "last_name": "Ansari",
+    "admission_no": "ADM-2026-0087",
+    "admission_class_id": "8a360a14-5d59-4451-b750-fc82f7cde943",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "6743f805-37b2-4cfe-9898-02ba57fbd443",
+    "first_name": "Krishna",
+    "last_name": "Bhardwaj",
+    "admission_no": "ADM-2026-0088",
+    "admission_class_id": "cff8c6a1-f177-4fc8-8ffa-4a25ca53cde5",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "541e48b7-b712-4ecc-9030-5d64cd9effb6",
+    "first_name": "Priya",
+    "last_name": "Sharma",
+    "admission_no": "ADM-2026-0089",
+    "admission_class_id": "1b699a7d-cf79-4ac0-ba16-e3fa0dd86df2",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "49a9f7c2-c3d0-492c-89d9-bc62b68cd43a",
+    "first_name": "Dhruv",
+    "last_name": "Kumar",
+    "admission_no": "ADM-2026-0090",
+    "admission_class_id": "7905198e-85a3-4736-9b92-2edd4726fdab",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "117a3b8c-497c-4b42-9f26-6e9de07821fa",
+    "first_name": "Diya",
+    "last_name": "Bhardwaj",
+    "admission_no": "ADM-2026-0091",
+    "admission_class_id": "6864c289-cf57-41bc-b6c4-5932f7b7cbcf",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "601fd876-667e-4974-ba1d-b9937617f300",
+    "first_name": "Vihaan",
+    "last_name": "Gupta",
+    "admission_no": "ADM-2026-0092",
+    "admission_class_id": "9d6df971-8b75-48ff-add0-a3b0494b7e34",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "349ffc4e-8935-4b1d-bb2e-02de9ddd817c",
+    "first_name": "Navya",
+    "last_name": "Purohit",
+    "admission_no": "ADM-2026-0093",
+    "admission_class_id": "2dee7778-a250-4a5b-8c91-9c2a9657a358",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "86ee9117-8bbe-4ad9-aa79-a844ab4f28e9",
+    "first_name": "Myra",
+    "last_name": "Roy",
+    "admission_no": "ADM-2026-0094",
+    "admission_class_id": "eb92bd11-68ec-421f-8584-a72434e4ad9b",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "ff11c228-59e1-443f-854a-cc7f8a8c517a",
+    "first_name": "Imran",
+    "last_name": "Verma",
+    "admission_no": "ADM-2026-0095",
+    "admission_class_id": "2382dd43-81c0-401c-8f34-d856deabd267",
+    "is_rte": true,
+    "status": "enrolled"
+  },
+  {
+    "id": "8f4cdb0f-7c15-47e6-91b4-ddc19e8b2ca0",
+    "first_name": "Navya",
+    "last_name": "Saxena",
+    "admission_no": "ADM-2026-0096",
+    "admission_class_id": "65c3cf75-1c0f-491f-b711-116c62ce2974",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "a63a51c4-db2f-44d1-a048-fa870fd4e62d",
+    "first_name": "Ayaan",
+    "last_name": "Jain",
+    "admission_no": "ADM-2026-0097",
+    "admission_class_id": "9fd58992-5e29-4453-b1d3-e9e5bed53a05",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "0b0ae931-b69c-4071-ba49-b5402792d765",
+    "first_name": "Aadhya",
+    "last_name": "Patel",
+    "admission_no": "ADM-2026-0098",
+    "admission_class_id": "fb18b7a4-6441-4d36-a96c-49efe21606bc",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "3750dd73-78d1-46f4-a3c3-04765461a73d",
+    "first_name": "Ananya",
+    "last_name": "Verma",
+    "admission_no": "ADM-2026-0099",
+    "admission_class_id": "99d9379d-27ff-4c5f-a935-cc2296b77197",
+    "is_rte": false,
+    "status": "enrolled"
+  },
+  {
+    "id": "c2b5c82e-b0cd-4ec4-8bcf-d7ce222a966f",
+    "first_name": "Aman",
+    "last_name": "Jain",
+    "admission_no": "ADM-2026-0100",
+    "admission_class_id": "2d878857-f49c-4c43-b644-5c6ab33bb173",
+    "is_rte": true,
+    "status": "enrolled"
+  }
+]

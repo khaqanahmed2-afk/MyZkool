@@ -90,6 +90,7 @@ export interface SubscriptionSelectionInput {
   billingCycle: BillingCycle;
   startTrial?: boolean;
   notes?: string;
+  preserveAdminSession?: boolean;
 }
 
 export interface SelectPlanResult {

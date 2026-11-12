@@ -67,6 +67,51 @@ export const RESERVED_SUBDOMAINS = new Set([
 
 const LOCAL_STORAGE_KEY_PREFIX = "myzkool_school_profile_";
 
+function getSchoolCacheKey(schoolId: string): string {
+  return `${LOCAL_STORAGE_KEY_PREFIX}school_${schoolId}`;
+}
+
+/**
+ * Updates cached school onboarding progress in localStorage without mutating
+ * a different primary school's cached record during multi-school registration.
+ */
+export function updateCachedSchoolOnboardingStep(
+  userId: string,
+  schoolId: string,
+  step: number,
+  onboardingCompleted?: boolean
+): School | undefined {
+  if (typeof localStorage === "undefined") return undefined;
+
+  const timestamp = new Date().toISOString();
+  let updatedSchool: School | undefined;
+
+  const applyUpdate = (key: string, requireMatchingSchoolId: boolean) => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as School;
+      if (requireMatchingSchoolId && parsed?.id !== schoolId) return;
+      parsed.onboarding_step = Math.max(parsed.onboarding_step || 1, step);
+      if (onboardingCompleted !== undefined) {
+        parsed.onboarding_completed = onboardingCompleted;
+      }
+      parsed.updated_at = timestamp;
+      localStorage.setItem(key, JSON.stringify(parsed));
+      updatedSchool = parsed;
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  applyUpdate(getSchoolCacheKey(schoolId), false);
+  if (userId) {
+    applyUpdate(`${LOCAL_STORAGE_KEY_PREFIX}${userId}`, true);
+  }
+
+  return updatedSchool;
+}
+
 /**
  * Normalizes school name into a valid, safe subdomain slug
  */
@@ -277,7 +322,10 @@ export async function getSchoolForCurrentUser(
       if (schoolId) {
         query = query.eq("id", schoolId);
       } else {
-        query = query.eq("created_by", userId);
+        query = query
+          .eq("created_by", userId)
+          .order("created_at", { ascending: true })
+          .limit(1);
       }
 
       const { data, error } = await query.maybeSingle();
@@ -313,6 +361,41 @@ export async function getSchoolForCurrentUser(
 
   // 2. Local storage fallback
   try {
+    if (schoolId) {
+      const bySchoolRaw = localStorage.getItem(getSchoolCacheKey(schoolId));
+      if (bySchoolRaw) {
+        const parsed = JSON.parse(bySchoolRaw) as School;
+        if (parsed?.id === schoolId) {
+          return { school: parsed };
+        }
+      }
+
+      const localData = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}${userId}`);
+      if (localData) {
+        const parsed = JSON.parse(localData) as School;
+        if (parsed?.id === schoolId) {
+          return { school: parsed };
+        }
+      }
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(LOCAL_STORAGE_KEY_PREFIX)) {
+          const itemStr = localStorage.getItem(key);
+          if (itemStr) {
+            try {
+              const parsed = JSON.parse(itemStr) as School;
+              if (parsed?.id === schoolId) {
+                return { school: parsed };
+              }
+            } catch {}
+          }
+        }
+      }
+
+      return { school: null };
+    }
+
     const localData = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}${userId}`);
     if (localData) {
       const parsed = JSON.parse(localData) as School;
@@ -515,6 +598,8 @@ export interface SaveSchoolProfileParams {
   userEmail: string;
   profileInput: SchoolProfileInput;
   existingSchoolId?: string | null;
+  isNewSchool?: boolean;
+  preserveProfileSession?: boolean;
 }
 
 /**
@@ -526,6 +611,8 @@ export async function saveSchoolProfile({
   userEmail: _userEmail,
   profileInput,
   existingSchoolId,
+  isNewSchool = false,
+  preserveProfileSession = false,
 }: SaveSchoolProfileParams): Promise<{
   success: boolean;
   school?: School;
@@ -586,18 +673,36 @@ export async function saveSchoolProfile({
   }
 
   // 2. Resolve tenant school ownership: never trust arbitrary client-supplied school_id
-  const existingResult = await getSchoolForCurrentUser(userId);
-  const existingUserSchool = existingResult.school;
-
-  // Prevent cross-tenant tampering: if client passed an existingSchoolId that does not belong to this user
-  if (existingSchoolId && existingUserSchool && existingSchoolId !== existingUserSchool.id) {
-    return {
-      success: false,
-      error: "Unauthorized: You do not have permission to modify this school profile.",
-    };
+  let existingUserSchool: School | null = null;
+  if (isNewSchool && !existingSchoolId) {
+    existingUserSchool = null;
+  } else if (existingSchoolId) {
+    const byId = await getSchoolForCurrentUser(userId, existingSchoolId);
+    if (byId.school) {
+      if (byId.school.created_by && byId.school.created_by !== userId) {
+        return {
+          success: false,
+          error: "Unauthorized: You do not have permission to modify this school profile.",
+        };
+      }
+      existingUserSchool = byId.school;
+    } else {
+      const existingResult = await getSchoolForCurrentUser(userId);
+      if (existingResult.school && existingResult.school.id !== existingSchoolId) {
+        return {
+          success: false,
+          error: "Unauthorized: You do not have permission to modify this school profile.",
+        };
+      }
+      existingUserSchool = existingResult.school;
+    }
+  } else {
+    const existingResult = await getSchoolForCurrentUser(userId);
+    existingUserSchool = existingResult.school;
   }
 
   const verifiedSchoolId = existingUserSchool?.id || existingSchoolId || crypto.randomUUID();
+  const shouldSyncProfile = !isNewSchool && !preserveProfileSession;
 
   // 3. Subdomain check (server-side verification)
   const normalizedSubdomain = normalizeSubdomain(profileInput.subdomain);
@@ -712,75 +817,83 @@ export async function saveSchoolProfile({
         }
       }
 
-      // Bind school_id to the user's profile
-      try {
-        if (userId) {
-          const profileUpdatePayload = {
-            school_id: schoolRecord.id,
-            onboarding_completed: false,
-            current_onboarding_step: "/onboarding/academics",
-            updated_at: timestamp,
-          };
-          const { error: updateErr, data: updatedRows } = await supabase
-            .from("profiles")
-            .update(profileUpdatePayload)
-            .eq("auth_id", userId)
-            .select();
-
-          if (updateErr) {
-            console.warn("Notice: profiles update error:", updateErr.message);
-          }
-
-          // If no row existed yet, safely upsert with full mandatory details
-          if (!updateErr && (!updatedRows || updatedRows.length === 0)) {
-            const { data: authData } = await supabase.auth.getUser();
-            const authUser = authData?.user;
-            const profileUpsertPayload = {
-              auth_id: userId,
-              email: authUser?.email || profileInput.official_email || "",
-              full_name:
-                authUser?.user_metadata?.full_name ||
-                authUser?.email?.split("@")[0] ||
-                "School Administrator",
+      // Bind school_id to the user's profile only during initial primary school onboarding
+      if (shouldSyncProfile) {
+        try {
+          if (userId) {
+            const profileUpdatePayload = {
               school_id: schoolRecord.id,
               onboarding_completed: false,
               current_onboarding_step: "/onboarding/academics",
               updated_at: timestamp,
             };
-            await supabase.from("profiles").upsert(
-              profileUpsertPayload,
-              { onConflict: "auth_id" }
-            );
-          }
-        }
-      } catch (profileErr) {
-        console.warn("Could not bind profile to school:", profileErr);
-      }
+            const { error: updateErr, data: updatedRows } = await supabase
+              .from("profiles")
+              .update(profileUpdatePayload)
+              .eq("auth_id", userId)
+              .select();
 
-      // Update auth user metadata so session has the link immediately
-      try {
-        await supabase.auth.updateUser({
-          data: {
-            school_id: schoolRecord.id,
-            onboarding_step: nextStep,
-            current_onboarding_step: "/onboarding/academics",
-            onboarding_completed: false,
-          },
-        });
-      } catch {
-        // Safe fallback
+            if (updateErr) {
+              console.warn("Notice: profiles update error:", updateErr.message);
+            }
+
+            // If no row existed yet, safely upsert with full mandatory details
+            if (!updateErr && (!updatedRows || updatedRows.length === 0)) {
+              const { data: authData } = await supabase.auth.getUser();
+              const authUser = authData?.user;
+              const profileUpsertPayload = {
+                auth_id: userId,
+                email: authUser?.email || profileInput.official_email || "",
+                full_name:
+                  authUser?.user_metadata?.full_name ||
+                  authUser?.email?.split("@")[0] ||
+                  "School Administrator",
+                school_id: schoolRecord.id,
+                onboarding_completed: false,
+                current_onboarding_step: "/onboarding/academics",
+                updated_at: timestamp,
+              };
+              await supabase.from("profiles").upsert(
+                profileUpsertPayload,
+                { onConflict: "auth_id" }
+              );
+            }
+          }
+        } catch (profileErr) {
+          console.warn("Could not bind profile to school:", profileErr);
+        }
+
+        // Update auth user metadata so session has the link immediately
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              school_id: schoolRecord.id,
+              onboarding_step: nextStep,
+              current_onboarding_step: "/onboarding/academics",
+              onboarding_completed: false,
+            },
+          });
+        } catch {
+          // Safe fallback
+        }
       }
     } catch (dbErr: any) {
       console.warn("Database save exception:", dbErr);
     }
   }
 
-  // 5. Always persist to localStorage cache for the user for instant resume & offline safety
+  // 5. Always persist to localStorage cache for instant resume & offline safety
   try {
     localStorage.setItem(
-      `${LOCAL_STORAGE_KEY_PREFIX}${userId}`,
+      getSchoolCacheKey(schoolRecord.id),
       JSON.stringify(schoolRecord)
     );
+    if (shouldSyncProfile) {
+      localStorage.setItem(
+        `${LOCAL_STORAGE_KEY_PREFIX}${userId}`,
+        JSON.stringify(schoolRecord)
+      );
+    }
   } catch {
     // Non-fatal
   }
@@ -798,9 +911,11 @@ export async function saveSchoolProfile({
 export async function completeOnboarding({
   schoolId,
   userId,
+  preserveAdminSession = false,
 }: {
   schoolId: string;
   userId: string;
+  preserveAdminSession?: boolean;
 }): Promise<{
   success: boolean;
   school?: School;
@@ -828,44 +943,32 @@ export async function completeOnboarding({
         .update(schoolCompletePayload)
         .eq("id", schoolId);
 
-      const profileCompletePayload = {
-        onboarding_completed: true,
-        current_onboarding_step: "/admin",
-        updated_at: timestamp,
-      };
-      await supabase
-        .from("profiles")
-        .update(profileCompletePayload)
-        .eq("auth_id", userId);
-
-      await supabase.auth.updateUser({
-        data: {
+      if (!preserveAdminSession) {
+        const profileCompletePayload = {
           onboarding_completed: true,
-          onboarding_step: 6,
           current_onboarding_step: "/admin",
-        },
-      });
+          updated_at: timestamp,
+        };
+        await supabase
+          .from("profiles")
+          .update(profileCompletePayload)
+          .eq("auth_id", userId);
+
+        await supabase.auth.updateUser({
+          data: {
+            onboarding_completed: true,
+            onboarding_step: 6,
+            current_onboarding_step: "/admin",
+          },
+        });
+      }
     } catch (err) {
       console.warn("Supabase completeOnboarding update error:", err);
     }
   }
 
   // 2. Local storage cache update
-  let updatedSchool: School | undefined;
-  try {
-    const schoolKey = `${LOCAL_STORAGE_KEY_PREFIX}${userId}`;
-    const raw = localStorage.getItem(schoolKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      parsed.onboarding_completed = true;
-      parsed.onboarding_step = 6;
-      parsed.updated_at = timestamp;
-      localStorage.setItem(schoolKey, JSON.stringify(parsed));
-      updatedSchool = parsed;
-    }
-  } catch {
-    // Non-fatal
-  }
+  const updatedSchool = updateCachedSchoolOnboardingStep(userId, schoolId, 6, true);
 
   return {
     success: true,

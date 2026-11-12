@@ -27,7 +27,7 @@ interface AuthContextType {
   currentAcademicYear: AcademicYear | null;
   switchSchool: (schoolId: string) => Promise<{ success: boolean; error?: string }>;
   refreshSchool: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<AuthActionResult>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<AuthActionResult>;
   signUp: (
     email: string,
     password: string,
@@ -265,6 +265,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         if (isMounted) {
           if (data?.session?.user) {
+            // Check remember-me / active session state
+            const isRemembered =
+              typeof localStorage !== "undefined" &&
+              localStorage.getItem("myzkool_remember_me") === "true";
+            const isSessionActive =
+              typeof sessionStorage !== "undefined" &&
+              sessionStorage.getItem("myzkool_session_active") === "true";
+
+            // If user closed browser and did NOT choose Remember Me, clear session
+            if (!isRemembered && !isSessionActive) {
+              await supabase.auth.signOut().catch(() => {});
+              if (isMounted) {
+                setSession(null);
+                setUser(null);
+                setProfile(null);
+                setSchool(null);
+                setAvailableSchools([]);
+                setCurrentAcademicYear(null);
+              }
+              return;
+            }
+
+            // Session is active and preserved
+            if (typeof sessionStorage !== "undefined") {
+              sessionStorage.setItem("myzkool_session_active", "true");
+            }
+
             setSession(data.session);
             setUser(data.session.user);
             const userProfile = await resolveUserProfile(data.session.user);
@@ -334,6 +361,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(newSession?.user ?? null);
 
       if (newSession?.user) {
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.setItem("myzkool_session_active", "true");
+        }
         // Defer database queries outside GoTrue's synchronous execution tick
         setTimeout(async () => {
           if (!isMounted) return;
@@ -394,6 +424,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const signIn = async (
     email: string,
     password: string,
+    rememberMe: boolean = false,
   ): Promise<AuthActionResult> => {
     if (!isSupabaseConfigured) {
       return {
@@ -405,13 +436,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     try {
       setLoading(true);
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
       });
 
       if (error) {
         return { success: false, error: sanitizeAuthError(error) };
+      }
+
+      // Persist Remember Me & active session status
+      if (typeof localStorage !== "undefined") {
+        if (rememberMe) {
+          localStorage.setItem("myzkool_remember_me", "true");
+          localStorage.setItem("myzkool_remembered_login_email", cleanEmail);
+        } else {
+          localStorage.removeItem("myzkool_remember_me");
+        }
+      }
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem("myzkool_session_active", "true");
       }
 
       let resolvedProfile: UserProfile | undefined = undefined;
@@ -552,15 +597,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error("Error during Supabase sign-out:", err);
       }
     }
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("myzkool_active_school_id");
+      localStorage.removeItem("myzkool_remember_me");
+    }
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("myzkool_session_active");
+    }
     setUser(null);
     setSession(null);
     setProfile(null);
     setSchool(null);
     setAvailableSchools([]);
     setCurrentAcademicYear(null);
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("myzkool_active_school_id");
-    }
   };
 
   const resetPassword = async (email: string): Promise<AuthActionResult> => {
@@ -641,36 +690,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const refreshSession = async (): Promise<void> => {
     if (!isSupabaseConfigured) return;
     try {
-      const { data } = await supabase.auth.refreshSession();
-      if (data.session?.user) {
-        setSession(data.session);
-        setUser(data.session.user);
-        const resolved = await resolveUserProfile(data.session.user);
-        setProfile(resolved);
-        const storedSchoolId = typeof localStorage !== "undefined"
-          ? localStorage.getItem("myzkool_active_school_id")
-          : null;
-        const targetSchoolId = storedSchoolId || resolved.school_id;
-        const { school: userSchool } = await getSchoolForCurrentUser(
-          data.session.user.id,
-          targetSchoolId,
-        );
-        const { schools: authSchools } = await getAuthorizedSchoolsForUser(
-          data.session.user.id
-        );
-        let mergedSchools = [...authSchools];
-        if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
-          mergedSchools.unshift(userSchool);
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error || !data.session?.user) {
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("myzkool_remember_me");
         }
-        let ay: AcademicYear | null = null;
-        if (userSchool?.id) {
-          const { academicYear } = await getCurrentAcademicYear(userSchool.id);
-          ay = academicYear;
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.removeItem("myzkool_session_active");
         }
-        setSchool(userSchool);
-        setAvailableSchools(mergedSchools);
-        setCurrentAcademicYear(ay);
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setSchool(null);
+        setAvailableSchools([]);
+        setCurrentAcademicYear(null);
+        return;
       }
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem("myzkool_session_active", "true");
+      }
+      setSession(data.session);
+      setUser(data.session.user);
+      const resolved = await resolveUserProfile(data.session.user);
+      setProfile(resolved);
+      const storedSchoolId = typeof localStorage !== "undefined"
+        ? localStorage.getItem("myzkool_active_school_id")
+        : null;
+      const targetSchoolId = storedSchoolId || resolved.school_id;
+      const { school: userSchool } = await getSchoolForCurrentUser(
+        data.session.user.id,
+        targetSchoolId,
+      );
+      const { schools: authSchools } = await getAuthorizedSchoolsForUser(
+        data.session.user.id
+      );
+      let mergedSchools = [...authSchools];
+      if (userSchool && !mergedSchools.some((s) => s.id === userSchool.id)) {
+        mergedSchools.unshift(userSchool);
+      }
+      let ay: AcademicYear | null = null;
+      if (userSchool?.id) {
+        const { academicYear } = await getCurrentAcademicYear(userSchool.id);
+        ay = academicYear;
+      }
+      setSchool(userSchool);
+      setAvailableSchools(mergedSchools);
+      setCurrentAcademicYear(ay);
     } catch (err) {
       console.warn("Failed to refresh session:", err);
     }

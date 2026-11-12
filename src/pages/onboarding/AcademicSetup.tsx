@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useId, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
+import {
+  buildOnboardingUrl,
+  parseOnboardingSearchParams,
+} from "../../utils/onboardingRoute";
 import { getSchoolForCurrentUser } from "../../services/schoolService";
 import {
   validateAcademicYearInput,
@@ -29,8 +33,10 @@ import {
 } from "lucide-react";
 
 export default function AcademicSetup() {
-  const { user, profile, refreshSession, signOut } = useAuth();
+  const { user, profile, refreshSession, refreshSchool, signOut } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isNewSchoolMode, targetSchoolId } = parseOnboardingSearchParams(searchParams);
 
   // Generated accessible IDs
   const startDateId = useId();
@@ -65,12 +71,12 @@ export default function AcademicSetup() {
   const [isSavingAndExiting, setIsSavingAndExiting] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Redirect to /admin if school admin already finished onboarding
+  // Redirect to /admin if school admin already finished primary onboarding (unless registering a new school)
   useEffect(() => {
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && !isNewSchoolMode && !targetSchoolId) {
       navigate("/admin", { replace: true });
     }
-  }, [profile?.onboarding_completed, navigate]);
+  }, [profile?.onboarding_completed, isNewSchoolMode, targetSchoolId, navigate]);
 
   // Determine which preset matches given start and end dates
   const matchPresetFromDates = useCallback((sDate: string, eDate: string): string | null => {
@@ -100,7 +106,7 @@ export default function AcademicSetup() {
         // Fetch current school
         const { school: loadedSchool } = await getSchoolForCurrentUser(
           user.id,
-          profile?.school_id
+          targetSchoolId || profile?.school_id
         );
 
         if (!isMounted) return;
@@ -172,7 +178,7 @@ export default function AcademicSetup() {
     return () => {
       isMounted = false;
     };
-  }, [user, profile?.school_id, matchPresetFromDates]);
+  }, [user, profile?.school_id, targetSchoolId, matchPresetFromDates]);
 
   // 2. Preset Selection Handler
   const handleApplyPreset = (presetId: string) => {
@@ -411,6 +417,7 @@ export default function AcademicSetup() {
         userId: user.id,
         input: { ...formData, is_current: true },
         existingAcademicYearId: existingYearIdRef.current,
+        preserveAdminSession: isNewSchoolMode,
       });
 
       if (!result.success) {
@@ -422,11 +429,20 @@ export default function AcademicSetup() {
       setSaveSuccess(true);
       isFormDirtyRef.current = false;
 
-      // Refresh auth session so that updated onboarding progress is reflected
-      await refreshSession();
+      if (isNewSchoolMode) {
+        await refreshSchool();
+      } else {
+        // Refresh auth session so that updated onboarding progress is reflected
+        await refreshSession();
+      }
 
       // Proceed to Step 3: Classes & Sections
-      navigate("/onboarding/classes");
+      navigate(
+        buildOnboardingUrl("/onboarding/classes", {
+          isNewSchool: isNewSchoolMode,
+          schoolId: school.id,
+        })
+      );
     } catch (err: any) {
       console.error("Save academic setup error:", err);
       setGlobalError(
@@ -439,8 +455,12 @@ export default function AcademicSetup() {
   // 7. Save & Exit Handler
   const handleSaveAndExit = async () => {
     if (!isFormDirtyRef.current || !school || !user) {
-      await signOut();
-      navigate("/login");
+      if (isNewSchoolMode) {
+        navigate("/admin");
+      } else {
+        await signOut();
+        navigate("/login");
+      }
       return;
     }
 
@@ -454,14 +474,21 @@ export default function AcademicSetup() {
           userId: user.id,
           input: { ...formData, is_current: true },
           existingAcademicYearId: existingYearIdRef.current,
+          preserveAdminSession: isNewSchoolMode,
         });
       } catch (err) {
         console.warn("Background save on exit encountered error:", err);
+      } finally {
+        setIsSavingAndExiting(false);
       }
     }
 
-    await signOut();
-    navigate("/login");
+    if (isNewSchoolMode) {
+      navigate("/admin");
+    } else {
+      await signOut();
+      navigate("/login");
+    }
   };
 
   // Initial Loading State
@@ -474,6 +501,7 @@ export default function AcademicSetup() {
         subtitle=""
         maxWidth="max-w-3xl"
         showCardWrapper={false}
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="py-20 text-center space-y-3">
           <div className="w-8 h-8 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin mx-auto" />
@@ -498,6 +526,7 @@ export default function AcademicSetup() {
         subtitle=""
         maxWidth="max-w-3xl"
         showCardWrapper={false}
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="p-8 rounded-xl bg-amber-50/90 border border-amber-200 text-center space-y-4 max-w-lg mx-auto">
           <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 mx-auto flex items-center justify-center">
@@ -512,7 +541,10 @@ export default function AcademicSetup() {
             </p>
           </div>
           <Link
-            to="/onboarding/school"
+            to={buildOnboardingUrl(isNewSchoolMode ? "/onboarding/new-school" : "/onboarding/school", {
+              isNewSchool: isNewSchoolMode,
+              schoolId: targetSchoolId,
+            })}
             className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] rounded-lg transition-colors shadow-2xs"
           >
             <ArrowLeft className="w-4 h-4" /> Go to Step 1: School Profile
@@ -532,6 +564,7 @@ export default function AcademicSetup() {
       showCardWrapper={false}
       onSaveAndExit={handleSaveAndExit}
       isSavingAndExiting={isSavingAndExiting}
+      isNewSchoolMode={isNewSchoolMode}
     >
       <div className="w-full">
         {/* Page Header */}
@@ -564,7 +597,10 @@ export default function AcademicSetup() {
               </div>
             </div>
             <Link
-              to="/onboarding/classes"
+              to={buildOnboardingUrl("/onboarding/classes", {
+                isNewSchool: isNewSchoolMode,
+                schoolId: school.id,
+              })}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#2158E0] hover:text-white bg-white hover:bg-[#2158E0] border border-[#2158E0]/30 rounded-lg transition-colors shrink-0 shadow-2xs"
             >
               <span>Classes &amp; Sections</span>
@@ -907,7 +943,10 @@ export default function AcademicSetup() {
           {/* Bottom Navigation Buttons */}
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
             <Link
-              to="/onboarding/school"
+              to={buildOnboardingUrl("/onboarding/school", {
+                isNewSchool: isNewSchoolMode,
+                schoolId: school.id,
+              })}
               id="academic-back-btn"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] hover:bg-[#F1F5F9] rounded-lg transition-colors border border-transparent hover:border-[#E2E8F0]"
             >

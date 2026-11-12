@@ -342,7 +342,7 @@ export const StudentWizardReview: React.FC<ReviewProps> = ({
                   {currentAddr.landmark ? `, Near ${currentAddr.landmark}` : ""}
                 </p>
                 <p className="text-slate-600 text-[11px]">
-                  {currentAddr.city}, {currentAddr.state} - {currentAddr.pin}
+                  {currentAddr.city}{currentAddr.state ? `, ${currentAddr.state}` : ""}{currentAddr.pin ? ` - ${currentAddr.pin}` : ""}
                 </p>
               </div>
 
@@ -352,7 +352,7 @@ export const StudentWizardReview: React.FC<ReviewProps> = ({
                   {permAddr.line1}
                 </p>
                 <p className="text-slate-600 text-[11px]">
-                  {permAddr.city}, {permAddr.state} - {permAddr.pin}
+                  {permAddr.city}{permAddr.state ? `, ${permAddr.state}` : ""}{permAddr.pin ? ` - ${permAddr.pin}` : ""}
                 </p>
               </div>
             </div>

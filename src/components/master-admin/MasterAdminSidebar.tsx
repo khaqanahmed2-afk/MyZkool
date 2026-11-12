@@ -242,6 +242,19 @@ export const MasterAdminSidebar: React.FC<MasterAdminSidebarProps> = ({
         </div>
       </div>
 
+      {/* ── Manage All Schools Promo Capsule (from mockup) ──────────── */}
+      {!collapsed && (
+        <div className="mx-3 my-2 p-3 rounded-2xl bg-gradient-to-b from-[#1C244B] to-[#121838] border border-indigo-500/20 shadow-md text-center">
+          <div className="w-10 h-10 mx-auto mb-1.5 rounded-xl bg-indigo-600/20 flex items-center justify-center text-xl">
+            🏫
+          </div>
+          <h4 className="text-xs font-bold text-white mb-0.5">Manage All Schools</h4>
+          <p className="text-[10px] text-slate-300 leading-tight">
+            Control institutions, subscriptions, access and usage from one place.
+          </p>
+        </div>
+      )}
+
       {/* ── User Footer ────────────────────────────────────────────── */}
       <div className="p-3 border-t border-slate-800/80 relative">
         <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60 hover:bg-slate-850 transition-colors">

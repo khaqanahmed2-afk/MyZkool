@@ -156,6 +156,7 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
+        aria-hidden="true"
         onClick={onClose}
       />
 

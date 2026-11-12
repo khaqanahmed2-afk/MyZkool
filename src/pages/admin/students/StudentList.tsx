@@ -1012,7 +1012,7 @@ export default function StudentList() {
                               student={student}
                               onView={(s) => navigate(`/admin/students/${s.id}`)}
                               onEdit={(s) => navigate(`/admin/students/${s.id}/edit`)}
-                              onGenerateIdCard={(s) => navigate(`/admin/students/id-cards?student=${s.id}`)}
+                              onGenerateIdCard={(s) => navigate(`/admin/students/id-cards?studentId=${s.id}`)}
                               onViewDocuments={(s) => navigate(`/admin/students/${s.id}?tab=documents`)}
                               onViewFees={(s) => navigate(`/admin/fees/collect?student=${s.id}`)}
                               onViewAttendance={(s) => navigate(`/admin/attendance?student=${s.id}`)}
@@ -1095,7 +1095,7 @@ export default function StudentList() {
                         student={student}
                         onView={(s) => navigate(`/admin/students/${s.id}`)}
                         onEdit={(s) => navigate(`/admin/students/${s.id}/edit`)}
-                        onGenerateIdCard={(s) => navigate(`/admin/students/id-cards?student=${s.id}`)}
+                        onGenerateIdCard={(s) => navigate(`/admin/students/id-cards?studentId=${s.id}`)}
                         onViewDocuments={(s) => navigate(`/admin/students/${s.id}?tab=documents`)}
                         onViewFees={(s) => navigate(`/admin/fees/collect?student=${s.id}`)}
                         onViewAttendance={(s) => navigate(`/admin/attendance?student=${s.id}`)}

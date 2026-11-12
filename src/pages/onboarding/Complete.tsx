@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
+import {
+  buildOnboardingUrl,
+  parseOnboardingSearchParams,
+} from "../../utils/onboardingRoute";
 import {
   getSchoolForCurrentUser,
   completeOnboarding,
@@ -37,8 +41,12 @@ import {
 } from "lucide-react";
 
 export default function Complete() {
-  const { user, profile, refreshSession } = useAuth();
+  const { user, profile, refreshSession, refreshSchool, switchSchool } =
+    useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isNewSchoolMode, targetSchoolId } =
+    parseOnboardingSearchParams(searchParams);
 
   // Core Data State
   const [school, setSchool] = useState<School | null>(null);
@@ -64,7 +72,10 @@ export default function Complete() {
       try {
         // 1. Fetch School
         const { school: currentSchool, error: schoolErr } =
-          await getSchoolForCurrentUser(user.id, profile?.school_id);
+          await getSchoolForCurrentUser(
+            user.id,
+            targetSchoolId || profile?.school_id
+          );
 
         if (!isMounted) return;
 
@@ -119,12 +130,17 @@ export default function Complete() {
     return () => {
       isMounted = false;
     };
-  }, [user, profile?.school_id]);
+  }, [user, profile?.school_id, targetSchoolId]);
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedUrl(label);
     setTimeout(() => setCopiedUrl(null), 2500);
+  };
+
+  const onboardingRouteOptions = {
+    isNewSchool: isNewSchoolMode,
+    schoolId: targetSchoolId || school?.id,
   };
 
   const handleLaunchDashboard = async () => {
@@ -136,6 +152,7 @@ export default function Complete() {
       const res = await completeOnboarding({
         schoolId: school.id,
         userId: user.id,
+        preserveAdminSession: isNewSchoolMode,
       });
 
       if (!res.success) {
@@ -144,7 +161,12 @@ export default function Complete() {
         return;
       }
 
-      await refreshSession();
+      if (isNewSchoolMode) {
+        await refreshSchool();
+        await switchSchool(school.id);
+      } else {
+        await refreshSession();
+      }
       navigate("/admin");
     } catch {
       setErrorMessage("Failed to launch admin dashboard. Please try again.");
@@ -170,6 +192,7 @@ export default function Complete() {
         completedStepNumbers={[1, 2, 3, 4, 5]}
         title="Your school is ready"
         subtitle="Onboarding summary"
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="text-center py-8">
           <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-3">
@@ -182,7 +205,10 @@ export default function Complete() {
             {errorMessage || "School record not found. Please restart onboarding."}
           </p>
           <Link
-            to="/onboarding/school"
+            to={buildOnboardingUrl(
+              isNewSchoolMode ? "/onboarding/new-school" : "/onboarding/school",
+              { isNewSchool: isNewSchoolMode }
+            )}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] transition-colors"
           >
             <span>Go to Step 1</span>
@@ -206,6 +232,7 @@ export default function Complete() {
       completedStepNumbers={[1, 2, 3, 4, 5]}
       title="Your school is ready"
       subtitle="Congratulations! Your school workspace, academic structure, and website are configured."
+      isNewSchoolMode={isNewSchoolMode}
     >
       <div className="space-y-8">
         {/* Error Banner */}
@@ -558,7 +585,7 @@ export default function Complete() {
         {/* Final Completion Action Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-[#E6EAF3]">
           <Link
-            to="/onboarding/website"
+            to={buildOnboardingUrl("/onboarding/website", onboardingRouteOptions)}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] px-4 py-2.5 rounded-full hover:bg-[#F1F5F9] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />

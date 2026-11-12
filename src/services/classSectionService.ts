@@ -13,6 +13,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { updateCachedSchoolOnboardingStep } from "./schoolService";
 import type {
   SchoolClass,
   SchoolSection,
@@ -1018,11 +1019,13 @@ export async function saveAllClassesAndSections({
   academicYearId,
   userId,
   classes,
+  preserveAdminSession = false,
 }: {
   schoolId: string;
   academicYearId: string;
   userId: string;
   classes: SchoolClass[];
+  preserveAdminSession?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   if (!schoolId) {
     return { success: false, error: "School association required." };
@@ -1195,23 +1198,25 @@ export async function saveAllClassesAndSections({
         .update(schoolUpdate)
         .eq("id", schoolId);
 
-      const profileUpdate = {
-        school_id: schoolId,
-        current_onboarding_step: "/onboarding/subscription",
-        updated_at: timestamp,
-      };
-      await supabase
-        .from("profiles")
-        .update(profileUpdate)
-        .eq("auth_id", userId);
-
-      await supabase.auth.updateUser({
-        data: {
+      if (!preserveAdminSession) {
+        const profileUpdate = {
           school_id: schoolId,
-          onboarding_step: newStep,
           current_onboarding_step: "/onboarding/subscription",
-        },
-      });
+          updated_at: timestamp,
+        };
+        await supabase
+          .from("profiles")
+          .update(profileUpdate)
+          .eq("auth_id", userId);
+
+        await supabase.auth.updateUser({
+          data: {
+            school_id: schoolId,
+            onboarding_step: newStep,
+            current_onboarding_step: "/onboarding/subscription",
+          },
+        });
+      }
     } catch (err: any) {
       console.error("saveAllClassesAndSections exception:", err);
       return {
@@ -1242,13 +1247,7 @@ export async function saveAllClassesAndSections({
       JSON.stringify(allSections)
     );
 
-    const schoolKey = `myzkool_school_profile_${userId}`;
-    const raw = localStorage.getItem(schoolKey);
-    if (raw) {
-      const cached = JSON.parse(raw);
-      cached.onboarding_step = Math.max(cached.onboarding_step || 3, 4);
-      localStorage.setItem(schoolKey, JSON.stringify(cached));
-    }
+    updateCachedSchoolOnboardingStep(userId, schoolId, 4);
   } catch {
     // Non-fatal
   }
@@ -1263,10 +1262,12 @@ export async function saveClassesSetupProgress({
   schoolId,
   userId,
   academicYearId,
+  preserveAdminSession = false,
 }: {
   schoolId: string;
   userId: string;
   academicYearId: string;
+  preserveAdminSession?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   const { classes } = await getClassesWithSections(schoolId, academicYearId);
 
@@ -1275,6 +1276,7 @@ export async function saveClassesSetupProgress({
     academicYearId,
     userId,
     classes,
+    preserveAdminSession,
   });
 }
 

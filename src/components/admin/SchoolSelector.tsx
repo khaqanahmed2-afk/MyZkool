@@ -120,7 +120,7 @@ function SchoolDropdownMenu({
 
       <div className="pt-1 border-t border-slate-100">
         <Link
-          to="/onboarding/school"
+          to="/onboarding/new-school"
           onClick={onClose}
           className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold text-[#2158E0] hover:bg-blue-50/60 rounded-lg transition-colors cursor-pointer"
         >

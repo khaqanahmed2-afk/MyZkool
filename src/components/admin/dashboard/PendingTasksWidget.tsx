@@ -115,7 +115,7 @@ export function PendingTasksWidget({
               <Link
                 key={task.id}
                 to={task.href}
-                className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-100 hover:border-blue-100 bg-[#F8FAFC]/60 hover:bg-white hover:shadow-2xs transition-all group"
+                className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-100 hover:border-blue-100 bg-[#F8FAFC]/60 hover:bg-white hover:shadow-2xs transition-colors group"
               >
                 {/* Icon */}
                 <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center shrink-0">

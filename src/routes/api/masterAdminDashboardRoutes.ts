@@ -19,7 +19,9 @@ masterAdminDashboardRouter.get(
   async (req: MasterAdminRequest, res: Response) => {
     try {
       const period = (req.query.period as string) || "30d";
-      const metrics = await getPlatformDashboardMetrics(req, period);
+      const startDate = req.query.startDate as string | undefined;
+      const endDate = req.query.endDate as string | undefined;
+      const metrics = await getPlatformDashboardMetrics(req, period, startDate, endDate);
       res.json({
         success: true,
         data: metrics,

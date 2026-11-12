@@ -29,46 +29,47 @@ import { getPendingCount } from "../../services/approvalService";
 import { checkSchoolFeature } from "../../middleware/features";
 import { SchoolSelector } from "./SchoolSelector";
 
-interface SubNavItem {
+export interface SubNavItem {
   label: string;
   href: string;
   exact?: boolean;
 }
 
-interface NavItem {
+export interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
   featureKey?: string;
   badgeKey?: string;
   children?: SubNavItem[];
+  exact?: boolean;
 }
 
-interface NavGroup {
+export interface NavGroup {
   groupTitle?: string;
   items: NavItem[];
 }
 
-interface SidebarProps {
+export interface SidebarProps {
   school: School | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
-const NAVIGATION_GROUPS: NavGroup[] = [
+export const NAVIGATION_GROUPS: NavGroup[] = [
   {
     items: [
-      { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
+      { label: "Dashboard", href: "/admin", icon: LayoutDashboard, exact: true },
     ],
   },
   {
     groupTitle: "School Management",
     items: [
-      { label: "Students", href: "/admin/students", icon: Users },
-      { label: "Admissions", href: "/admin/students/new", icon: UserPlus },
-      { label: "Academics", href: "/admin/settings/classes", icon: GraduationCap },
-      { label: "Attendance", href: "/admin/attendance", icon: CalendarCheck },
-      { label: "Examinations", href: "/admin/exams", icon: Award },
+      { label: "Students", href: "/admin/students", icon: Users, exact: true },
+      { label: "Admissions", href: "/admin/students/new", icon: UserPlus, exact: true },
+      { label: "Academics", href: "/admin/settings/classes", icon: GraduationCap, exact: true },
+      { label: "Attendance", href: "/admin/attendance", icon: CalendarCheck, exact: true },
+      { label: "Examinations", href: "/admin/exams", icon: Award, exact: true },
     ],
   },
   {
@@ -89,21 +90,21 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         ],
       },
       { label: "Transport", href: "/admin/transport", icon: Bus, featureKey: "transport" },
-      { label: "Staff & HR", href: "/admin/staff", icon: Briefcase },
+      { label: "Staff & HR", href: "/admin/staff", icon: Briefcase, exact: true },
     ],
   },
   {
     groupTitle: "School Operations",
     items: [
-      { label: "Communication", href: "/admin/communication", icon: MessageSquare },
-      { label: "Library", href: "/admin/library", icon: BookOpen },
-      { label: "Inventory", href: "/admin/inventory", icon: Package },
+      { label: "Communication", href: "/admin/communication", icon: MessageSquare, exact: true },
+      { label: "Library", href: "/admin/library", icon: BookOpen, exact: true },
+      { label: "Inventory", href: "/admin/inventory", icon: Package, exact: true },
     ],
   },
   {
     groupTitle: "Reports & Settings",
     items: [
-      { label: "Reports & Analytics", href: "/admin/fees/reports", icon: BarChart3 },
+      { label: "Reports & Analytics", href: "/admin/fees/reports", icon: BarChart3, exact: true },
       {
         label: "Settings",
         href: "/admin/settings",
@@ -116,6 +117,62 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+export const ALL_NAV_HREFS = NAVIGATION_GROUPS.flatMap((g) => g.items.map((i) => i.href));
+
+export function normalizePath(path: string): string {
+  const withoutHash = path.split("#")[0];
+  const withoutQuery = withoutHash.split("?")[0];
+  const trimmed = withoutQuery.replace(/\/+$/, "");
+  return trimmed || "/";
+}
+
+export function isNavItemActive(
+  item: NavItem,
+  currentPath: string,
+  allHrefs: string[] = ALL_NAV_HREFS
+): boolean {
+  if (item.children && item.children.length > 0) {
+    return false;
+  }
+
+  const current = normalizePath(currentPath);
+  const target = normalizePath(item.href);
+
+  // Exact match always activates
+  if (current === target) {
+    return true;
+  }
+
+  // Exact route matching: if item explicitly requires exact (or defaults to exact),
+  // non-exact match will not activate.
+  if (item.exact !== false) {
+    return false;
+  }
+
+  // When exact is explicitly false, allow prefix match on path segment boundaries
+  if (!current.startsWith(target + "/")) {
+    return false;
+  }
+
+  // Avoid parent/nested route conflicts:
+  // If another nav item is an exact match or a longer/more specific match for currentPath,
+  // the parent item must NOT be active.
+  const hasConflict = allHrefs.some((otherHref) => {
+    const otherTarget = normalizePath(otherHref);
+    if (otherTarget === target) return false;
+    if (otherTarget === current) return true;
+    if (
+      current.startsWith(otherTarget + "/") &&
+      otherTarget.startsWith(target + "/")
+    ) {
+      return true;
+    }
+    return false;
+  });
+
+  return !hasConflict;
+}
 
 export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   const location = useLocation();
@@ -137,15 +194,15 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
 
   // Auto-expand sections when on a child route
   useEffect(() => {
+    const current = normalizePath(location.pathname);
     const expanded = new Set<string>();
     for (const group of NAVIGATION_GROUPS) {
       for (const item of group.items) {
-        if (
-          item.children &&
-          item.href !== "/admin" &&
-          location.pathname.startsWith(item.href)
-        ) {
-          expanded.add(item.href);
+        if (item.children && item.href !== "/admin") {
+          const target = normalizePath(item.href);
+          if (current === target || current.startsWith(target + "/")) {
+            expanded.add(item.href);
+          }
         }
       }
     }
@@ -165,32 +222,35 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
   };
 
   const isChildActive = (child: SubNavItem): boolean => {
+    const current = normalizePath(location.pathname);
+    const target = normalizePath(child.href);
+
     if (child.href === "/admin/fees") {
       return (
-        location.pathname === "/admin/fees" ||
-        location.pathname === "/admin/fees/dashboard"
+        current === "/admin/fees" ||
+        current === "/admin/fees/dashboard"
       );
     }
     if (child.href === "/admin/fees/collections") {
       return (
-        location.pathname === "/admin/fees/collections" ||
-        location.pathname === "/admin/fees/collect"
+        current === "/admin/fees/collections" ||
+        current === "/admin/fees/collect"
       );
     }
     if (child.href === "/admin/fees/reminders" || child.href === "/admin/fees/defaulters") {
       return (
-        location.pathname === "/admin/fees/reminders" ||
-        location.pathname === "/admin/fees/dues-report" ||
-        location.pathname === "/admin/fees/defaulters"
+        current === "/admin/fees/reminders" ||
+        current === "/admin/fees/dues-report" ||
+        current === "/admin/fees/defaulters"
       );
     }
     if (child.exact) {
       return (
-        location.pathname === child.href ||
-        location.pathname === "/admin/fees/dashboard"
+        current === target ||
+        current === "/admin/fees/dashboard"
       );
     }
-    return location.pathname.startsWith(child.href);
+    return current === target || current.startsWith(target + "/");
   };
 
   // User initials
@@ -251,12 +311,12 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
                 const Icon = item.icon;
                 const hasChildren = !!(item.children && item.children.length > 0);
                 const isExpanded = expandedSections.has(item.href);
+                const currentNorm = normalizePath(location.pathname);
+                const itemNorm = normalizePath(item.href);
                 const parentOnRoute =
-                  item.href !== "/admin" && location.pathname.startsWith(item.href);
-                const isDashboard = item.href === "/admin";
-                const exactActive = isDashboard
-                  ? location.pathname === "/admin"
-                  : !hasChildren && location.pathname.startsWith(item.href);
+                  item.href !== "/admin" &&
+                  (currentNorm === itemNorm || currentNorm.startsWith(itemNorm + "/"));
+                const exactActive = isNavItemActive(item, location.pathname, ALL_NAV_HREFS);
 
                 const badge =
                   item.badgeKey === "approvals" && pendingApprovals > 0 ? pendingApprovals : 0;
@@ -405,6 +465,7 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
               <>
                 <div
                   className="fixed inset-0 z-30"
+                  aria-hidden="true"
                   onClick={() => setIsProfileMenuOpen(false)}
                 />
                 <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-[#E6EAF3] rounded-xl shadow-lg p-1 z-40 animate-in fade-in zoom-in-95">

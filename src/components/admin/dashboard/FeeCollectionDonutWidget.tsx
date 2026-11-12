@@ -90,7 +90,7 @@ export function FeeCollectionDonutWidget({
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="round"
               fill="transparent"
-              className="transition-all duration-1000 ease-out"
+              className="transition-opacity duration-1000 ease-out"
             />
           </svg>
 

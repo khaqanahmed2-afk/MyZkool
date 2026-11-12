@@ -80,6 +80,32 @@ app.get("/api/health", (_req: Request, res: Response) => {
 });
 
 // API: Public school resolution by subdomain (Server-side lookup, never trusts client-supplied school_id)
+// API: Public student ID card verification by token
+app.get("/api/public/verify/student/:token", async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    if (!token) {
+      res.status(400).json({ is_valid: false, error: "Token is required." });
+      return;
+    }
+    const { supabase, isSupabaseConfigured } = await import("./src/lib/supabase");
+    if (!isSupabaseConfigured) {
+      res.status(503).json({ is_valid: false, error: "Database not configured." });
+      return;
+    }
+    const { data, error } = await supabase.rpc("verify_student_card_public", {
+      p_token: token,
+    });
+    if (error || !data) {
+      res.status(404).json({ is_valid: false, error: error?.message || "Invalid or expired verification token." });
+      return;
+    }
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ is_valid: false, error: err.message });
+  }
+});
+
 app.get("/api/public/school/:subdomain", async (req: Request, res: Response) => {
   try {
     const { subdomain } = req.params;

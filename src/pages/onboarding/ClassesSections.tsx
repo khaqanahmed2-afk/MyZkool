@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useId } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
+import {
+  buildOnboardingUrl,
+  parseOnboardingSearchParams,
+} from "../../utils/onboardingRoute";
 import { getSchoolForCurrentUser } from "../../services/schoolService";
 import { getCurrentAcademicYear } from "../../services/academicService";
 import {
@@ -61,8 +65,11 @@ function getTemplateIcon(templateId: string) {
 }
 
 export default function ClassesSections() {
-  const { user, profile, refreshSession, signOut } = useAuth();
+  const { user, profile, refreshSession, refreshSchool, signOut } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isNewSchoolMode, targetSchoolId } =
+    parseOnboardingSearchParams(searchParams);
 
   // Accessibility IDs
   const addClassInputId = useId();
@@ -127,12 +134,12 @@ export default function ClassesSections() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingAndExiting, setIsSavingAndExiting] = useState(false);
 
-  // Redirect if already completed onboarding
+  // Redirect if already completed onboarding (unless registering/resuming a new school)
   useEffect(() => {
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && !isNewSchoolMode && !targetSchoolId) {
       navigate("/admin", { replace: true });
     }
-  }, [profile?.onboarding_completed, navigate]);
+  }, [profile?.onboarding_completed, isNewSchoolMode, targetSchoolId, navigate]);
 
   // Load School, Academic Year and Classes on mount
   useEffect(() => {
@@ -145,7 +152,7 @@ export default function ClassesSections() {
       try {
         const { school: loadedSchool } = await getSchoolForCurrentUser(
           user.id,
-          profile?.school_id
+          targetSchoolId || profile?.school_id
         );
 
         if (!isMounted) return;
@@ -191,7 +198,7 @@ export default function ClassesSections() {
     return () => {
       isMounted = false;
     };
-  }, [user, profile?.school_id]);
+  }, [user, profile?.school_id, targetSchoolId]);
 
   // Total metrics
   const totalSectionsCount = classes.reduce(
@@ -644,6 +651,7 @@ export default function ClassesSections() {
         academicYearId: academicYear.id,
         userId: user.id,
         classes,
+        preserveAdminSession: isNewSchoolMode,
       });
 
       if (!res.success) {
@@ -652,10 +660,19 @@ export default function ClassesSections() {
       }
 
       setIsDirty(false);
-      await refreshSession();
+      if (isNewSchoolMode) {
+        await refreshSchool();
+      } else {
+        await refreshSession();
+      }
 
       // Proceed to Step 4: Plan & Subscription
-      navigate("/onboarding/subscription");
+      navigate(
+        buildOnboardingUrl("/onboarding/subscription", {
+          isNewSchool: isNewSchoolMode,
+          schoolId: school.id,
+        })
+      );
     } catch (err: any) {
       console.error("Classes progression error:", err);
       setActionError(
@@ -667,8 +684,20 @@ export default function ClassesSections() {
   };
 
   // 9. Save & Exit Handler
+  const onboardingRouteOptions = {
+    isNewSchool: isNewSchoolMode,
+    schoolId: targetSchoolId || school?.id,
+  };
+
   const handleSaveAndExit = async () => {
+    const shouldReturnToAdmin =
+      isNewSchoolMode || Boolean(profile?.onboarding_completed);
+
     if (!isDirty || !school || !academicYear || !user) {
+      if (shouldReturnToAdmin) {
+        navigate("/admin");
+        return;
+      }
       await signOut();
       navigate("/login");
       return;
@@ -684,12 +713,18 @@ export default function ClassesSections() {
           academicYearId: academicYear.id,
           userId: user.id,
           classes,
+          preserveAdminSession: isNewSchoolMode,
         });
       } catch (err) {
         console.warn("Background save on exit error:", err);
       } finally {
         setIsSavingAndExiting(false);
       }
+    }
+
+    if (shouldReturnToAdmin) {
+      navigate("/admin");
+      return;
     }
 
     await signOut();
@@ -706,6 +741,7 @@ export default function ClassesSections() {
         subtitle=""
         maxWidth="max-w-4xl"
         showCardWrapper={false}
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="py-20 text-center space-y-3">
           <div className="w-8 h-8 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin mx-auto" />
@@ -726,6 +762,7 @@ export default function ClassesSections() {
         title="Set up your classes"
         subtitle="Configure classes and sections for your school."
         maxWidth="max-w-2xl"
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="py-8 text-center space-y-4">
           <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
@@ -739,7 +776,10 @@ export default function ClassesSections() {
           </p>
           <div className="pt-2">
             <Link
-              to="/onboarding/academics"
+              to={buildOnboardingUrl(
+                "/onboarding/academics",
+                onboardingRouteOptions
+              )}
               className="inline-flex items-center gap-2 px-4 py-2 bg-[#2158E0] text-white rounded-lg text-sm font-medium hover:bg-[#1A46B8] transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -761,6 +801,7 @@ export default function ClassesSections() {
       showCardWrapper={false}
       onSaveAndExit={handleSaveAndExit}
       isSavingAndExiting={isSavingAndExiting}
+      isNewSchoolMode={isNewSchoolMode}
     >
       <div className="space-y-6">
         {/* Page Title & Context Header */}
@@ -1071,7 +1112,10 @@ export default function ClassesSections() {
         {/* 3. Bottom Actions & Navigation Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
           <Link
-            to="/onboarding/academics"
+            to={buildOnboardingUrl(
+              "/onboarding/academics",
+              onboardingRouteOptions
+            )}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#E6EAF3] bg-white text-[#5B6478] hover:text-[#141A2E] hover:border-[#CBD5E1] rounded-lg text-sm font-medium transition-colors shadow-sm"
           >
             <ArrowLeft className="w-4 h-4" />

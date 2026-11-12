@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
+import {
+  buildOnboardingUrl,
+  parseOnboardingSearchParams,
+} from "../../utils/onboardingRoute";
 import { getSchoolForCurrentUser } from "../../services/schoolService";
 import {
   getSubscriptionPlans,
@@ -38,8 +42,11 @@ import {
 } from "lucide-react";
 
 export default function Subscription() {
-  const { user, profile, refreshSession, signOut } = useAuth();
+  const { user, profile, refreshSession, refreshSchool, signOut } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isNewSchoolMode, targetSchoolId } =
+    parseOnboardingSearchParams(searchParams);
 
   // Core Data State
   const [school, setSchool] = useState<School | null>(null);
@@ -70,12 +77,12 @@ export default function Subscription() {
     linkText: string;
   } | null>(null);
 
-  // Redirect if onboarding already finished
+  // Redirect if onboarding already finished (unless registering/resuming a new school)
   useEffect(() => {
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && !isNewSchoolMode && !targetSchoolId) {
       navigate("/admin", { replace: true });
     }
-  }, [profile?.onboarding_completed, navigate]);
+  }, [profile?.onboarding_completed, isNewSchoolMode, targetSchoolId, navigate]);
 
   // Load School, Plans & Existing Subscription
   const loadData = useCallback(async () => {
@@ -92,13 +99,16 @@ export default function Subscription() {
       // 1. Fetch Current School
       const { school: currentSchool, error: schoolErr } = await getSchoolForCurrentUser(
         user.id,
-        profile?.school_id
+        targetSchoolId || profile?.school_id
       );
 
       if (schoolErr || !currentSchool) {
         setPrerequisiteError({
           msg: "School profile not found. Please complete Step 1 (School Profile) first.",
-          route: "/onboarding/school",
+          route: buildOnboardingUrl(
+            isNewSchoolMode ? "/onboarding/new-school" : "/onboarding/school",
+            { isNewSchool: isNewSchoolMode }
+          ),
           linkText: "Go to Step 1: School Profile",
         });
         setIsLoading(false);
@@ -134,7 +144,7 @@ export default function Subscription() {
     } finally {
       setIsLoading(false);
     }
-  }, [user, profile?.school_id]);
+  }, [user, profile?.school_id, targetSchoolId, isNewSchoolMode]);
 
   useEffect(() => {
     loadData();
@@ -247,18 +257,26 @@ export default function Subscription() {
               billingCycle,
               startTrial: false, // Paid activation!
               notes: `Razorpay verified: ${paymentData.razorpay_payment_id}`,
+              preserveAdminSession: isNewSchoolMode,
             });
           } catch (cacheErr) {
             console.warn("Local subscription sync note:", cacheErr);
           }
 
-          if (refreshSession) {
+          if (isNewSchoolMode) {
+            await refreshSchool();
+          } else if (refreshSession) {
             await refreshSession();
           }
 
           // Automatically proceed to Step 5 (Website Setup) after brief confirmation
           setTimeout(() => {
-            navigate("/onboarding/website");
+            navigate(
+              buildOnboardingUrl("/onboarding/website", {
+                isNewSchool: isNewSchoolMode,
+                schoolId: school.id,
+              })
+            );
           }, 1500);
         },
         onError: (errMsg) => {
@@ -305,6 +323,7 @@ export default function Subscription() {
         billingCycle,
         startTrial: true,
         notes: `Configured during Onboarding Step 4 by ${user.email}`,
+        preserveAdminSession: isNewSchoolMode,
       });
 
       if (!result.success) {
@@ -316,12 +335,19 @@ export default function Subscription() {
       setIsDirty(false);
 
       // Refresh auth session so that updated onboarding progress is reflected
-      if (refreshSession) {
+      if (isNewSchoolMode) {
+        await refreshSchool();
+      } else if (refreshSession) {
         await refreshSession();
       }
 
       // Smooth progression to Step 5 (Website Setup)
-      navigate("/onboarding/website");
+      navigate(
+        buildOnboardingUrl("/onboarding/website", {
+          isNewSchool: isNewSchoolMode,
+          schoolId: school.id,
+        })
+      );
     } catch (err: any) {
       console.error("selectSchoolPlan error:", err);
       setErrorMessage(err?.message || "Failed to process subscription selection. Please try again.");
@@ -330,8 +356,20 @@ export default function Subscription() {
   };
 
   // Save & Exit Handler
+  const onboardingRouteOptions = {
+    isNewSchool: isNewSchoolMode,
+    schoolId: targetSchoolId || school?.id,
+  };
+
   const handleSaveAndExit = async () => {
+    const shouldReturnToAdmin =
+      isNewSchoolMode || Boolean(profile?.onboarding_completed);
+
     if (!school || !user) {
+      if (shouldReturnToAdmin) {
+        navigate("/admin");
+        return;
+      }
       await signOut();
       navigate("/login");
       return;
@@ -347,10 +385,18 @@ export default function Subscription() {
           billingCycle,
           startTrial: true,
           notes: `Saved on exit by ${user.email}`,
+          preserveAdminSession: isNewSchoolMode,
         });
       } catch (err) {
         console.warn("Background save on exit note:", err);
+      } finally {
+        setIsSavingAndExiting(false);
       }
+    }
+
+    if (shouldReturnToAdmin) {
+      navigate("/admin");
+      return;
     }
 
     await signOut();
@@ -367,6 +413,7 @@ export default function Subscription() {
         subtitle=""
         maxWidth="max-w-4xl"
         showCardWrapper={false}
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="py-20 text-center space-y-3">
           <div className="w-8 h-8 border-2 border-[#2158E0] border-t-transparent rounded-full animate-spin mx-auto" />
@@ -387,6 +434,7 @@ export default function Subscription() {
         title="Choose your school plan"
         subtitle="Step 1 required before selecting subscription."
         maxWidth="max-w-2xl"
+        isNewSchoolMode={isNewSchoolMode}
       >
         <div className="py-8 text-center space-y-4">
           <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
@@ -422,6 +470,7 @@ export default function Subscription() {
       showCardWrapper={false}
       onSaveAndExit={handleSaveAndExit}
       isSavingAndExiting={isSavingAndExiting}
+      isNewSchoolMode={isNewSchoolMode}
     >
       <form onSubmit={handleSubmit} className="space-y-6" id="subscription-selection-form">
         {/* Page Title & Context Header */}
@@ -924,7 +973,7 @@ export default function Subscription() {
         {/* Bottom Actions Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
           <Link
-            to="/onboarding/classes"
+            to={buildOnboardingUrl("/onboarding/classes", onboardingRouteOptions)}
             id="back-to-classes-btn"
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#E6EAF3] bg-white text-[#5B6478] hover:text-[#141A2E] hover:border-[#CBD5E1] rounded-lg text-sm font-medium transition-colors shadow-xs"
           >

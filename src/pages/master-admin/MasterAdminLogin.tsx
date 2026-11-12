@@ -1,27 +1,54 @@
 import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useMasterAdminAuth } from "../../context/MasterAdminAuthContext";
 import { Lock, Mail, Eye, EyeOff, ShieldCheck, ArrowRight, AlertCircle } from "lucide-react";
 
 export default function MasterAdminLogin() {
-  const { login, isAuthenticated } = useMasterAdminAuth();
+  const { login, isAuthenticated, loading, admin } = useMasterAdminAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // If already logged in, redirect immediately
+  // Restore remembered email on mount
   React.useEffect(() => {
-    if (isAuthenticated) {
-      const searchParams = new URLSearchParams(location.search);
-      const redirectUrl = searchParams.get("redirect") || "/master-admin/dashboard";
-      navigate(redirectUrl, { replace: true });
-    }
-  }, [isAuthenticated, location.search, navigate]);
+    try {
+      const savedEmail = localStorage.getItem("myzkool_master_remembered_email");
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setRememberMe(true);
+      }
+    } catch {}
+  }, []);
+
+  // 1. Clean loading state while verifying existing session (prevents login form flash)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0F1D] text-slate-100 flex flex-col justify-center items-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center font-bold text-xl text-white shadow-xl shadow-blue-600/30 animate-pulse">
+            M
+          </div>
+          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mt-2" />
+          <p className="text-xs text-slate-400 font-medium tracking-wide">
+            Verifying platform administrator session...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. If already logged in, redirect immediately to control plane dashboard
+  if (isAuthenticated && admin) {
+    const searchParams = new URLSearchParams(location.search);
+    const redirectUrl = searchParams.get("redirect") || "/master-admin/dashboard";
+    return <Navigate to={redirectUrl} replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +60,7 @@ export default function MasterAdminLogin() {
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const result = await login(email.trim(), password);
+    const result = await login(email.trim(), password, rememberMe);
     setIsSubmitting(false);
 
     if (result.success) {
@@ -127,6 +154,24 @@ export default function MasterAdminLogin() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+            </div>
+
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center justify-between pt-0.5">
+              <label htmlFor="master-remember-me" className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="master-remember-me"
+                  name="master-remember-me"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  disabled={isSubmitting}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className="text-xs text-slate-400 font-medium">
+                  Remember my session on this device
+                </span>
+              </label>
             </div>
 
             <button

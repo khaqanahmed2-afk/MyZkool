@@ -11,6 +11,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { updateCachedSchoolOnboardingStep } from "./schoolService";
 import type {
   AcademicYear,
   AcademicYearInput,
@@ -268,6 +269,7 @@ export interface SaveAcademicYearParams {
   userId: string;
   input: AcademicYearInput;
   existingAcademicYearId?: string | null;
+  preserveAdminSession?: boolean;
 }
 
 /**
@@ -279,6 +281,7 @@ export async function saveAcademicSetup({
   userId,
   input,
   existingAcademicYearId,
+  preserveAdminSession = false,
 }: SaveAcademicYearParams): Promise<{
   success: boolean;
   academicYear?: AcademicYear;
@@ -401,32 +404,34 @@ export async function saveAcademicSetup({
         console.warn("Could not advance school onboarding_step:", schoolErr);
       }
 
-      // Update profiles: ensure school_id is bound and advance step
-      try {
-        const profileUpdate = {
-          school_id: schoolId,
-          current_onboarding_step: "/onboarding/classes",
-          updated_at: timestamp,
-        };
-        await supabase
-          .from("profiles")
-          .update(profileUpdate)
-          .eq("auth_id", userId);
-      } catch (profileErr) {
-        console.warn("Could not update user profile onboarding step:", profileErr);
-      }
-
-      // Update auth user metadata
-      try {
-        await supabase.auth.updateUser({
-          data: {
+      if (!preserveAdminSession) {
+        // Update profiles: ensure school_id is bound and advance step
+        try {
+          const profileUpdate = {
             school_id: schoolId,
-            onboarding_step: 3,
             current_onboarding_step: "/onboarding/classes",
-          },
-        });
-      } catch (authErr) {
-        console.warn("Could not update auth user metadata:", authErr);
+            updated_at: timestamp,
+          };
+          await supabase
+            .from("profiles")
+            .update(profileUpdate)
+            .eq("auth_id", userId);
+        } catch (profileErr) {
+          console.warn("Could not update user profile onboarding step:", profileErr);
+        }
+
+        // Update auth user metadata
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              school_id: schoolId,
+              onboarding_step: 3,
+              current_onboarding_step: "/onboarding/classes",
+            },
+          });
+        } catch (authErr) {
+          console.warn("Could not update auth user metadata:", authErr);
+        }
       }
 
       const verifiedRecord: AcademicYear = {
@@ -508,13 +513,7 @@ function updateLocalCache(
       JSON.stringify(list)
     );
 
-    const schoolCacheKey = `myzkool_school_profile_${userId}`;
-    const cachedSchoolRaw = localStorage.getItem(schoolCacheKey);
-    if (cachedSchoolRaw) {
-      const cachedSchool = JSON.parse(cachedSchoolRaw);
-      cachedSchool.onboarding_step = Math.max(cachedSchool.onboarding_step || 2, 3);
-      localStorage.setItem(schoolCacheKey, JSON.stringify(cachedSchool));
-    }
+    updateCachedSchoolOnboardingStep(userId, schoolId, 3);
   } catch {
     // Non-fatal
   }

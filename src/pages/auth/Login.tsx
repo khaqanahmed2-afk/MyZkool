@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { AuthLayout } from "../../components/auth/AuthLayout";
 import { GoogleAuthButton } from "../../components/auth/GoogleAuthButton";
 import { AuthSubmitButton } from "../../components/auth/AuthSubmitButton";
+import { MyZkoolLogo } from "../../components/common/MyZkoolLogo";
 import {
   Mail,
   Lock,
@@ -87,71 +88,92 @@ export default function Login() {
     }
   }, []);
 
-    // If already logged in and profile is loaded, redirect smoothly
-    if (isAuthenticated && !loading && profile) {
-      const destination =
+  // 1. If currently checking existing session on reload/revisit, show clean loading state to prevent login form flash
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-pulse">
+            <MyZkoolLogo size={48} showText={true} />
+          </div>
+          <div className="w-6 h-6 border-2 border-[#1E5AF6] border-t-transparent rounded-full animate-spin mt-2" />
+          <p className="text-xs text-[#5B6478] font-medium tracking-wide">
+            Verifying secure session...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. If already logged in and profile is loaded, redirect smoothly to dashboard
+  if (isAuthenticated && profile) {
+    const destination =
       explicitRedirect && explicitRedirect.startsWith("/")
         ? explicitRedirect
+        : profile.role === "super_admin"
+        ? "/master-admin/dashboard"
         : profile.onboarding_completed
-          ? "/admin"
+        ? "/admin"
         : profile.current_onboarding_step || "/onboarding/school";
 
-      return <Navigate to={destination} replace />;
+    return <Navigate to={destination} replace />;
+  }
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    setErrorMessage(null);
+
+    const identifier = emailOrUsername.trim();
+    if (!identifier) {
+      setErrorMessage("Please enter your school email address or username.");
+      return;
+    }
+    if (!password) {
+      setErrorMessage("Please enter your password.");
+      return;
     }
 
-    const handleLoginSubmit = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (isSubmitting) return;
+    try {
+      setIsSubmitting(true);
 
-      setErrorMessage(null);
-
-      const identifier = emailOrUsername.trim();
-      if (!identifier) {
-        setErrorMessage("Please enter your school email address or username.");
-        return;
-      }
-      if (!password) {
-        setErrorMessage("Please enter your password.");
-        return;
-      }
-
+      // Handle remember me persistence
       try {
-        setIsSubmitting(true);
-
-        // Handle remember me persistence
-        try {
-          if (rememberMe) {
-            localStorage.setItem(REMEMBER_ME_STORAGE_KEY, identifier);
-          } else {
-            localStorage.removeItem(REMEMBER_ME_STORAGE_KEY);
-          }
-        } catch {
-          // Non-fatal
+        if (rememberMe) {
+          localStorage.setItem(REMEMBER_ME_STORAGE_KEY, identifier);
+        } else {
+          localStorage.removeItem(REMEMBER_ME_STORAGE_KEY);
         }
+      } catch {
+        // Non-fatal
+      }
 
-        const res = await signIn(identifier, password);
+      const res = await signIn(identifier, password, rememberMe);
 
-        if (!res.success) {
-          setErrorMessage(res.error || "Failed to sign in. Please verify your credentials.");
-          return;
-        }
+      if (!res.success) {
+        setErrorMessage(res.error || "Failed to sign in. Please verify your credentials.");
+        return;
+      }
 
-        // Successful sign-in: route based on resolved profile or requested redirect
-        const activeProfile = res.profile || profile;
-        const destination =
+      // Successful sign-in: route based on resolved profile or requested redirect
+      const activeProfile = res.profile || profile;
+      const destination =
         explicitRedirect && explicitRedirect.startsWith("/")
           ? explicitRedirect
+          : activeProfile?.role === "super_admin"
+          ? "/master-admin/dashboard"
           : activeProfile?.onboarding_completed
-            ? "/admin"
+          ? "/admin"
           : activeProfile?.current_onboarding_step || "/onboarding/school";
 
-    navigate(destination, { replace: true });
-  } catch (err: any) {
-    setErrorMessage(err?.message || "An unexpected error occurred during login.");
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+      navigate(destination, { replace: true });
+    } catch (err: any) {
+      setErrorMessage(err?.message || "An unexpected error occurred during login.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
 const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
   e.preventDefault();

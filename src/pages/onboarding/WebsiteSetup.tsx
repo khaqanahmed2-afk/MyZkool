@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { OnboardingLayout } from "../../components/onboarding/OnboardingLayout";
+import {
+  buildOnboardingUrl,
+  parseOnboardingSearchParams,
+} from "../../utils/onboardingRoute";
 import { getSchoolForCurrentUser } from "../../services/schoolService";
 import {
   initializeSchoolWebsite,
@@ -58,8 +62,11 @@ import {
 } from "lucide-react";
 
 export default function WebsiteSetup() {
-  const { user, profile, refreshSession } = useAuth();
+  const { user, profile, refreshSession, refreshSchool } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isNewSchoolMode, targetSchoolId } =
+    parseOnboardingSearchParams(searchParams);
 
   // Core state
   const [school, setSchool] = useState<School | null>(null);
@@ -98,12 +105,12 @@ export default function WebsiteSetup() {
   const [newFacilityTitle, setNewFacilityTitle] = useState("");
   const [newFacilityDesc, setNewFacilityDesc] = useState("");
 
-  // Redirect if already completed onboarding
+  // Redirect if already completed onboarding (unless registering/resuming a new school)
   useEffect(() => {
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && !isNewSchoolMode && !targetSchoolId) {
       navigate("/admin", { replace: true });
     }
-  }, [profile?.onboarding_completed, navigate]);
+  }, [profile?.onboarding_completed, isNewSchoolMode, targetSchoolId, navigate]);
 
   // Load School & Initialize Website Record
   useEffect(() => {
@@ -116,7 +123,7 @@ export default function WebsiteSetup() {
       try {
         const { school: loadedSchool } = await getSchoolForCurrentUser(
           user.id,
-          profile?.school_id
+          targetSchoolId || profile?.school_id
         );
 
         if (!isMounted) return;
@@ -170,7 +177,7 @@ export default function WebsiteSetup() {
     return () => {
       isMounted = false;
     };
-  }, [user, profile?.school_id, profile?.role]);
+  }, [user, profile?.school_id, profile?.role, targetSchoolId]);
 
   // Mark draft as dirty on edit
   const markDirty = () => {
@@ -388,10 +395,20 @@ export default function WebsiteSetup() {
       await saveWebsiteSetupProgress({
         schoolId: school.id,
         userId: user.id,
+        preserveAdminSession: isNewSchoolMode,
       });
 
-      await refreshSession();
-      navigate("/onboarding/complete");
+      if (isNewSchoolMode) {
+        await refreshSchool();
+      } else {
+        await refreshSession();
+      }
+      navigate(
+        buildOnboardingUrl("/onboarding/complete", {
+          isNewSchool: isNewSchoolMode,
+          schoolId: school.id,
+        })
+      );
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "An unexpected error occurred.";
@@ -404,6 +421,7 @@ export default function WebsiteSetup() {
     return (
       <OnboardingLayout
         currentStepNumber={5}
+        isNewSchoolMode={isNewSchoolMode}
         completedStepNumbers={[1, 2, 3, 4]}
         title="Set up your school website"
         subtitle="Configure your official school website, leadership details, and public portal."
@@ -422,6 +440,7 @@ export default function WebsiteSetup() {
     return (
       <OnboardingLayout
         currentStepNumber={5}
+        isNewSchoolMode={isNewSchoolMode}
         completedStepNumbers={[]}
         title="Set up your school website"
         subtitle="Configure your official school website, leadership details, and public portal."
@@ -439,7 +458,10 @@ export default function WebsiteSetup() {
             </p>
           </div>
           <Link
-            to="/onboarding/school"
+            to={buildOnboardingUrl(
+              isNewSchoolMode ? "/onboarding/new-school" : "/onboarding/school",
+              { isNewSchool: isNewSchoolMode }
+            )}
             className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-[#2158E0] hover:bg-[#1a4ec4] rounded-full transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Go to Step 1: School profile
@@ -459,6 +481,7 @@ export default function WebsiteSetup() {
       showCardWrapper={false}
       onSaveAndExit={handleSaveDraft}
       isSavingAndExiting={isSavingDraft}
+      isNewSchoolMode={isNewSchoolMode}
     >
       <div className="space-y-6">
         {/* Alerts */}
@@ -492,6 +515,10 @@ export default function WebsiteSetup() {
             isSavingDraft={isSavingDraft}
             onSaveDraft={handleSaveDraft}
             schoolSubdomain={school.subdomain}
+            onboardingRouteOptions={{
+              isNewSchool: isNewSchoolMode,
+              schoolId: school.id,
+            }}
           />
 
           {/* Right: Main Spacious Website Configuration Dashboard */}
@@ -1397,7 +1424,10 @@ export default function WebsiteSetup() {
             {/* Bottom Actions Bar */}
             <div className="bg-white rounded-2xl border border-[#E6EAF3] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
               <Link
-                to="/onboarding/subscription"
+                to={buildOnboardingUrl("/onboarding/subscription", {
+                  isNewSchool: isNewSchoolMode,
+                  schoolId: targetSchoolId || school?.id,
+                })}
                 id="website-back-btn"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-[#5B6478] hover:text-[#141A2E] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
               >

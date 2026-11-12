@@ -145,7 +145,7 @@ export function ExploreModulesWidget() {
                   >
                     <Icon className="w-5 h-5" />
                   </div>
-                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-[#2158E0] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-[#2158E0] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-colors duration-200" />
                 </div>
                 <h3 className="text-sm font-bold text-[#141A2E] group-hover:text-[#2158E0] transition-colors leading-snug">
                   {m.label}

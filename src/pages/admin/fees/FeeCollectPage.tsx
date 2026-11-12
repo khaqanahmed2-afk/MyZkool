@@ -628,6 +628,12 @@ export default function FeeCollectPage() {
                       <div
                         key={std.id}
                         onClick={() => handleSelectStudent(std)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleSelectStudent(std);
+                          }
+                        }}
                         className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-blue-50/40 transition-colors cursor-pointer ${
                           isSelected ? "bg-blue-50/70 border-l-4 border-l-[#2563EB]" : ""
                         }`}
@@ -996,8 +1002,15 @@ export default function FeeCollectPage() {
                         return (
                           <tr
                             key={inv.id}
+                            tabIndex={0}
                             onClick={() => toggleInvoice(inv.id)}
-                            className={`transition-colors cursor-pointer ${
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleInvoice(inv.id);
+                              }
+                            }}
+                            className={`transition-colors cursor-pointer focus:outline-none focus:bg-blue-50/40 ${
                               isChecked
                                 ? "bg-blue-50/50 hover:bg-blue-50/80"
                                 : "hover:bg-gray-50/70"

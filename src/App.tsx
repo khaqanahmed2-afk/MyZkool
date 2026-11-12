@@ -48,6 +48,25 @@ function RootPage() {
       </ErrorBoundary>
     );
   }
+
+  // Check if a remembered session or active session exists on this client
+  const hasRememberedMasterAdmin =
+    typeof window !== "undefined" &&
+    localStorage.getItem("myzkool_master_remember_me") === "true";
+
+  const hasRememberedSchoolUser =
+    typeof window !== "undefined" &&
+    (localStorage.getItem("myzkool_remember_me") === "true" ||
+     sessionStorage.getItem("myzkool_session_active") === "true");
+
+  if (hasRememberedMasterAdmin) {
+    return <Navigate to="/master-admin/login" replace />;
+  }
+
+  if (hasRememberedSchoolUser) {
+    return <Navigate to="/login" replace />;
+  }
+
   return <LandingPage />;
 }
 
