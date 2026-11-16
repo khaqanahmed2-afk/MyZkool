@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Layers,
-  ExternalLink,
   Palette,
   Check,
 } from "lucide-react";
@@ -265,23 +264,6 @@ export const IdCardPreview: React.FC<IdCardPreviewProps> = ({
         )}
       </div>
 
-      {/* Footer Info Bar */}
-      <div className="w-full mt-3 flex items-center justify-between text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-2.5">
-        <div className="flex items-center gap-2 truncate">
-          <span className="text-[11px] font-mono text-slate-400 truncate">
-            QR Target URL: <strong className="text-blue-600">{card.verification_url}</strong>
-          </span>
-        </div>
-        <a
-          href={card.verification_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 shrink-0 ml-2"
-        >
-          <span>Test Public Verify Page</span>
-          <ExternalLink className="w-3.5 h-3.5" />
-        </a>
-      </div>
     </div>
   );
 };

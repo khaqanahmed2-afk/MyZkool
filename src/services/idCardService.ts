@@ -65,9 +65,9 @@ export interface IdCardCustomization {
 }
 
 export const DEFAULT_CUSTOMIZATION: IdCardCustomization = {
-  themeId: "modern_blue_yellow",
-  primaryColor: "#1E3A8A", // Royal Blue
-  secondaryColor: "#EAB308", // Vivid Amber / Golden Yellow
+  themeId: "minimal_blue_white",
+  primaryColor: "#2158E0",
+  secondaryColor: "#DBEAFE",
   showSchoolLogo: true,
   schoolNameOverride: "",
   sessionOverride: "",
@@ -85,15 +85,14 @@ export const DEFAULT_CUSTOMIZATION: IdCardCustomization = {
   showEmergencyContact: true,
   showSchoolAddress: true,
   showSchoolContact: true,
-  showQrCode: true,
+  showQrCode: false,
   showBarcode: true,
   showPrincipalSignature: true,
   principalTitle: "Principal",
   principalSignatureUrl: null,
   showStudentSignature: true,
   studentSignatureTitle: "Student Signature",
-  disclaimerText:
-    "This card is the official property of the school. If found, please return to the school administration address. Unauthorized duplication or alteration is strictly prohibited.",
+  disclaimerText: "",
 };
 
 const CUSTOMIZATION_STORAGE_KEY_PREFIX = "myzkool_id_card_settings_";
@@ -199,7 +198,7 @@ export async function fetchEnrichedStudentIdCards(
   let sections: any[] = [];
   let academicYearLabel = "2026-2027";
   let schoolInfo: any = {
-    name: "Peace Convent School",
+    name: "",
     logo_url: null,
     address: "",
     city: "",
@@ -333,8 +332,7 @@ export async function fetchEnrichedStudentIdCards(
       sections = rawSec ? JSON.parse(rawSec) : [];
 
       const rawSchool =
-        localStorage.getItem(`myzkool_school_profile_school_${schoolId}`) ||
-        localStorage.getItem("myzkool_school_profile");
+        localStorage.getItem(`myzkool_school_profile_school_${schoolId}`);
       if (rawSchool) {
         schoolInfo = { ...schoolInfo, ...JSON.parse(rawSchool) };
       }
@@ -396,9 +394,6 @@ export async function fetchEnrichedStudentIdCards(
     .filter(Boolean)
     .join(", ");
 
-  // Missing cards to create in DB batch
-  const cardsToInsert: any[] = [];
-
   const results: EnrichedStudentIdCard[] = students.map((s) => {
     const enr = enrollmentMap.get(s.id);
     const existingCard = cardsMap.get(s.id);
@@ -441,19 +436,9 @@ export async function fetchEnrichedStudentIdCards(
 
     if (existingCard) {
       cardStatus = (existingCard.card_status as CardStatus) || "active";
-    } else {
-      token = generateRandomToken(`std_${s.admission_no.toLowerCase().replace(/[^a-z0-9]/g, "")}`);
-      cardsToInsert.push({
-        school_id: schoolId,
-        student_id: s.id,
-        verification_token: token,
-        card_status: "active",
-        theme_id: "modern_blue_yellow",
-        issued_at: new Date().toISOString(),
-      });
     }
 
-    const verificationUrl = `${origin}/verify/student/${token}`;
+    const verificationUrl = "";
     const fullName = `${s.first_name}${s.middle_name ? ` ${s.middle_name}` : ""} ${s.last_name}`.trim();
 
     return {
@@ -479,7 +464,7 @@ export async function fetchEnrichedStudentIdCards(
       dob: s.dob,
       academic_session: academicYearLabel,
       qr_payload: verificationUrl,
-      school_name: schoolInfo.name || "MyZkool Academy",
+      school_name: schoolInfo.name || "School name unavailable",
       school_logo_url: schoolInfo.logo_url || null,
       school_address: schoolFullAddress,
       school_phone: schoolInfo.contact_phone || "N/A",
@@ -493,23 +478,6 @@ export async function fetchEnrichedStudentIdCards(
       valid_until: validUntil,
     };
   });
-
-  // Persist newly minted card tokens asynchronously
-  if (cardsToInsert.length > 0) {
-    if (isSupabaseConfigured) {
-      supabase
-        .from("student_id_cards")
-        .upsert(cardsToInsert, { onConflict: "school_id,student_id" })
-        .then(({ error }) => {
-          if (error) console.warn("Notice: could not upsert card tokens to Supabase:", error.message);
-        });
-    } else if (typeof localStorage !== "undefined") {
-      try {
-        const combined = [...existingCards, ...cardsToInsert];
-        localStorage.setItem(`myzkool_student_id_cards_${schoolId}`, JSON.stringify(combined));
-      } catch {}
-    }
-  }
 
   return results;
 }
@@ -631,8 +599,7 @@ export async function verifyStudentCardToken(token: string): Promise<CardVerific
             const student = students.find((s: any) => s.id === studentId);
 
             const rawSchool =
-              localStorage.getItem(`myzkool_school_profile_school_${schoolId}`) ||
-              localStorage.getItem("myzkool_school_profile");
+              localStorage.getItem(`myzkool_school_profile_school_${schoolId}`);
             const school = rawSchool ? JSON.parse(rawSchool) : {};
 
             return {
@@ -643,9 +610,9 @@ export async function verifyStudentCardToken(token: string): Promise<CardVerific
               roll_no: "N/A",
               class_name: "Enrolled Grade",
               section_name: "A",
-              school_name: school.name || "Peace Convent School",
-              school_city: school.city || "Mawai",
-              school_state: school.state || "Uttar Pradesh",
+              school_name: school.name || "School name unavailable",
+              school_city: school.city,
+              school_state: school.state,
               school_logo_url: school.logo_url || null,
               photo_url: student?.photo_path || null,
               issued_at: match.issued_at,

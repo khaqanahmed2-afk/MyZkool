@@ -3092,7 +3092,7 @@ export async function getStudentIdCardData(
   let studentParents: any[] = [];
   let classes: any[] = [];
   let sections: any[] = [];
-  let schoolName = "MyZkool Academy";
+  let schoolName = "";
   let schoolLogoUrl: string | null = null;
 
   const hasSpecificTarget = Boolean(options?.studentId || (options?.studentIds && options.studentIds.length > 0));
@@ -3209,8 +3209,7 @@ export async function getStudentIdCardData(
 
     // Read school profile for name and logo
     const scRaw =
-      localStorage.getItem(`myzkool_school_profile_school_${schoolId}`) ||
-      localStorage.getItem("myzkool_school_profile");
+      localStorage.getItem(`myzkool_school_profile_school_${schoolId}`);
     if (scRaw) {
       try {
         const sc = JSON.parse(scRaw);

@@ -13,7 +13,7 @@ export const ModernBlueYellowTheme: React.FC<IdCardThemeProps> = ({
   const primaryColor = customization.primaryColor || "#1D4ED8"; // Royal Blue
   const secondaryColor = customization.secondaryColor || "#FBBF24"; // Warm Sunny Yellow
 
-  const schoolName = customization.schoolNameOverride || card.school_name || "Green Valley Public School";
+  const schoolName = customization.schoolNameOverride || card.school_name || "School name unavailable";
   const session = customization.sessionOverride || card.academic_session || "2026–27";
   const initials = `${card.first_name?.[0] || ""}${card.last_name?.[0] || ""}`.toUpperCase() || "ST";
 
@@ -21,6 +21,7 @@ export const ModernBlueYellowTheme: React.FC<IdCardThemeProps> = ({
   const cardCode = card.admission_no
     ? card.admission_no.replace("ADM-", "MZK-")
     : "MZK-2026-0142";
+  const usesBlueContactPanel = customization.themeId === "minimal_blue_white";
 
   // Dotted pattern style for header
   const dottedBackgroundStyle: React.CSSProperties = {
@@ -185,8 +186,27 @@ export const ModernBlueYellowTheme: React.FC<IdCardThemeProps> = ({
               <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider leading-none">
                 ADM NO
               </span>
-              <span className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5">
+              <a
+                href={`/admin/students/${card.student_id}`}
+                className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#2158E0]"
+                aria-label={`Open ${card.full_name}'s student profile`}
+              >
                 {card.admission_no.replace(/[^0-9]/g, "").slice(-4) || "0142"}
+              </a>
+            </div>
+          </div>
+
+          <div className="w-full mt-2 grid grid-cols-2 gap-2 text-left">
+            <div>
+              <span className="text-[5.5px] font-bold text-slate-400 block">Date of birth</span>
+              <span className="text-[6.8px] font-bold text-slate-700 block">
+                {card.dob ? new Date(card.dob).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Not available"}
+              </span>
+            </div>
+            <div>
+              <span className="text-[5.5px] font-bold text-slate-400 block">Admission date</span>
+              <span className="text-[6.8px] font-bold text-slate-700 block">
+                {card.admission_date ? new Date(card.admission_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Not available"}
               </span>
             </div>
           </div>
@@ -200,37 +220,13 @@ export const ModernBlueYellowTheme: React.FC<IdCardThemeProps> = ({
             borderTopColor: secondaryColor,
           }}
         >
-          {/* White QR Container */}
-          {customization.showQrCode && (
-            <div className="w-[12mm] h-[12mm] rounded-lg bg-white p-0.5 flex items-center justify-center shadow-xs shrink-0">
-              {qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt="QR"
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="w-full h-full bg-slate-200 rounded flex items-center justify-center text-[5px] text-slate-600 font-mono">
-                  QR
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Identifier & Validity */}
-          <div className="flex-1 px-2 text-left leading-tight">
-            <span className="font-mono text-[8.5px] font-black tracking-wider text-white block uppercase">
-              {cardCode}
-            </span>
-            <span className="text-[6.2px] text-blue-200 font-medium block mt-0.5">
-              Valid till Mar 2027
-            </span>
-          </div>
-
-          {/* Double Chevron Accent Icon */}
-          <div className="shrink-0 flex items-center">
-            <ChevronsRight className="w-4 h-4 font-black" style={{ color: secondaryColor }} />
-          </div>
+          <a
+            href={`/admin/students/${card.student_id}`}
+            className="w-full text-center font-mono text-[9px] font-black tracking-wider text-white rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            aria-label={`Open ${card.full_name}'s student profile`}
+          >
+            {card.admission_no}
+          </a>
         </div>
       </div>
     );
@@ -314,13 +310,13 @@ export const ModernBlueYellowTheme: React.FC<IdCardThemeProps> = ({
         <div
           className="p-1.5 rounded-xl border text-left leading-snug"
           style={{
-            backgroundColor: "#FEF3C7", // Soft Amber/Yellow
-            borderColor: "#FDE68A",
+            backgroundColor: usesBlueContactPanel ? "#DBEAFE" : "#FEF3C7",
+            borderColor: usesBlueContactPanel ? "#BFDBFE" : "#FDE68A",
           }}
         >
           <span
             className="text-[5.5px] font-extrabold uppercase tracking-widest block mb-0.5"
-            style={{ color: "#B45309" }}
+              style={{ color: usesBlueContactPanel ? "#2158E0" : "#B45309" }}
           >
             EMERGENCY CONTACT
           </span>

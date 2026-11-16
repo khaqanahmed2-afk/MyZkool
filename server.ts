@@ -23,6 +23,8 @@ import { apiErrorHandler } from "./src/middleware/errorHandler";
 
 
 
+dotenv.config({ path: ".env.local" });
+
 const app = express();
 app.disable("x-powered-by");
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -88,8 +90,8 @@ app.get("/api/public/verify/student/:token", async (req: Request, res: Response)
       res.status(400).json({ is_valid: false, error: "Token is required." });
       return;
     }
-    const { supabase, isSupabaseConfigured } = await import("./src/lib/supabase");
-    if (!isSupabaseConfigured) {
+    const { supabase } = await import("./src/lib/supabase");
+    if (!process.env.VITE_SUPABASE_URL || !process.env.VITE_SUPABASE_ANON_KEY) {
       res.status(503).json({ is_valid: false, error: "Database not configured." });
       return;
     }

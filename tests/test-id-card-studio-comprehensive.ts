@@ -317,8 +317,8 @@ async function runStudioTests() {
   // ----------------------------------------------------
   console.log("\n--- Group 7: Customization Settings & Theme Registry ---");
   const defaultCustom = getIdCardCustomization(schoolA);
-  assert(defaultCustom.themeId === "modern_blue_yellow", "Default theme is Modern Blue & Yellow");
-  assert(defaultCustom.primaryColor === "#1E3A8A", "Default primary color is Royal Blue");
+  assert(defaultCustom.themeId === "minimal_blue_white", "Default theme matches the blue ID-card design");
+  assert(defaultCustom.primaryColor === "#2158E0", "Default primary color is MyZkool blue");
   assert(defaultCustom.showSchoolLogo === true, "School logo enabled by default");
 
   // Save new customization
@@ -344,7 +344,7 @@ async function runStudioTests() {
 
   // Unknown theme fallback
   const fallbackDef = getThemeDefinition("non_existent_future_theme");
-  assert(fallbackDef.id === "modern_blue_yellow", "Unknown theme ID falls back to default safely");
+  assert(fallbackDef.id === "minimal_blue_white", "Unknown theme ID falls back to default safely");
 
   // ----------------------------------------------------
   // TEST GROUP 8: Multi-Tenant Isolation

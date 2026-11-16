@@ -77,6 +77,7 @@ export default function StudentIdCards() {
   // State
   const [cards, setCards] = useState<EnrichedStudentIdCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>(targetClassId || "all");
   const [selectedSection, setSelectedSection] = useState<string>("all");
@@ -106,6 +107,7 @@ export default function StudentIdCards() {
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    setLoadError(null);
 
     async function loadData() {
       if (!schoolId) {
@@ -146,6 +148,9 @@ export default function StudentIdCards() {
         setCustomization(stored);
       } catch (err) {
         console.error("Failed to load enriched student ID card data:", err);
+        if (isMounted) {
+          setLoadError(err instanceof Error ? err.message : "Unable to issue student ID cards.");
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -253,7 +258,17 @@ export default function StudentIdCards() {
   const handleCustomizationChange = useCallback(
     (updated: Partial<IdCardCustomization>) => {
       setCustomization((prev) => {
-        const next = { ...prev, ...updated };
+        const selectedTheme = updated.themeId ? getThemeDefinition(updated.themeId) : null;
+        const next = {
+          ...prev,
+          ...updated,
+          ...(selectedTheme
+            ? {
+                primaryColor: selectedTheme.defaultPrimaryColor,
+                secondaryColor: selectedTheme.defaultSecondaryColor,
+              }
+            : {}),
+        };
         saveIdCardCustomization(schoolId, next);
         return next;
       });
@@ -510,6 +525,12 @@ export default function StudentIdCards() {
           <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center text-slate-500 text-xs">
             Loading student ID cards and institutional credentials...
           </div>
+        ) : loadError ? (
+          <div className="bg-white rounded-2xl border border-rose-200 p-12 text-center max-w-md mx-auto space-y-3">
+            <AlertCircle className="w-8 h-8 text-rose-600 mx-auto" />
+            <h3 className="text-sm font-bold text-slate-800">Unable to issue ID cards</h3>
+            <p className="text-xs text-slate-500">{loadError}</p>
+          </div>
         ) : filteredCards.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center max-w-md mx-auto space-y-3">
             <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
@@ -662,9 +683,14 @@ export default function StudentIdCards() {
                               {card.card_status}
                             </button>
 
-                            <span className="font-mono text-slate-500 font-medium">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/admin/students/${card.student_id}`)}
+                                className="font-mono text-[#2158E0] font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2158E0] rounded"
+                                aria-label={`Open ${card.full_name}'s student profile`}
+                              >
                               {card.admission_no}
-                            </span>
+                              </button>
                           </div>
                         </div>
                       );
@@ -734,7 +760,7 @@ export default function StudentIdCards() {
                   onChange={handleCustomizationChange}
                   onReset={handleResetCustomization}
                   onSaveAsDefault={handleSaveAsDefault}
-                  schoolNameDefault={cards[0]?.school_name || "Peace Convent School"}
+                  schoolNameDefault={cards[0]?.school_name || "School name unavailable"}
                   sessionDefault={cards[0]?.academic_session || "2026-2027"}
                 />
               </div>

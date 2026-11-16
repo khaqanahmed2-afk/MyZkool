@@ -1,6 +1,7 @@
 import React from "react";
 import { ChevronsRight, Shield, ShieldCheck, User } from "lucide-react";
 import { IdCardThemeProps } from "../types";
+import { ModernBlueYellowTheme } from "./ModernBlueYellowTheme";
 
 export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
   card,
@@ -9,11 +10,11 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
   qrDataUrl,
   isPrint = false,
 }) => {
-  const primaryColor = "#1D4ED8"; // Royal Blue
+  const primaryColor = "#2158E0";
   const accentShapeColor = "#93C5FD"; // Soft Sky Blue
   const badgeBg = "#DBEAFE"; // Pastel Sky Blue
 
-  const schoolName = customization.schoolNameOverride || card.school_name || "Green Valley Public School";
+  const schoolName = customization.schoolNameOverride || card.school_name || "School name unavailable";
   const session = customization.sessionOverride || card.academic_session || "2026–27";
   const initials = `${card.first_name?.[0] || ""}${card.last_name?.[0] || ""}`.toUpperCase() || "ST";
 
@@ -181,8 +182,27 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
               <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider leading-none">
                 ADM NO
               </span>
-              <span className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5">
+              <a
+                href={`/admin/students/${card.student_id}`}
+                className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#2158E0]"
+                aria-label={`Open ${card.full_name}'s student profile`}
+              >
                 {card.admission_no.replace(/[^0-9]/g, "").slice(-4) || "0142"}
+              </a>
+            </div>
+          </div>
+
+          <div className="w-full mt-2 grid grid-cols-2 gap-2 text-left">
+            <div>
+              <span className="text-[5.5px] font-bold text-slate-400 block">Date of birth</span>
+              <span className="text-[6.8px] font-bold text-slate-700 block">
+                {card.dob ? new Date(card.dob).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Not available"}
+              </span>
+            </div>
+            <div>
+              <span className="text-[5.5px] font-bold text-slate-400 block">Admission date</span>
+              <span className="text-[6.8px] font-bold text-slate-700 block">
+                {card.admission_date ? new Date(card.admission_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Not available"}
               </span>
             </div>
           </div>
@@ -196,39 +216,27 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
             borderTopColor: accentShapeColor,
           }}
         >
-          {/* White QR Container */}
-          {customization.showQrCode && (
-            <div className="w-[12mm] h-[12mm] rounded-lg bg-white p-0.5 flex items-center justify-center shadow-xs shrink-0">
-              {qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt="QR"
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="w-full h-full bg-slate-200 rounded flex items-center justify-center text-[5px] text-slate-600 font-mono">
-                  QR
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Identifier & Validity */}
-          <div className="flex-1 px-2 text-left leading-tight">
-            <span className="font-mono text-[8.5px] font-black tracking-wider text-white block uppercase">
-              {cardCode}
-            </span>
-            <span className="text-[6.2px] text-blue-200 font-medium block mt-0.5">
-              Valid till Mar 2027
-            </span>
-          </div>
-
-          {/* Double Chevron Accent Icon */}
-          <div className="shrink-0 flex items-center">
-            <ChevronsRight className="w-4 h-4 text-white font-black" />
-          </div>
+          <a
+            href={`/admin/students/${card.student_id}`}
+            className="w-full text-center font-mono text-[9px] font-black tracking-wider text-white rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            aria-label={`Open ${card.full_name}'s student profile`}
+          >
+            {card.admission_no}
+          </a>
         </div>
       </div>
+    );
+  }
+
+  if (side === "back") {
+    return (
+      <ModernBlueYellowTheme
+        card={card}
+        customization={customization}
+        side="back"
+        qrDataUrl={qrDataUrl}
+        isPrint={isPrint}
+      />
     );
   }
 
@@ -296,6 +304,19 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
 
       {/* MIDDLE BODY: 2-Column Metadata Grid, Soft-Blue Emergency Box, Signatures, Verification Pill */}
       <div className="flex-1 px-3 py-1 flex flex-col justify-between text-left">
+        {/* School contact details */}
+        <div className="text-center text-[6px] text-slate-600 leading-snug">
+          <p className="font-semibold text-slate-700 truncate">
+            {card.school_address?.split(",")?.[0] || "School address"}
+          </p>
+          <p className="font-semibold text-slate-700 truncate">
+            {card.school_address?.split(",")?.slice(1)?.join(",")?.trim() || "City, State, PIN"}
+          </p>
+          <p className="font-mono text-[5.5px] text-slate-500 mt-0.5 truncate">
+            {card.school_phone || "Contact unavailable"} {card.school_email ? `| ${card.school_email}` : ""}
+          </p>
+        </div>
+
         {/* Personal Metadata: Date of Birth & Admitted On */}
         <div className="space-y-1">
           <div className="grid grid-cols-2 gap-2 pb-0.5">
@@ -355,37 +376,6 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
           )}
         </div>
 
-        {/* Signatures Row */}
-        <div className="grid grid-cols-2 gap-2 text-center pt-1 border-t border-slate-100">
-          <div className="flex flex-col items-center">
-            <div className="w-14 border-b border-slate-300 mb-0.5" />
-            <span className="text-[5.8px] font-semibold text-slate-500 uppercase">
-              {customization.studentSignatureTitle || "Student signature"}
-            </span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <div className="w-14 border-b border-slate-300 mb-0.5" />
-            <span className="text-[5.8px] font-bold text-slate-700 uppercase">
-              {customization.principalTitle || "Principal"}
-            </span>
-          </div>
-        </div>
-
-        {/* Digital Verification Box with Shield Icon */}
-        <div className="p-1.5 rounded-xl border border-slate-200 bg-white flex items-center gap-2 shadow-2xs">
-          <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-            <ShieldCheck className="w-3.5 h-3.5 text-white" />
-          </div>
-          <div className="min-w-0 flex-1 leading-tight text-left">
-            <span className="text-[7px] font-black text-slate-900 block leading-tight">
-              Scan front QR to verify
-            </span>
-            <span className="text-[6px] font-mono font-bold text-slate-500 block leading-tight mt-0.5">
-              {cardCode}
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* BOTTOM SOFT BLUE DISCLAIMER STRIP */}
