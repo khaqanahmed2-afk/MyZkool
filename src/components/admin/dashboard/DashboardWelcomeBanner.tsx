@@ -40,8 +40,8 @@ export function DashboardWelcomeBanner({
             maskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.85) 45%, black 100%)",
             WebkitMaskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.85) 45%, black 100%)",
           }}
-          onError={(e) => {
-            (e.target as HTMLElement).style.display = "none";
+          onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+            e.currentTarget.style.display = "none";
           }}
         />
       </div>

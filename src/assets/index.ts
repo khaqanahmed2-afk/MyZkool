@@ -14,7 +14,7 @@ export const ASSETS = {
   },
   FOUNDERS: {
     KHAQAN: '/Khaqan%20Ahmad.webp',
-    AHIRI: '/Ahiri%20Naskar.webp',
+    ZIKRA: '/founder-neutral-avatar.svg',
     AQSA: '/Aqsa%20Ibrahim.webp',
   },
 } as const;

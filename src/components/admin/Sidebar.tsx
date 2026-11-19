@@ -21,6 +21,7 @@ import {
   Package,
   BarChart3,
   LogOut,
+  Globe,
 } from "lucide-react";
 import { MyZkoolLogo } from "../common/MyZkoolLogo";
 import type { School } from "../../types/school";
@@ -108,6 +109,24 @@ export const NAVIGATION_GROUPS: NavGroup[] = [
   {
     groupTitle: "School Operations",
     items: [
+      {
+        label: "Website",
+        href: "/admin/website",
+        icon: Globe,
+        children: [
+          { label: "Website Overview", href: "/admin/website", exact: true },
+          { label: "Website Editor", href: "/admin/website/editor" },
+          { label: "Pages Management", href: "/admin/website/pages" },
+          { label: "Themes & Design", href: "/admin/website/themes" },
+          { label: "Media Library", href: "/admin/website/media" },
+          { label: "News & Notices", href: "/admin/website/news" },
+          { label: "Admission Enquiries", href: "/admin/website/enquiries" },
+          { label: "Website Analytics", href: "/admin/website/analytics" },
+          { label: "SEO Settings", href: "/admin/website/seo" },
+          { label: "Domain & URL", href: "/admin/website/domain" },
+          { label: "Website Settings", href: "/admin/website/settings" },
+        ],
+      },
       { label: "Communication", href: "/admin/communication", icon: MessageSquare, exact: true },
       { label: "Library", href: "/admin/library", icon: BookOpen, exact: true },
       { label: "Inventory", href: "/admin/inventory", icon: Package, exact: true },
@@ -237,6 +256,12 @@ export function Sidebar({ school, isOpen, onClose }: SidebarProps) {
     const current = normalizePath(location.pathname);
     const target = normalizePath(child.href);
 
+    if (child.href === "/admin/website") {
+      return (
+        current === "/admin/website" ||
+        current === "/admin/website/overview"
+      );
+    }
     if (child.href === "/admin/fees") {
       return (
         current === "/admin/fees" ||

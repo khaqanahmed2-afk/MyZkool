@@ -62,6 +62,16 @@ export interface SchoolWebsite {
   admission_enabled: boolean;
   parent_portal_enabled: boolean;
   published: boolean;
+  theme_id?: string;
+  header_style?: string;
+  footer_style?: string;
+  font_family?: string;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  og_image_url?: string | null;
+  allow_indexing?: boolean;
+  custom_domain_status?: "unconfigured" | "pending_verification" | "active" | "failed" | string;
+  last_published_at?: string | null;
   created_at?: string;
   updated_at?: string;
   pages?: WebsitePage[];
@@ -89,6 +99,16 @@ export interface WebsiteSettingsInput {
   admission_enabled: boolean;
   parent_portal_enabled: boolean;
   published: boolean;
+  theme_id?: string;
+  header_style?: string;
+  footer_style?: string;
+  font_family?: string;
+  seo_title?: string;
+  seo_description?: string;
+  og_image_url?: string;
+  allow_indexing?: boolean;
+  custom_domain_status?: string;
+  last_published_at?: string;
 }
 
 /**
@@ -338,4 +358,176 @@ export const DEFAULT_WEBSITE_SECTIONS: WebsiteSectionToggle[] = [
   { key: "testimonials", label: "Parent & Alumni Testimonials", description: "Genuine quotes from school community members", isEnabled: false, canDisable: true },
   { key: "admission_cta", label: "Admission Enquiry Section", description: "Interactive enquiry trigger for prospective families", isEnabled: true, canDisable: true },
   { key: "contact_footer", label: "Contact Details & Campus Footer", description: "Address, interactive phone/email, map link, and copyright", isEnabled: true, canDisable: false },
+];
+
+/**
+ * Media Library item
+ */
+export interface WebsiteMediaItem {
+  id: string;
+  school_id: string;
+  website_id?: string | null;
+  file_name: string;
+  file_url: string;
+  file_size?: number;
+  mime_type?: string;
+  category: string;
+  created_at: string;
+}
+
+/**
+ * News, Notices, Events, and Announcements
+ */
+export type WebsitePostCategory = "news" | "notice" | "event" | "announcement";
+export type WebsitePostStatus = "draft" | "published" | "archived";
+
+export interface WebsitePost {
+  id: string;
+  school_id: string;
+  website_id?: string | null;
+  title: string;
+  description: string;
+  category: WebsitePostCategory | string;
+  featured_image?: string | null;
+  event_date?: string | null;
+  publication_date: string;
+  is_published: boolean;
+  status: WebsitePostStatus | string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Public website admission enquiry
+ */
+export type AdmissionEnquiryStatus = "new" | "contacted" | "follow-up" | "converted" | "closed";
+
+export interface AdmissionEnquiry {
+  id: string;
+  school_id: string;
+  student_name?: string | null;
+  parent_name: string;
+  phone: string;
+  email?: string | null;
+  class_grade: string;
+  message?: string | null;
+  status: AdmissionEnquiryStatus | string;
+  internal_notes?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+/**
+ * Telemetry & visitor analytics event
+ */
+export interface WebsiteAnalyticsEvent {
+  id?: string;
+  school_id: string;
+  website_id?: string | null;
+  page_path: string;
+  visitor_hash: string;
+  referrer?: string | null;
+  device_type?: "desktop" | "mobile" | "tablet" | string;
+  browser?: string | null;
+  is_preview?: boolean;
+  created_at?: string;
+}
+
+/**
+ * Aggregated analytics summary
+ */
+export interface WebsiteAnalyticsSummary {
+  totalVisitors: number;
+  uniqueVisitors: number;
+  totalPageViews: number;
+  viewsByPage: Array<{ path: string; title?: string; views: number }>;
+  trafficTrends: Array<{ date: string; visitors: number; pageViews: number }>;
+  deviceBreakdown: Array<{ device: string; count: number; percentage: number }>;
+  referrers: Array<{ source: string; count: number }>;
+  hasData: boolean;
+}
+
+/**
+ * Theme & design preset template
+ */
+export interface WebsiteThemeTemplate {
+  id: string;
+  name: string;
+  description: string;
+  badge: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  fontFamily: string;
+  headerStyle: "standard" | "centered" | "minimal";
+  footerStyle: "standard" | "rich" | "compact";
+  previewAccent: string;
+}
+
+export const WEBSITE_THEMES: WebsiteThemeTemplate[] = [
+  {
+    id: "academic-classic",
+    name: "Classic Academy",
+    description: "Traditional CBSE & ICSE scholarly trust, deep navy navigation, and timeless academic typography.",
+    badge: "Most Popular",
+    primaryColor: "#2158E0",
+    secondaryColor: "#141A2E",
+    accentColor: "#10B981",
+    fontFamily: "Inter, sans-serif",
+    headerStyle: "standard",
+    footerStyle: "rich",
+    previewAccent: "from-blue-600 to-indigo-800",
+  },
+  {
+    id: "emerald-growth",
+    name: "Vibrant Emerald",
+    description: "Eco-conscious, student growth, leadership, and moral ethics theme with warm golden highlights.",
+    badge: "Progressive",
+    primaryColor: "#0D8259",
+    secondaryColor: "#132A1C",
+    accentColor: "#F59E0B",
+    fontFamily: "Plus Jakarta Sans, sans-serif",
+    headerStyle: "standard",
+    footerStyle: "standard",
+    previewAccent: "from-emerald-700 to-teal-900",
+  },
+  {
+    id: "royal-heritage",
+    name: "Royal Heritage",
+    description: "Distinguished convent and heritage institutions emphasizing discipline, prestige, and institutional pride.",
+    badge: "Heritage",
+    primaryColor: "#991B1B",
+    secondaryColor: "#1F1618",
+    accentColor: "#D97706",
+    fontFamily: "Cinzel, serif",
+    headerStyle: "centered",
+    footerStyle: "rich",
+    previewAccent: "from-rose-900 to-red-950",
+  },
+  {
+    id: "digital-stem",
+    name: "Modern STEM & Tech",
+    description: "Future-ready digital academy styling with high-contrast violet, clean lines, and cyan accents.",
+    badge: "Tech-Focused",
+    primaryColor: "#4338CA",
+    secondaryColor: "#1E1B4B",
+    accentColor: "#06B6D4",
+    fontFamily: "Space Grotesk, sans-serif",
+    headerStyle: "minimal",
+    footerStyle: "compact",
+    previewAccent: "from-indigo-700 to-purple-900",
+  },
+  {
+    id: "slate-minimal",
+    name: "Contemporary Slate",
+    description: "Sleek, minimalist design focusing on campus photography, transparent headers, and crisp modern typography.",
+    badge: "Clean & Modern",
+    primaryColor: "#0F766E",
+    secondaryColor: "#0F172A",
+    accentColor: "#0284C7",
+    fontFamily: "Outfit, sans-serif",
+    headerStyle: "minimal",
+    footerStyle: "standard",
+    previewAccent: "from-teal-800 to-slate-900",
+  },
 ];

@@ -6,6 +6,8 @@ import {
   getHomePageContent,
   submitAdmissionEnquiry,
   getSubdomainFromHost,
+  logWebsiteAnalyticsEvent,
+  getWebsitePosts,
 } from "../../services/websiteService";
 import { isReservedSubdomain } from "../../constants/subdomains";
 import type { School } from "../../types/school";
@@ -14,6 +16,7 @@ import type {
   HomePageContent,
   FacilityItem,
   GalleryImageItem,
+  WebsitePost,
 } from "../../types/website";
 import {
   Building2,
@@ -62,6 +65,7 @@ export default function PublicSchoolWebsite() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // Admission Enquiry Form State
+  const [studentName, setStudentName] = useState("");
   const [parentName, setParentName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
   const [parentEmail, setParentEmail] = useState("");
@@ -70,6 +74,7 @@ export default function PublicSchoolWebsite() {
   const [isSubmittingEnquiry, setIsSubmittingEnquiry] = useState(false);
   const [enquirySuccess, setEnquirySuccess] = useState<string | null>(null);
   const [enquiryError, setEnquiryError] = useState<string | null>(null);
+  const [publishedPosts, setPublishedPosts] = useState<WebsitePost[]>([]);
 
   // Newsletter State
   const [newsletterEmail, setNewsletterEmail] = useState("");
@@ -79,8 +84,9 @@ export default function PublicSchoolWebsite() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   usePageMetadata({
-    title: school ? `${website?.site_name || school.name} — Official School Portal` : "Official School Website",
+    title: website?.seo_title || (school ? `${website?.site_name || school.name} — Official School Portal` : "Official School Website"),
     description:
+      website?.seo_description ||
       website?.tagline ||
       (school ? `Welcome to ${school.name}. Explore curriculum, campus facilities, and online admissions.` : "Official School Website"),
   });
@@ -115,11 +121,35 @@ export default function PublicSchoolWebsite() {
 
         if (loadedWeb) {
           setWebsite(loadedWeb);
-          const richContent = await getHomePageContent(
-            loadedWeb.id,
-            loadedSchool
-          );
-          if (isMounted) setContent(richContent);
+          const [richContent, postsRes] = await Promise.all([
+            getHomePageContent(loadedWeb.id, loadedSchool),
+            getWebsitePosts({ schoolId: loadedSchool.id, isPublishedOnly: true }),
+          ]);
+          if (isMounted) {
+            setContent(richContent);
+            if (postsRes.posts) setPublishedPosts(postsRes.posts);
+          }
+
+          // Authentic visitor telemetry logging (deduplicated by visitor hash in localStorage)
+          if (typeof window !== "undefined") {
+            const visitorKey = `myzkool_vis_${loadedSchool.id}`;
+            let visitorHash = localStorage.getItem(visitorKey);
+            if (!visitorHash) {
+              visitorHash = `v_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+              try {
+                localStorage.setItem(visitorKey, visitorHash);
+              } catch {}
+            }
+
+            logWebsiteAnalyticsEvent({
+              school_id: loadedSchool.id,
+              website_id: loadedWeb.id,
+              page_path: window.location.pathname || "/",
+              visitor_hash: visitorHash,
+              referrer: document.referrer || null,
+              is_preview: !loadedWeb.published,
+            });
+          }
         }
       } catch (err) {
         console.warn("Error fetching school website:", err);
@@ -163,6 +193,7 @@ export default function PublicSchoolWebsite() {
         email: parentEmail.trim() || undefined,
         classGrade: studentGrade,
         message: enquiryMessage.trim() || undefined,
+        studentName: studentName.trim() || undefined,
       });
 
       if (!res.success) {
@@ -171,6 +202,7 @@ export default function PublicSchoolWebsite() {
         setEnquirySuccess(
           `Thank you, ${parentName.trim()}! Your admission enquiry has been submitted. Our admissions office will contact you shortly.`
         );
+        setStudentName("");
         setParentName("");
         setParentPhone("");
         setParentEmail("");
@@ -816,13 +848,13 @@ export default function PublicSchoolWebsite() {
         )}
 
         {/* 9. News & Announcements */}
-        {isSectionEnabled("news") && content?.announcements && content.announcements.length > 0 && (
+        {isSectionEnabled("news") && ((publishedPosts && publishedPosts.length > 0) || (content?.announcements && content.announcements.length > 0)) && (
           <section id="news" className="py-16 md:py-20 border-b border-[#eadfd3]">
             <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
               <div className="space-y-6">
                 <div className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-[#5b6478]">
-                    School Circulars
+                    School Circulars & Updates
                   </span>
                   <h2 className="font-fraunces font-bold text-2xl md:text-3xl text-[#14213d]">
                     News and upcoming events
@@ -830,21 +862,45 @@ export default function PublicSchoolWebsite() {
                 </div>
 
                 <div className="divide-y divide-[#eadfd3]">
-                  {content.announcements.map((ann) => (
-                    <div key={ann.id} className="py-4 first:pt-0 flex items-start gap-4">
-                      <div className="min-w-[80px] text-xs font-extrabold uppercase font-fraunces" style={{ color: primaryColor }}>
-                        {ann.date}
-                      </div>
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-sm text-[#14213d]">
-                          {ann.title}
-                        </h4>
-                        <p className="text-xs text-[#5b6478] leading-relaxed">
-                          {ann.description}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                  {publishedPosts.length > 0
+                    ? publishedPosts.map((post) => (
+                        <div key={post.id} className="py-4 first:pt-0 flex items-start gap-4">
+                          <div className="min-w-[85px] text-xs font-extrabold uppercase font-fraunces" style={{ color: primaryColor }}>
+                            {new Date(post.publication_date).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-bold text-sm text-[#14213d]">
+                                {post.title}
+                              </h4>
+                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                {post.category}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#5b6478] leading-relaxed">
+                              {post.description}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    : content?.announcements.map((ann) => (
+                        <div key={ann.id} className="py-4 first:pt-0 flex items-start gap-4">
+                          <div className="min-w-[80px] text-xs font-extrabold uppercase font-fraunces" style={{ color: primaryColor }}>
+                            {ann.date}
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="font-bold text-sm text-[#14213d]">
+                              {ann.title}
+                            </h4>
+                            <p className="text-xs text-[#5b6478] leading-relaxed">
+                              {ann.description}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
                 </div>
               </div>
 
@@ -874,19 +930,34 @@ export default function PublicSchoolWebsite() {
                 )}
 
                 <form onSubmit={handleEnquirySubmit} className="space-y-4">
-                  <div>
-                    <label htmlFor="publicschoolwebsite-parent-s-full-name" className="block text-xs font-semibold text-[#14213d] mb-1">
-                      Parent's full name <span className="text-red-500">*</span>
-                    </label>
-                    <input id="publicschoolwebsite-parent-s-full-name"
-                      name="parentName"
-                      type="text"
-                      required
-                      value={parentName}
-                      onChange={(e) => setParentName(e.target.value)}
-                      placeholder="e.g. Rajesh Kumar"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#eadfd3] bg-[#fffaf5] text-xs text-[#14213d] focus:border-[#2158E0] focus:outline-hidden"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="publicschoolwebsite-student-name" className="block text-xs font-semibold text-[#14213d] mb-1">
+                        Student's name <span className="text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      <input id="publicschoolwebsite-student-name"
+                        name="studentName"
+                        type="text"
+                        value={studentName}
+                        onChange={(e) => setStudentName(e.target.value)}
+                        placeholder="e.g. Aarav Kumar"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#eadfd3] bg-[#fffaf5] text-xs text-[#14213d] focus:border-[#2158E0] focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="publicschoolwebsite-parent-s-full-name" className="block text-xs font-semibold text-[#14213d] mb-1">
+                        Parent / Guardian name <span className="text-red-500">*</span>
+                      </label>
+                      <input id="publicschoolwebsite-parent-s-full-name"
+                        name="parentName"
+                        type="text"
+                        required
+                        value={parentName}
+                        onChange={(e) => setParentName(e.target.value)}
+                        placeholder="e.g. Rajesh Kumar"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#eadfd3] bg-[#fffaf5] text-xs text-[#14213d] focus:border-[#2158E0] focus:outline-hidden"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

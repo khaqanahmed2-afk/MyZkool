@@ -41,7 +41,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenLegal }) => {
             <ul className="space-y-2.5 text-sm">
               <li>
                 <Link to="/about" className="hover:text-[#2158E0] transition-colors font-medium text-[#2158E0]">
-                  About Us (Our Story)
+                  About Us
                 </Link>
               </li>
               <li>

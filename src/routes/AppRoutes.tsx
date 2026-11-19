@@ -102,6 +102,19 @@ const AttendanceHistory = lazy(() => import("../pages/admin/attendance/Attendanc
 const AttendanceReports = lazy(() => import("../pages/admin/attendance/AttendanceReports"));
 const AttendanceSettingsPage = lazy(() => import("../pages/admin/attendance/AttendanceSettingsPage"));
 
+// Website Management Module
+const WebsiteOverviewPage = lazy(() => import("../pages/admin/website/WebsiteOverviewPage"));
+const WebsiteEditorPage = lazy(() => import("../pages/admin/website/WebsiteEditorPage"));
+const PagesManagementPage = lazy(() => import("../pages/admin/website/PagesManagementPage"));
+const ThemesDesignPage = lazy(() => import("../pages/admin/website/ThemesDesignPage"));
+const MediaLibraryPage = lazy(() => import("../pages/admin/website/MediaLibraryPage"));
+const NewsNoticesPage = lazy(() => import("../pages/admin/website/NewsNoticesPage"));
+const AdmissionEnquiriesPage = lazy(() => import("../pages/admin/website/AdmissionEnquiriesPage"));
+const WebsiteAnalyticsPage = lazy(() => import("../pages/admin/website/WebsiteAnalyticsPage"));
+const SeoSettingsPage = lazy(() => import("../pages/admin/website/SeoSettingsPage"));
+const DomainUrlPage = lazy(() => import("../pages/admin/website/DomainUrlPage"));
+const WebsiteSettingsPage = lazy(() => import("../pages/admin/website/WebsiteSettingsPage"));
+
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 // Master Admin Control Plane
@@ -264,6 +277,19 @@ export default function AppRoutes() {
             <Route path="transport/fees" element={<FeeZonesPage />} />
             <Route path="transport/assign" element={<BulkAssignPage />} />
             <Route path="transport/renewal" element={<YearRenewalPage />} />
+            {/* Website Management */}
+            <Route path="website" element={<WebsiteOverviewPage />} />
+            <Route path="website/overview" element={<WebsiteOverviewPage />} />
+            <Route path="website/editor" element={<WebsiteEditorPage />} />
+            <Route path="website/pages" element={<PagesManagementPage />} />
+            <Route path="website/themes" element={<ThemesDesignPage />} />
+            <Route path="website/media" element={<MediaLibraryPage />} />
+            <Route path="website/news" element={<NewsNoticesPage />} />
+            <Route path="website/enquiries" element={<AdmissionEnquiriesPage />} />
+            <Route path="website/analytics" element={<WebsiteAnalyticsPage />} />
+            <Route path="website/seo" element={<SeoSettingsPage />} />
+            <Route path="website/domain" element={<DomainUrlPage />} />
+            <Route path="website/settings" element={<WebsiteSettingsPage />} />
             <Route path="academics" element={<ModulePlaceholder />} />
             <Route path="staff" element={<ModulePlaceholder />} />
             <Route path="timetable" element={<ModulePlaceholder />} />

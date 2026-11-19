@@ -1,0 +1,33 @@
+<svg width="400" height="400" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" rx="200" fill="url(#avatar-grad)"/>
+  <!-- Subtle inner border ring -->
+  <circle cx="200" cy="200" r="198" stroke="url(#border-grad)" stroke-width="3" stroke-opacity="0.4"/>
+  
+  <!-- Modern Executive Silhouette -->
+  <g opacity="0.85">
+    <!-- Head -->
+    <circle cx="200" cy="155" r="62" fill="url(#user-grad)" />
+    <!-- Torso / Shoulders -->
+    <path d="M96 350 C96 280, 142 245, 200 245 C258 245, 304 280, 304 350 Z" fill="url(#user-grad)" />
+  </g>
+
+  <!-- Clean initials badge for enterprise branding -->
+  <circle cx="295" cy="295" r="38" fill="#FFFFFF" filter="drop-shadow(0 4px 12px rgba(15,23,42,0.12))"/>
+  <text x="295" y="303" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#2158E0" letter-spacing="0.5">ZR</text>
+
+  <defs>
+    <linearGradient id="avatar-grad" x1="0" y1="0" x2="400" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F1F5F9"/>
+      <stop offset="50%" stop-color="#E2E8F0"/>
+      <stop offset="100%" stop-color="#CBD5E1"/>
+    </linearGradient>
+    <linearGradient id="user-grad" x1="140" y1="100" x2="260" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="border-grad" x1="0" y1="0" x2="400" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2158E0"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </linearGradient>
+  </defs>
+</svg>
