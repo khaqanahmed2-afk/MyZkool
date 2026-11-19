@@ -13,6 +13,7 @@ export * from "./collection";
 export * from "./feeOperations";
 export * from "./onlinePayment";
 export * from "./transport";
+export * from "./attendance";
 // Explicit re-export to resolve name collision between staff.ts and transport.ts
 export type { StaffStatus } from "./staff";
 export type { StaffStatus as TransportStaffStatus } from "./transport";

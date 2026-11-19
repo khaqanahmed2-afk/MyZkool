@@ -14,6 +14,9 @@ export interface EnrichedStudentIdCard extends StudentIdCardItem {
   roll_no?: string | null;
   admission_date?: string | null;
   student_address?: string | null;
+  permanent_address?: string | null;
+  school_location?: string | null;
+  contact_no?: string | null;
   guardian_relation?: string | null;
   emergency_contact?: string | null;
   academic_session?: string | null;
@@ -35,15 +38,23 @@ export interface IdCardCustomization {
   secondaryColor: string;
   showSchoolLogo: boolean;
   schoolNameOverride: string;
+  schoolLocationOverride: string;
   sessionOverride: string;
   showStudentPhoto: boolean;
   photoShape: "rounded" | "square" | "circle";
   // Field toggles
+  showSchoolLocation: boolean;
+  showClassSection: boolean;
+  showFatherName: boolean;
+  showContactNo: boolean;
+  showPermanentAddress: boolean;
+  showBarcode: boolean;
+  showStudentId: boolean;
+  // Optional / secondary fields
   showBloodGroup: boolean;
   showDob: boolean;
   showRollNo: boolean;
   showAdmissionNo: boolean;
-  showClassSection: boolean;
   showAdmissionDate: boolean;
   showStudentAddress: boolean;
   showGuardianName: boolean;
@@ -51,9 +62,7 @@ export interface IdCardCustomization {
   showEmergencyContact: boolean;
   showSchoolAddress: boolean;
   showSchoolContact: boolean;
-  // Verification & Codes
   showQrCode: boolean;
-  showBarcode: boolean;
   // Signatures
   showPrincipalSignature: boolean;
   principalTitle: string;
@@ -65,34 +74,40 @@ export interface IdCardCustomization {
 }
 
 export const DEFAULT_CUSTOMIZATION: IdCardCustomization = {
-  themeId: "minimal_blue_white",
-  primaryColor: "#2158E0",
-  secondaryColor: "#DBEAFE",
+  themeId: "modern_blue_yellow",
+  primaryColor: "#0F2C59",
+  secondaryColor: "#FBBF24",
   showSchoolLogo: true,
   schoolNameOverride: "",
+  schoolLocationOverride: "",
   sessionOverride: "",
   showStudentPhoto: true,
   photoShape: "rounded",
-  showBloodGroup: true,
-  showDob: true,
-  showRollNo: true,
-  showAdmissionNo: true,
+  showSchoolLocation: true,
   showClassSection: true,
-  showAdmissionDate: true,
-  showStudentAddress: true,
+  showFatherName: true,
+  showContactNo: true,
+  showPermanentAddress: true,
+  showBarcode: true,
+  showStudentId: true,
+  showBloodGroup: false,
+  showDob: false,
+  showRollNo: false,
+  showAdmissionNo: false,
+  showAdmissionDate: false,
+  showStudentAddress: false,
   showGuardianName: true,
-  showGuardianRelation: true,
-  showEmergencyContact: true,
+  showGuardianRelation: false,
+  showEmergencyContact: false,
   showSchoolAddress: true,
   showSchoolContact: true,
   showQrCode: false,
-  showBarcode: true,
-  showPrincipalSignature: true,
+  showPrincipalSignature: false,
   principalTitle: "Principal",
   principalSignatureUrl: null,
-  showStudentSignature: true,
+  showStudentSignature: false,
   studentSignatureTitle: "Student Signature",
-  disclaimerText: "",
+  disclaimerText: "PROPERTY OF THE SCHOOL. NOT TRANSFERABLE.",
 };
 
 const CUSTOMIZATION_STORAGE_KEY_PREFIX = "myzkool_id_card_settings_";
@@ -167,6 +182,53 @@ export async function generateQrCodeDataUrl(url: string): Promise<string> {
     console.error("Failed to generate QR code locally:", err);
     return "";
   }
+}
+
+/**
+ * Intelligently formats student address records for school ID cards.
+ * Avoids duplicate components (e.g. "Mawai, Mawai"), detects rural village/post patterns,
+ * and formats urban and rural addresses cleanly without clipping.
+ */
+export function formatAddressRecord(a: any): string | null {
+  if (!a) return null;
+  const l1 = (a.line1 || "").trim();
+  const l2 = (a.line2 || "").trim();
+  const loc = (a.locality || "").trim();
+  const lmk = (a.landmark || "").trim();
+  const city = (a.city || "").trim();
+  const dist = (a.district || "").trim();
+  const st = (a.state || "").trim();
+  const pin = (a.pin || "").trim();
+
+  let primaryLine = l1;
+  const isUrban = /^(flat|house|h\.no|plot|room|apt|apartment|sector|ward|street|road|block)/i.test(l1);
+  const hasVillage = /^(village|vill|gram)/i.test(l1);
+
+  // If rural/semi-rural and line1 equals city (e.g. "Mawai" and "Mawai"), format as "Village Mawai, Post Mawai"
+  if (!isUrban && !hasVillage && l1) {
+    if (city && l1.toLowerCase() === city.toLowerCase()) {
+      primaryLine = `Village ${l1}, Post ${city}`;
+    } else if (!l2 && city) {
+      primaryLine = `Village ${l1}, Post ${city}`;
+    } else {
+      primaryLine = `Village ${l1}`;
+    }
+  }
+
+  const parts: string[] = [];
+  if (primaryLine) parts.push(primaryLine);
+  if (l2 && !primaryLine.toLowerCase().includes(l2.toLowerCase())) parts.push(l2);
+  if (loc && !primaryLine.toLowerCase().includes(loc.toLowerCase())) parts.push(loc);
+  if (lmk) parts.push(lmk);
+  if (city && !primaryLine.toLowerCase().includes(city.toLowerCase())) parts.push(city);
+  if (dist) parts.push(`District ${dist}`);
+  if (st) {
+    parts.push(pin ? `${st} – ${pin}` : st);
+  } else if (pin) {
+    parts.push(pin);
+  }
+
+  return parts.filter(Boolean).join(", ");
 }
 
 /**
@@ -394,6 +456,11 @@ export async function fetchEnrichedStudentIdCards(
     .filter(Boolean)
     .join(", ");
 
+  const defaultSchoolLocation = [schoolInfo.city, schoolInfo.state]
+    .filter(Boolean)
+    .join(", ")
+    .toUpperCase() || "MAWAI, AYODHYA, UTTAR PRADESH";
+
   const results: EnrichedStudentIdCard[] = students.map((s) => {
     const enr = enrollmentMap.get(s.id);
     const existingCard = cardsMap.get(s.id);
@@ -415,12 +482,16 @@ export async function fetchEnrichedStudentIdCards(
     const guardianName = chosenParent?.full_name || "Parent/Guardian";
     const guardianPhone = chosenParent?.phone || chosenParent?.whatsapp_phone || "N/A";
     const emergencyPhone = emergencyParent?.phone || guardianPhone;
+    const fatherName = father?.full_name || (guardianRelation.toLowerCase() === "father" ? chosenParent?.full_name : null) || chosenParent?.full_name || null;
+    const contactNo = father?.phone || chosenParent?.phone || chosenParent?.whatsapp_phone || null;
 
-    // Student Address
-    const addr = addressMap.get(s.id);
-    const formattedAddress = addr
-      ? [addr.line1, addr.line2, addr.city, addr.state, addr.pin].filter(Boolean).join(", ")
-      : "Address on file with administration";
+    // Student Addresses (both current and permanent)
+    const sAddrs = addresses.filter((a) => a.student_id === s.id);
+    const permAddr = sAddrs.find((a) => a.kind === "permanent") || sAddrs.find((a) => a.kind === "current") || sAddrs[0];
+    const currAddr = sAddrs.find((a) => a.kind === "current") || permAddr;
+
+    const formattedPermanentAddress = formatAddressRecord(permAddr) || "Address on file with administration";
+    const formattedCurrentAddress = formatAddressRecord(currAddr) || formattedPermanentAddress;
 
     const className = (enr?.class_id && classMap.get(enr.class_id)) || enr?.class_id || "Class 1";
     const sectionName = (enr?.section_id && sectionMap.get(enr.section_id)) || enr?.section_id || null;
@@ -438,7 +509,29 @@ export async function fetchEnrichedStudentIdCards(
       cardStatus = (existingCard.card_status as CardStatus) || "active";
     }
 
-    const verificationUrl = "";
+    if (!token) {
+      token = generateRandomToken(`std_${(s.admission_no || s.id).toLowerCase().replace(/[^a-z0-9]/g, "")}`);
+      if (typeof localStorage !== "undefined") {
+        try {
+          const rawCards = localStorage.getItem(`myzkool_student_id_cards_${schoolId}`);
+          const cardsArr = rawCards ? JSON.parse(rawCards) : [];
+          if (!cardsArr.some((c: any) => c.student_id === s.id)) {
+            cardsArr.push({
+              id: `card_${s.id}`,
+              school_id: schoolId,
+              student_id: s.id,
+              verification_token: token,
+              card_status: cardStatus,
+              issued_at: issuedAt,
+              valid_until: validUntil,
+            });
+            localStorage.setItem(`myzkool_student_id_cards_${schoolId}`, JSON.stringify(cardsArr));
+          }
+        } catch {}
+      }
+    }
+
+    const verificationUrl = `${origin}/verify/student/${token}`;
     const fullName = `${s.first_name}${s.middle_name ? ` ${s.middle_name}` : ""} ${s.last_name}`.trim();
 
     return {
@@ -454,12 +547,15 @@ export async function fetchEnrichedStudentIdCards(
       section_name: sectionName,
       roll_no: rollNo,
       admission_date: s.admission_date || null,
-      father_name: father?.full_name || null,
+      father_name: fatherName,
+      contact_no: contactNo,
       guardian_name: guardianName,
       guardian_relation: guardianRelation,
       guardian_phone: guardianPhone,
       emergency_contact: emergencyPhone,
-      student_address: formattedAddress,
+      student_address: formattedCurrentAddress,
+      permanent_address: formattedPermanentAddress,
+      school_location: defaultSchoolLocation,
       blood_group: s.blood_group || null,
       dob: s.dob,
       academic_session: academicYearLabel,

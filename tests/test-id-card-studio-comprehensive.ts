@@ -14,7 +14,9 @@ import {
   updateStudentCardStatus,
   verifyStudentCardToken,
   EnrichedStudentIdCard,
+  formatAddressRecord,
 } from "../src/services/idCardService";
+import { formatClassLabel } from "../src/components/admin/students/id-cards/types";
 import { ID_CARD_THEMES, getThemeDefinition, THEME_LIST } from "../src/components/admin/students/id-cards/themeRegistry";
 import type { Student, StudentEnrollment, Parent, StudentParent, StudentAddress } from "../src/types/students";
 
@@ -317,9 +319,11 @@ async function runStudioTests() {
   // ----------------------------------------------------
   console.log("\n--- Group 7: Customization Settings & Theme Registry ---");
   const defaultCustom = getIdCardCustomization(schoolA);
-  assert(defaultCustom.themeId === "minimal_blue_white", "Default theme matches the blue ID-card design");
-  assert(defaultCustom.primaryColor === "#2158E0", "Default primary color is MyZkool blue");
+  assert(defaultCustom.themeId === "modern_blue_yellow", "Default theme is Bold Blue & Yellow");
+  assert(defaultCustom.primaryColor === "#0F2C59", "Default primary color is Bold Navy Blue");
   assert(defaultCustom.showSchoolLogo === true, "School logo enabled by default");
+  assert(defaultCustom.showBarcode === true, "Barcode enabled by default on front");
+  assert(defaultCustom.showPermanentAddress === true, "Permanent address enabled by default on back");
 
   // Save new customization
   saveIdCardCustomization(schoolA, {
@@ -344,7 +348,7 @@ async function runStudioTests() {
 
   // Unknown theme fallback
   const fallbackDef = getThemeDefinition("non_existent_future_theme");
-  assert(fallbackDef.id === "minimal_blue_white", "Unknown theme ID falls back to default safely");
+  assert(fallbackDef.id === "modern_blue_yellow", "Unknown theme ID falls back to default safely");
 
   // ----------------------------------------------------
   // TEST GROUP 8: Multi-Tenant Isolation
@@ -352,6 +356,39 @@ async function runStudioTests() {
   console.log("\n--- Group 8: Multi-Tenant Isolation ---");
   const schoolBCards = await fetchEnrichedStudentIdCards(schoolB);
   assert(schoolBCards.length === 0, `School B has 0 cards, no leak from School A (actual: ${schoolBCards.length})`);
+
+  // ----------------------------------------------------
+  // TEST GROUP 9: Class Label & Dynamic Address Formatting
+  // ----------------------------------------------------
+  console.log("\n--- Group 9: Class Label & Dynamic Address Formatting ---");
+  assert(formatClassLabel("Class 11", "SCIENCE") === "CLASS 11 – SCIENCE", "No duplicate CLASS text for 'Class 11'");
+  assert(formatClassLabel("11", "SCIENCE") === "CLASS 11 – SCIENCE", "Clean format for '11'");
+  assert(formatClassLabel("CLASS 11", "SCIENCE") === "CLASS 11 – SCIENCE", "No duplicate CLASS text for 'CLASS 11'");
+  assert(formatClassLabel("Class 5", "A") === "CLASS 5 – A", "Clean format for 'Class 5' and 'A'");
+  assert(formatClassLabel("Grade 10", null) === "CLASS 10", "Stripping 'Grade' prefix gracefully");
+
+  // Rural Address formatting
+  const ruralAddr = {
+    line1: "Mawai",
+    city: "Mawai",
+    district: "Ayodhya",
+    state: "Uttar Pradesh",
+    pin: "224117",
+  };
+  const formattedRural = formatAddressRecord(ruralAddr);
+  assert(formattedRural === "Village Mawai, Post Mawai, District Ayodhya, Uttar Pradesh – 224117", `Rural address formatted with Village/Post without duplicate Mawai (actual: ${formattedRural})`);
+
+  // Urban Address formatting
+  const urbanAddr = {
+    line1: "Flat 402, Lotus Enclave",
+    line2: "Civil Lines",
+    city: "Ayodhya",
+    district: "Ayodhya",
+    state: "Uttar Pradesh",
+    pin: "224001",
+  };
+  const formattedUrban = formatAddressRecord(urbanAddr);
+  assert(formattedUrban === "Flat 402, Lotus Enclave, Civil Lines, Ayodhya, District Ayodhya, Uttar Pradesh – 224001", `Urban address formatted properly (actual: ${formattedUrban})`);
 
   console.log("\n========================================================");
   console.log(`ALL TESTS COMPLETE: ${passed} passed, ${failed} failed`);

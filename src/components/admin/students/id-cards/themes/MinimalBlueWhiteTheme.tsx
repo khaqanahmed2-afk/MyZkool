@@ -1,26 +1,27 @@
 import React from "react";
-import { ChevronsRight, Shield, ShieldCheck, User } from "lucide-react";
-import { IdCardThemeProps } from "../types";
-import { ModernBlueYellowTheme } from "./ModernBlueYellowTheme";
+import { User, Phone, Home, MapPin } from "lucide-react";
+import { IdCardThemeProps, formatClassLabel } from "../types";
+import { BarcodeSvg } from "../BarcodeSvg";
 
 export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
   card,
   customization,
   side,
-  qrDataUrl,
   isPrint = false,
 }) => {
-  const primaryColor = "#2158E0";
-  const accentShapeColor = "#93C5FD"; // Soft Sky Blue
+  const primaryColor = customization.primaryColor || "#1E40AF"; // Deep MyZkool Royal Blue
+  const accentColor = customization.secondaryColor || "#93C5FD"; // Soft Sky Blue
   const badgeBg = "#DBEAFE"; // Pastel Sky Blue
+  const badgeText = "#1E3A8A"; // Dark Navy Blue
 
-  const schoolName = customization.schoolNameOverride || card.school_name || "School name unavailable";
+  const schoolName = customization.schoolNameOverride || card.school_name || "Peace Convent School";
+  const schoolLocation = customization.schoolLocationOverride || card.school_location || "MAWAI, AYODHYA, UTTAR PRADESH";
   const session = customization.sessionOverride || card.academic_session || "2026–27";
-  const initials = `${card.first_name?.[0] || ""}${card.last_name?.[0] || ""}`.toUpperCase() || "ST";
 
+  // Card identifier formatted like MZK-2026-0101
   const cardCode = card.admission_no
     ? card.admission_no.replace("ADM-", "MZK-")
-    : "MZK-2026-0142";
+    : "MZK-2026-0101";
 
   // Dotted pattern style for header
   const dottedBackgroundStyle: React.CSSProperties = {
@@ -28,6 +29,40 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
     backgroundImage: "radial-gradient(rgba(255, 255, 255, 0.28) 1.1px, transparent 1.1px)",
     backgroundSize: "4.5px 4.5px",
   };
+
+  const fatherName = card.father_name || card.guardian_name || "Zuber Ahmad";
+  const contactNo = card.contact_no || card.guardian_phone || "8953572872";
+
+  // Format Class Label without duplication (e.g. "CLASS 11 – SCIENCE")
+  const classLabel = formatClassLabel(card.class_name, card.section_name);
+
+  // Address formatting & splitting for back side
+  const permAddr =
+    card.permanent_address ||
+    card.student_address ||
+    "Village Mawai, Post Mawai, District Ayodhya, Uttar Pradesh – 224117";
+  const permAddrParts = permAddr.split(",").map((p) => p.trim()).filter(Boolean);
+  let permAddressLine1 = "Village Mawai, Post Mawai,";
+  let permAddressLine2 = "District Ayodhya, Uttar Pradesh – 224117";
+
+  if (permAddrParts.length >= 3) {
+    permAddressLine1 = permAddrParts.slice(0, 2).join(", ") + ",";
+    permAddressLine2 = permAddrParts.slice(2).join(", ");
+  } else if (permAddrParts.length === 2) {
+    permAddressLine1 = permAddrParts[0] + ",";
+    permAddressLine2 = permAddrParts[1];
+  } else if (permAddrParts.length === 1) {
+    permAddressLine1 = permAddrParts[0];
+    permAddressLine2 = "";
+  }
+
+  // School address lines
+  const schoolAddrParts = (card.school_address || "Behind Abdul Hameed Memorial Inter College, Mawai, Ayodhya, Uttar Pradesh – 224117, India")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const schoolAddressLine1 = schoolAddrParts[0] || "Behind Abdul Hameed Memorial Inter College";
+  const schoolAddressLine2 = schoolAddrParts.slice(1).join(", ") || "Mawai, Ayodhya, Uttar Pradesh – 224117";
 
   if (side === "front") {
     return (
@@ -44,25 +79,25 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
           boxSizing: "border-box",
         }}
       >
-        {/* TOP SECTION: Royal Blue with Dotted Pattern & Soft Blue Curves */}
-        <div className="relative w-full h-[37mm] shrink-0" style={dottedBackgroundStyle}>
+        {/* TOP SECTION: Deep Blue with Dotted Pattern & Curves (Height: 29mm) */}
+        <div className="relative w-full h-[29mm] shrink-0" style={dottedBackgroundStyle}>
           {/* Lanyard Slot Cutout Indicator at top center */}
           <div className="pt-1.5 flex justify-center">
-            <div className="w-[13mm] h-[2.5mm] rounded-full bg-white/95 border border-black/10 flex items-center justify-center shadow-xs">
-              <div className="w-[9mm] h-[1.2mm] rounded-full bg-slate-300/70" />
+            <div className="w-[12mm] h-[2.4mm] rounded-full bg-white/95 border border-black/10 flex items-center justify-center shadow-xs">
+              <div className="w-[8.5mm] h-[1.2mm] rounded-full bg-slate-300/70" />
             </div>
           </div>
 
-          {/* Soft Sky Blue decorative semi-circle on the left */}
+          {/* Soft Sky Blue decorative circular shape on the left */}
           <div
-            className="absolute left-[-5mm] top-[14mm] w-[15mm] h-[15mm] rounded-full pointer-events-none z-0"
-            style={{ backgroundColor: accentShapeColor }}
+            className="absolute left-[-7mm] top-[11mm] w-[17mm] h-[17mm] rounded-full pointer-events-none z-0"
+            style={{ backgroundColor: accentColor }}
           />
 
-          {/* School Brand: Logo + Name + Session */}
-          <div className="relative z-10 px-3 pt-1 flex items-center gap-1.5">
+          {/* School Brand: Logo + Divider + Name + Location */}
+          <div className="relative z-10 px-2.5 pt-1 flex items-center">
             {customization.showSchoolLogo && (
-              <div className="w-6 h-6 rounded-full bg-white shadow-xs p-0.5 shrink-0 flex items-center justify-center border border-white/60">
+              <div className="w-8 h-8 rounded-full bg-white shadow-xs p-0.5 shrink-0 flex items-center justify-center border border-white/70">
                 {card.school_logo_url ? (
                   <img
                     src={card.school_logo_url}
@@ -70,61 +105,61 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
                     className="w-full h-full object-contain rounded-full"
                   />
                 ) : (
-                  <span className="text-[7.5px] font-black text-slate-800 tracking-tight">MZ</span>
+                  <span className="text-[7.5px] font-black text-slate-800 tracking-tight">PEACE</span>
                 )}
               </div>
             )}
+
+            {/* Vertical White Divider */}
+            <div className="w-[1.2px] h-7 bg-white/70 mx-2 shrink-0" />
+
             <div className="min-w-0 flex-1 leading-tight">
-              <h2 className="text-[8px] font-extrabold text-white tracking-tight leading-tight truncate">
+              <h2 className="text-[9.5px] font-black text-white tracking-tight uppercase leading-snug truncate">
                 {schoolName}
               </h2>
-              <span className="text-[6.5px] font-bold block leading-tight tracking-wide text-blue-100">
-                Session {session}
-              </span>
+              {customization.showSchoolLocation && (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-2.5 h-2.5 shrink-0 text-blue-200" />
+                  <span className="text-[6.2px] font-extrabold uppercase tracking-wide truncate text-blue-100">
+                    {schoolLocation}
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-
-          {/* Vertical "STUDENT ID" label on right margin */}
-          <div className="absolute right-1.5 top-[8mm] bottom-[3mm] flex flex-col justify-around items-center z-10 select-none pointer-events-none">
-            {["S", "T", "U", "D", "E", "N", "T", "•", "I", "D"].map((ch, idx) => (
-              <span key={idx} className="text-[4.5px] font-black text-white/80 leading-none">
-                {ch}
-              </span>
-            ))}
           </div>
 
           {/* Bottom Curved Wave Cutout framing the photo */}
           <svg
-            className="absolute bottom-0 left-0 w-full h-[14mm] pointer-events-none z-0"
-            viewBox="0 0 100 40"
+            className="absolute bottom-0 left-0 w-full h-[11mm] pointer-events-none z-0"
+            viewBox="0 0 100 35"
             preserveAspectRatio="none"
           >
             <path
-              d="M0,0 Q50,45 100,0 L100,40 L0,40 Z"
+              d="M0,0 Q50,38 100,0 L100,35 L0,35 Z"
               fill="#FFFFFF"
             />
           </svg>
 
-          {/* STUDENT PHOTOGRAPH: Centered with Soft Blue Offset Decorative Shadow */}
+          {/* STUDENT PHOTOGRAPH: Centered with Soft Sky Blue Offset Decorative Shadow */}
           {customization.showStudentPhoto && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-[15mm] z-20">
+            <div className="absolute left-1/2 -translate-x-1/2 top-[13.5mm] z-20">
               {/* Offset Sky Blue Shadow Shape behind bottom-right of photo */}
               <div
-                className="absolute w-[23mm] h-[26mm] rounded-2xl pointer-events-none"
+                className="absolute w-[22mm] h-[24.5mm] rounded-2xl pointer-events-none"
                 style={{
-                  backgroundColor: accentShapeColor,
+                  backgroundColor: accentColor,
                   top: "2.5px",
                   left: "2.5px",
                 }}
               />
 
               {/* Foreground Photo Frame */}
-              <div className="relative w-[23mm] h-[26mm] rounded-2xl border-[2.8px] border-white shadow-md overflow-hidden bg-slate-100 flex items-center justify-center">
+              <div className="relative w-[22mm] h-[24.5mm] rounded-2xl border-[2.8px] border-white shadow-md overflow-hidden bg-slate-100 flex items-center justify-center">
                 {card.photo_url ? (
                   <img
                     src={card.photo_url}
                     alt={card.full_name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover object-center"
                   />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 text-blue-900">
@@ -136,107 +171,81 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
           )}
         </div>
 
-        {/* MIDDLE SECTION: Student Name, Soft Blue Class Badge, and 3 Info Tiles */}
-        <div className="flex-1 px-3 pt-6 pb-1 flex flex-col items-center justify-start text-center">
-          {/* Student Full Name */}
-          <h3 className="text-[11.5px] font-black text-slate-900 tracking-tight leading-tight truncate max-w-[48mm]">
-            {card.full_name}
-          </h3>
+        {/* MIDDLE SECTION: Content begins at 40mm (2mm clearance below photo) */}
+        <div className="flex-1 px-3 pt-[11mm] pb-0 flex flex-col items-center justify-between text-center">
+          <div className="w-full flex flex-col items-center">
+            {/* Student Full Name: Prominent, Centered, Completely Visible */}
+            <h3 className="text-[12.5px] font-black text-slate-900 tracking-tight leading-tight truncate max-w-[48mm]">
+              {card.full_name}
+            </h3>
 
-          {/* Soft Pastel Blue Class Badge */}
-          {customization.showClassSection && (
-            <div className="mt-1">
-              <span
-                className="inline-block px-3 py-0.5 rounded-full text-[7.5px] font-black uppercase tracking-wider text-blue-700 shadow-2xs"
-                style={{ backgroundColor: badgeBg }}
-              >
-                CLASS {card.class_name} {card.section_name ? `- ${card.section_name}` : ""}
-              </span>
+            {/* Soft Blue Rounded Class Badge: "CLASS 11 – SCIENCE" (No duplication) */}
+            {customization.showClassSection && (
+              <div className="mt-1.5">
+                <span
+                  className="inline-block px-3.5 py-0.5 rounded-full text-[7.5px] font-black uppercase tracking-wider text-blue-900 shadow-2xs"
+                  style={{ backgroundColor: badgeBg }}
+                >
+                  {classLabel}
+                </span>
+              </div>
+            )}
+
+            {/* Father Name and Contact Number Rows */}
+            <div className="w-full max-w-[47mm] mt-2 space-y-1 px-0.5">
+              {customization.showFatherName && (
+                <div className="flex items-center text-left py-0.5">
+                  <div className="w-3.5 flex justify-center shrink-0">
+                    <User className="w-3.5 h-3.5 text-slate-700" />
+                  </div>
+                  <div className="w-[1px] h-3.5 bg-slate-300 mx-1.5 shrink-0" />
+                  <span className="text-[7.6px] font-bold text-slate-700 shrink-0">Father Name&nbsp;&nbsp;:</span>
+                  <span className="text-[7.8px] font-extrabold text-slate-900 ml-1.5 truncate flex-1">
+                    {fatherName}
+                  </span>
+                </div>
+              )}
+
+              {customization.showContactNo && (
+                <div className="flex items-center text-left py-0.5">
+                  <div className="w-3.5 flex justify-center shrink-0">
+                    <Phone className="w-3.5 h-3.5 text-slate-700" />
+                  </div>
+                  <div className="w-[1px] h-3.5 bg-slate-300 mx-1.5 shrink-0" />
+                  <span className="text-[7.6px] font-bold text-slate-700 shrink-0">Contact No.&nbsp;&nbsp;:</span>
+                  <span className="font-mono text-[7.8px] font-extrabold text-slate-900 ml-1.5 truncate flex-1">
+                    {contactNo}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Barcode on the Front */}
+          {customization.showBarcode && (
+            <div className="w-full flex flex-col items-center justify-center pt-0.5 pb-1">
+              <div className="w-full border-t border-slate-200 mb-1" />
+              <BarcodeSvg
+                value={cardCode}
+                width={145}
+                height={20}
+                showText={false}
+              />
+              {customization.showStudentId && (
+                <span className="font-mono text-[7.2px] font-extrabold text-slate-800 tracking-[0.22em] mt-0.5">
+                  {cardCode}
+                </span>
+              )}
             </div>
           )}
-
-          {/* 3 Information Tiles: ROLL NO | BLOOD | ADM NO */}
-          <div className="w-full mt-2 grid grid-cols-3 gap-1 px-0.5">
-            {/* Tile 1: Roll No */}
-            <div className="bg-slate-100/90 rounded-lg py-1 px-0.5 text-center border border-slate-200/50">
-              <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider leading-none">
-                ROLL NO
-              </span>
-              <span className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5">
-                {card.roll_no || "24"}
-              </span>
-            </div>
-
-            {/* Tile 2: Blood Group */}
-            <div className="bg-slate-100/90 rounded-lg py-1 px-0.5 text-center border border-slate-200/50">
-              <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider leading-none">
-                BLOOD
-              </span>
-              <span className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5">
-                {card.blood_group || "B+"}
-              </span>
-            </div>
-
-            {/* Tile 3: Admission No */}
-            <div className="bg-slate-100/90 rounded-lg py-1 px-0.5 text-center border border-slate-200/50">
-              <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider leading-none">
-                ADM NO
-              </span>
-              <a
-                href={`/admin/students/${card.student_id}`}
-                className="text-[8.5px] font-black text-slate-900 leading-tight block mt-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#2158E0]"
-                aria-label={`Open ${card.full_name}'s student profile`}
-              >
-                {card.admission_no.replace(/[^0-9]/g, "").slice(-4) || "0142"}
-              </a>
-            </div>
-          </div>
-
-          <div className="w-full mt-2 grid grid-cols-2 gap-2 text-left">
-            <div>
-              <span className="text-[5.5px] font-bold text-slate-400 block">Date of birth</span>
-              <span className="text-[6.8px] font-bold text-slate-700 block">
-                {card.dob ? new Date(card.dob).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Not available"}
-              </span>
-            </div>
-            <div>
-              <span className="text-[5.5px] font-bold text-slate-400 block">Admission date</span>
-              <span className="text-[6.8px] font-bold text-slate-700 block">
-                {card.admission_date ? new Date(card.admission_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Not available"}
-              </span>
-            </div>
-          </div>
         </div>
 
-        {/* BOTTOM SECTION: Dedicated Blue Verification Panel with QR Code */}
-        <div
-          className="relative px-2.5 py-1.5 flex items-center justify-between text-white shrink-0 border-t-2"
-          style={{
-            backgroundColor: primaryColor,
-            borderTopColor: accentShapeColor,
-          }}
-        >
-          <a
-            href={`/admin/students/${card.student_id}`}
-            className="w-full text-center font-mono text-[9px] font-black tracking-wider text-white rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            aria-label={`Open ${card.full_name}'s student profile`}
-          >
-            {card.admission_no}
-          </a>
+        {/* BOTTOM SECTION: Accent Line & Solid Blue Block */}
+        <div className="w-full shrink-0">
+          <div className="w-full h-[1.5px]" style={{ backgroundColor: accentColor }} />
+          <div className="w-full h-[5.5mm]" style={{ backgroundColor: primaryColor }} />
         </div>
       </div>
-    );
-  }
-
-  if (side === "back") {
-    return (
-      <ModernBlueYellowTheme
-        card={card}
-        customization={customization}
-        side="back"
-        qrDataUrl={qrDataUrl}
-        isPrint={isPrint}
-      />
     );
   }
 
@@ -257,19 +266,19 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
         boxSizing: "border-box",
       }}
     >
-      {/* TOP SECTION: Blue Curved Header with Logo & Title */}
-      <div className="relative w-full h-[22mm] shrink-0" style={dottedBackgroundStyle}>
+      {/* TOP SECTION: Blue Curved Header with Centered Logo & Title */}
+      <div className="relative w-full h-[24mm] shrink-0" style={dottedBackgroundStyle}>
         {/* Lanyard slot */}
         <div className="pt-1.5 flex justify-center">
-          <div className="w-[13mm] h-[2.5mm] rounded-full bg-white/95 border border-black/10 flex items-center justify-center shadow-xs">
-            <div className="w-[9mm] h-[1.2mm] rounded-full bg-slate-300/70" />
+          <div className="w-[12mm] h-[2.4mm] rounded-full bg-white/95 border border-black/10 flex items-center justify-center shadow-xs">
+            <div className="w-[8.5mm] h-[1.2mm] rounded-full bg-slate-300/70" />
           </div>
         </div>
 
         {/* Center Circular Logo */}
-        <div className="relative z-10 flex flex-col items-center justify-center pt-0.5">
+        <div className="relative z-10 flex flex-col items-center justify-center pt-1">
           {customization.showSchoolLogo && (
-            <div className="w-6 h-6 rounded-full bg-white shadow-xs p-0.5 flex items-center justify-center border border-white/60 mb-0.5">
+            <div className="w-8 h-8 rounded-full bg-white shadow-xs p-0.5 flex items-center justify-center border border-white/70 mb-0.5">
               {card.school_logo_url ? (
                 <img
                   src={card.school_logo_url}
@@ -277,21 +286,21 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
                   className="w-full h-full object-contain rounded-full"
                 />
               ) : (
-                <span className="text-[7px] font-black text-slate-800 tracking-tight">MZ</span>
+                <span className="text-[7.5px] font-black text-slate-800 tracking-tight">PEACE</span>
               )}
             </div>
           )}
-          <h2 className="text-[8.5px] font-extrabold text-white uppercase tracking-tight leading-none text-center px-2 truncate max-w-[48mm]">
+          <h2 className="text-[9.5px] font-black text-white uppercase tracking-tight leading-none text-center px-2 truncate max-w-[48mm]">
             {schoolName}
           </h2>
-          <span className="text-[6px] text-blue-200 font-medium block mt-0.5">
+          <span className="text-[6.5px] text-blue-100 font-semibold uppercase tracking-wider block mt-0.5">
             Student identity card
           </span>
         </div>
 
         {/* Downward curved scoop at bottom of header */}
         <svg
-          className="absolute bottom-0 left-0 w-full h-[8mm] pointer-events-none z-0"
+          className="absolute bottom-0 left-0 w-full h-[9mm] pointer-events-none z-0"
           viewBox="0 0 100 30"
           preserveAspectRatio="none"
         >
@@ -302,89 +311,61 @@ export const MinimalBlueWhiteTheme: React.FC<IdCardThemeProps> = ({
         </svg>
       </div>
 
-      {/* MIDDLE BODY: 2-Column Metadata Grid, Soft-Blue Emergency Box, Signatures, Verification Pill */}
-      <div className="flex-1 px-3 py-1 flex flex-col justify-between text-left">
-        {/* School contact details */}
-        <div className="text-center text-[6px] text-slate-600 leading-snug">
-          <p className="font-semibold text-slate-700 truncate">
-            {card.school_address?.split(",")?.[0] || "School address"}
-          </p>
-          <p className="font-semibold text-slate-700 truncate">
-            {card.school_address?.split(",")?.slice(1)?.join(",")?.trim() || "City, State, PIN"}
-          </p>
-          <p className="font-mono text-[5.5px] text-slate-500 mt-0.5 truncate">
-            {card.school_phone || "Contact unavailable"} {card.school_email ? `| ${card.school_email}` : ""}
-          </p>
-        </div>
-
-        {/* Personal Metadata: Date of Birth & Admitted On */}
-        <div className="space-y-1">
-          <div className="grid grid-cols-2 gap-2 pb-0.5">
-            <div>
-              <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider">
-                DATE OF BIRTH
-              </span>
-              <span className="text-[7.5px] font-black text-slate-800 block">
-                {card.dob ? new Date(card.dob).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "14 Aug 2015"}
-              </span>
-            </div>
-            <div>
-              <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider">
-                ADMITTED ON
-              </span>
-              <span className="text-[7.5px] font-black text-slate-800 block">
-                {card.admission_date ? new Date(card.admission_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "01 Apr 2021"}
-              </span>
-            </div>
+      {/* MIDDLE BODY: Balanced Layout with Return Address & Highlighted Permanent Address */}
+      <div className="flex-1 px-3.5 py-2 flex flex-col justify-around text-center">
+        {/* Return Address Instructions */}
+        {customization.showSchoolAddress && (
+          <div className="text-[6.5px] text-slate-500 leading-snug py-1">
+            <p className="text-slate-500 italic">If found, please return to</p>
+            <p className="font-bold text-slate-800 truncate mt-0.5">{schoolAddressLine1}</p>
+            <p className="font-bold text-slate-800 truncate">{schoolAddressLine2}</p>
+            {customization.showSchoolContact && (
+              <p className="text-[6.2px] font-mono font-medium text-slate-600 mt-1">
+                {card.school_phone} | {card.school_email}
+              </p>
+            )}
           </div>
+        )}
 
-          {/* Student Address */}
-          <div>
-            <span className="text-[5.5px] uppercase font-bold text-slate-400 block tracking-wider">
-              ADDRESS
-            </span>
-            <p className="text-[6.8px] font-medium text-slate-700 leading-tight line-clamp-1">
-              {card.student_address?.split(",")?.slice(0, 2)?.join(",") || "[Home address line], [City]"}
-            </p>
-          </div>
-        </div>
-
-        {/* Highlighted Soft-Blue Emergency Contact Card */}
-        <div
-          className="p-1.5 rounded-xl border leading-snug"
-          style={{
-            backgroundColor: "#EFF6FF", // Soft Ice/Sky Blue
-            borderColor: "#BFDBFE",
-          }}
-        >
-          <span
-            className="text-[5.5px] font-extrabold uppercase tracking-widest block mb-0.5"
-            style={{ color: "#1D4ED8" }}
+        {/* Dedicated Highlighted Permanent Address Container */}
+        {customization.showPermanentAddress && (
+          <div
+            className="p-2.5 rounded-xl border text-left leading-snug shadow-2xs my-1"
+            style={{
+              backgroundColor: "#F0F7FF", // Soft Sky/Pastel Blue
+              borderColor: "#BFDBFE",
+            }}
           >
-            EMERGENCY CONTACT
-          </span>
-          <p className="text-[7.5px] font-black text-slate-900 leading-tight">
-            {card.guardian_name} {card.guardian_relation ? `(${card.guardian_relation})` : "(Father)"}
-          </p>
-          <p className="text-[7.5px] font-mono font-bold text-slate-800 leading-tight mt-0.5">
-            {card.emergency_contact || card.guardian_phone || "+91 98765 43210"}
-          </p>
-          {card.blood_group && (
-            <p className="text-[7px] font-bold text-slate-700 mt-0.5">
-              Blood group: {card.blood_group}
-            </p>
-          )}
-        </div>
-
+            <span
+              className="text-[6.2px] font-extrabold uppercase tracking-wider block mb-1 text-blue-800"
+            >
+              PERMANENT ADDRESS
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Home className="w-4 h-4 shrink-0 text-blue-700" />
+              <div className="w-[1px] h-6 bg-blue-300 mx-1 shrink-0" />
+              <div className="min-w-0 flex-1 leading-tight">
+                <p className="text-[7.8px] font-extrabold text-slate-900 leading-tight">
+                  {permAddressLine1}
+                </p>
+                {permAddressLine2 && (
+                  <p className="text-[7.8px] font-extrabold text-slate-800 leading-tight mt-0.5">
+                    {permAddressLine2}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* BOTTOM SOFT BLUE DISCLAIMER STRIP */}
+      {/* BOTTOM BLUE DISCLAIMER STRIP */}
       <div
-        className="py-1 px-2 text-center shrink-0"
+        className="py-1.5 px-2 text-center shrink-0"
         style={{ backgroundColor: badgeBg }}
       >
-        <span className="text-[6px] font-black text-blue-900 uppercase tracking-tight block">
-          Property of the school. Not transferable.
+        <span className="text-[6.2px] font-black text-blue-950 uppercase tracking-tight block">
+          {customization.disclaimerText || "PROPERTY OF THE SCHOOL. NOT TRANSFERABLE."}
         </span>
       </div>
     </div>

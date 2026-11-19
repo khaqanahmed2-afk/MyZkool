@@ -166,6 +166,7 @@ export async function getAdminDashboardData(params: {
       studentDocsRes,
       approvalsPendingRes,
       transportRequestsPendingRes,
+      todayAttendanceRes,
     ] = await Promise.all([
       // Total enrolled students
       supabase
@@ -246,7 +247,31 @@ export async function getAdminDashboardData(params: {
         .select("id", { count: "exact", head: true })
         .eq("school_id", schoolId)
         .eq("status", "pending"),
+
+      // Today's attendance records
+      supabase
+        .from("student_attendance_records")
+        .select("status")
+        .eq("school_id", schoolId)
+        .eq("date", new Date().toISOString().split("T")[0]),
     ]);
+
+    // Populate real Attendance KPIs from today's attendance records
+    const attendanceRecords = todayAttendanceRes?.data || [];
+    if (attendanceRecords.length > 0) {
+      let pres = 0;
+      let abs = 0;
+      attendanceRecords.forEach((r: any) => {
+        if (r.status === "present" || r.status === "late") pres++;
+        else if (r.status === "absent" || r.status === "leave") abs++;
+      });
+      const tot = pres + abs;
+      kpis.attendancePresent = pres;
+      kpis.attendanceAbsent = abs;
+      kpis.attendanceTotal = tot;
+      kpis.attendanceRatePct = tot > 0 ? Math.round((pres / tot) * 1000) / 10 : 0;
+      kpis.attendanceRecorded = true;
+    }
 
     // Update students count
     if (studentsCountRes.count !== null && studentsCountRes.count !== undefined) {

@@ -63,6 +63,11 @@ async function captureUpdatedScreenshots() {
   const chromePath = "D:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
   const userDataDir = path.join(os.tmpdir(), "temp_chrome_corr_" + Date.now());
   const screenshotsDir = path.join(process.cwd(), "docs", "assets", "screenshots");
+  const brainDir = "D:\\Users\\KhaqanLife\\.gemini\\antigravity\\brain\\9c269cb7-0b69-4171-b452-eeba9f044ecc";
+
+  if (!fs.existsSync(screenshotsDir)) {
+    fs.mkdirSync(screenshotsDir, { recursive: true });
+  }
 
   const chromeProcess = spawn(chromePath, [
     `--remote-debugging-port=${port}`,
@@ -94,15 +99,27 @@ async function captureUpdatedScreenshots() {
     await client.send("DOM.enable");
     await client.send("Emulation.setDeviceMetricsOverride", {
       width: 1440,
-      height: 960,
+      height: 1400,
       deviceScaleFactor: 1,
       mobile: false,
     });
 
     // 1. Login
     await client.send("Page.navigate", { url: "http://localhost:3000/login" });
-    await sleep(2000);
-    await client.evaluate(`(() => {
+    
+    // Poll until login form is mounted
+    let formReady = false;
+    for (let i = 0; i < 30; i++) {
+      await sleep(400);
+      const isInputPresent = await client.evaluate("Boolean(document.querySelector('#login-email-username'))");
+      if (isInputPresent === true) {
+        formReady = true;
+        break;
+      }
+    }
+    console.log("Login form mounted:", formReady);
+
+    const fillRes = await client.evaluate(`(() => {
       const emailInput = document.querySelector('#login-email-username');
       const passInput = document.querySelector('#login-password');
       const setVal = (el, val) => {
@@ -113,11 +130,34 @@ async function captureUpdatedScreenshots() {
       };
       if (emailInput) setVal(emailInput, 'myzkool.official@gmail.com');
       if (passInput) setVal(passInput, 'R@shid12');
-      const btn = document.querySelector('button[type="submit"]');
-      if (btn) btn.click();
+      return { email: emailInput?.value, pass: passInput?.value?.length };
     })()`);
+    console.log("Credentials filled:", fillRes);
 
-    await sleep(3500);
+    await sleep(400);
+
+    const submitRes = await client.evaluate(`(() => {
+      const btn = document.querySelector('button[type="submit"]');
+      if (btn) {
+        btn.click();
+        return { clicked: true, text: btn.innerText };
+      }
+      return { clicked: false };
+    })()`);
+    console.log("Submit clicked:", submitRes);
+
+    // Wait for login transition
+    for (let s = 1; s <= 15; s++) {
+      await sleep(1000);
+      const curPath = await client.evaluate("window.location.pathname");
+      console.log(`[t+${s}s] Path: ${curPath}`);
+      if (curPath && (curPath.startsWith('/admin') || curPath === '/dashboard')) {
+        console.log("SUCCESS: Logged in! Path:", curPath);
+        break;
+      }
+    }
+
+    await sleep(2000);
 
     // 2. Navigate to ID Cards
     await client.send("Page.navigate", { url: "http://localhost:3000/admin/students/id-cards" });
@@ -125,30 +165,56 @@ async function captureUpdatedScreenshots() {
     // Wait until loading is done
     for (let i = 0; i < 30; i++) {
       await sleep(500);
-      const isLoaded = await client.evaluate(`!document.body.innerText.includes('Loading student ID cards') && document.body.innerText.includes('Saanvi')`);
+      const isLoaded = await client.evaluate(`!document.body.innerText.includes('Loading student ID cards') && (document.body.innerText.includes('Khaqan') || document.body.innerText.includes('Peace') || document.body.innerText.includes('Saanvi'))`);
       if (isLoaded) break;
     }
 
     await sleep(1500);
 
-    // 1. Theme 1: Modern Blue & Yellow (Side-by-Side Front & Back)
+    // 1. Theme 1: Bold Blue & Yellow (Side-by-Side Front & Back)
     console.log("Saving theme1_modern_side_by_side.png...");
     const scTheme1 = await client.send("Page.captureScreenshot", { format: "png" });
     fs.writeFileSync(path.join(screenshotsDir, "theme1_modern_side_by_side.png"), Buffer.from(scTheme1.data, "base64"));
 
-    // 2. Switch to Theme 2: Minimal Blue & White via the Header theme button
-    console.log("Clicking Minimal Blue & White theme button...");
+    // Capture isolated card preview for Theme 1
+    const clip1 = await client.evaluate(`(() => {
+      const el = document.getElementById('id-card-preview-viewport');
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), scale: 1 };
+    })()`);
+    if (clip1) {
+      console.log("Capturing isolated theme 1 cards clip:", clip1);
+      const scClip1 = await client.send("Page.captureScreenshot", { format: "png", clip: clip1 });
+      fs.writeFileSync(path.join(screenshotsDir, "theme1_modern_cards_isolated.png"), Buffer.from(scClip1.data, "base64"));
+    }
+
+    // 2. Switch to Theme 2: Blue Shades via the Header theme button
+    console.log("Clicking Blue Shades theme button...");
     await client.evaluate(`(() => {
       const btns = Array.from(document.querySelectorAll('button'));
-      const minBtn = btns.find(b => b.textContent && b.textContent.includes('Minimal Blue & White'));
+      const minBtn = btns.find(b => b.textContent && (b.textContent.includes('Blue Shades') || b.textContent.includes('Minimal')));
       if (minBtn) minBtn.click();
     })()`);
     await sleep(1200);
 
-    // Capture Theme 2: Minimal Blue & White (Side-by-Side Front & Back)
+    // Capture Theme 2: Blue Shades (Side-by-Side Front & Back)
     console.log("Saving theme2_minimal_side_by_side.png...");
     const scTheme2 = await client.send("Page.captureScreenshot", { format: "png" });
     fs.writeFileSync(path.join(screenshotsDir, "theme2_minimal_side_by_side.png"), Buffer.from(scTheme2.data, "base64"));
+
+    // Capture isolated card preview for Theme 2
+    const clip2 = await client.evaluate(`(() => {
+      const el = document.getElementById('id-card-preview-viewport');
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), scale: 1 };
+    })()`);
+    if (clip2) {
+      console.log("Capturing isolated theme 2 cards clip:", clip2);
+      const scClip2 = await client.send("Page.captureScreenshot", { format: "png", clip: clip2 });
+      fs.writeFileSync(path.join(screenshotsDir, "theme2_minimal_cards_isolated.png"), Buffer.from(scClip2.data, "base64"));
+    }
 
     // 3. Switch to Batch Gallery Tab
     console.log("Switching to Batch Gallery Tab...");
@@ -178,6 +244,23 @@ async function captureUpdatedScreenshots() {
 
     client.close();
     console.log("Updated theme screenshots captured successfully!");
+
+    // Copy screenshots to brain artifact directory
+    for (const f of [
+      "theme1_modern_side_by_side.png",
+      "theme1_modern_cards_isolated.png",
+      "theme2_minimal_side_by_side.png",
+      "theme2_minimal_cards_isolated.png",
+      "theme2_batch_gallery.png",
+      "theme2_a4_sheet_preview.png",
+    ]) {
+      const src = path.join(screenshotsDir, f);
+      const dst = path.join(brainDir, f);
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, dst);
+        console.log(`Copied ${f} to artifact directory`);
+      }
+    }
   } catch (err) {
     console.error("Capture failed:", err);
   } finally {

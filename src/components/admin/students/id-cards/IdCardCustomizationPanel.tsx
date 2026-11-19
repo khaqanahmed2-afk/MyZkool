@@ -4,7 +4,7 @@ import {
   Building,
   Image,
   Eye,
-  QrCode,
+  Barcode,
   FileText,
   RotateCcw,
   Save,
@@ -12,8 +12,9 @@ import {
   ChevronDown,
   ChevronRight,
   Sliders,
+  MapPin,
 } from "lucide-react";
-import { IdCardCustomization, DEFAULT_CUSTOMIZATION } from "../../../../services/idCardService";
+import { IdCardCustomization } from "../../../../services/idCardService";
 import { THEME_LIST } from "./themeRegistry";
 
 interface IdCardCustomizationPanelProps {
@@ -64,7 +65,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
           <button
             type="button"
             onClick={onReset}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition text-xs font-semibold"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition text-xs font-semibold cursor-pointer"
             title="Reset to default settings"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -105,7 +106,6 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
               <div className="grid grid-cols-1 gap-2.5">
                 {THEME_LIST.map((theme) => {
                   const isSelected = customization.themeId === theme.id;
-                  const isModern = theme.id === "modern_blue_yellow";
                   return (
                     <div
                       key={theme.id}
@@ -133,7 +133,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                             style={{ backgroundColor: theme.defaultSecondaryColor }}
                           />
                         </div>
-                        {/* Mini Center badge */}
+                        {/* Mini Center photo & badge */}
                         <div className="flex flex-col items-center py-0.5">
                           <div className="w-3.5 h-4 rounded bg-slate-200 border border-white" />
                           <div
@@ -143,10 +143,10 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                         </div>
                         {/* Mini Bottom bar */}
                         <div
-                          className="h-2.5 w-full flex items-center justify-between px-0.5"
+                          className="h-2.5 w-full flex items-center justify-center px-0.5"
                           style={{ backgroundColor: theme.defaultPrimaryColor }}
                         >
-                          <div className="w-1.5 h-1.5 bg-white rounded-xs" />
+                          <div className="w-6 h-0.5 bg-slate-200 rounded-xs" />
                         </div>
                       </div>
 
@@ -182,7 +182,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                         value={customization.primaryColor}
                         onChange={(e) => onChange({ primaryColor: e.target.value })}
                         className="w-7 h-7 rounded border border-slate-300 p-0.5 cursor-pointer bg-white"
-                        title="Primary Header Color"
+                        title="Primary Navy Blue Color"
                       />
                       <span className="text-[11px] text-slate-600 font-medium">Primary</span>
                     </div>
@@ -192,7 +192,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                         value={customization.secondaryColor}
                         onChange={(e) => onChange({ secondaryColor: e.target.value })}
                         className="w-7 h-7 rounded border border-slate-300 p-0.5 cursor-pointer bg-white"
-                        title="Secondary Shape Color"
+                        title="Secondary Accent Yellow"
                       />
                       <span className="text-[11px] text-slate-600 font-medium">Accent</span>
                     </div>
@@ -203,7 +203,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
           )}
         </div>
 
-        {/* 2. SCHOOL BRANDING */}
+        {/* 2. SCHOOL IDENTITY & HEADER */}
         <div>
           <button
             type="button"
@@ -244,9 +244,30 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                   onChange={(e) => onChange({ schoolNameOverride: e.target.value })}
                   className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600 bg-white"
                 />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">
-                  Leave blank to use registered school name.
-                </span>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-700">
+                    School Location (Header)
+                  </label>
+                  <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={customization.showSchoolLocation}
+                      onChange={(e) => onChange({ showSchoolLocation: e.target.checked })}
+                      className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300"
+                    />
+                    <span>Show</span>
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  placeholder="MAWAI, AYODHYA, UTTAR PRADESH"
+                  value={customization.schoolLocationOverride}
+                  onChange={(e) => onChange({ schoolLocationOverride: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600 bg-white"
+                />
               </div>
 
               <div>
@@ -265,7 +286,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
           )}
         </div>
 
-        {/* 3. STUDENT PHOTO */}
+        {/* 3. STUDENT PHOTOGRAPH */}
         <div>
           <button
             type="button"
@@ -294,6 +315,32 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                   className="w-4 h-4 text-blue-600 rounded border-slate-300 cursor-pointer"
                 />
               </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Frame Corner Shape
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "rounded", label: "Rounded" },
+                    { id: "square", label: "Square" },
+                    { id: "circle", label: "Circle" },
+                  ].map((shape) => (
+                    <button
+                      key={shape.id}
+                      type="button"
+                      onClick={() => onChange({ photoShape: shape.id as any })}
+                      className={`py-1.5 px-2 rounded-lg border text-center font-bold text-[11px] cursor-pointer transition ${
+                        customization.photoShape === shape.id
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {shape.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -307,7 +354,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
           >
             <div className="flex items-center gap-2 font-bold text-slate-800">
               <Eye className="w-4 h-4 text-emerald-600" />
-              <span>Information Fields</span>
+              <span>Card Information Fields</span>
             </div>
             {openSection === "fields" ? (
               <ChevronDown className="w-4 h-4 text-slate-400" />
@@ -317,21 +364,61 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
           </button>
 
           {openSection === "fields" && (
-            <div className="p-4 pt-1 space-y-2 bg-slate-50/40">
+            <div className="p-4 pt-1 space-y-3 bg-slate-50/40">
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 pb-1 border-b border-slate-200">
+                Front Side Fields
+              </div>
+
               {[
-                { key: "showAdmissionNo", label: "Admission Number" },
-                { key: "showRollNo", label: "Roll Number" },
-                { key: "showClassSection", label: "Class & Section" },
-                { key: "showBloodGroup", label: "Blood Group" },
-                { key: "showDob", label: "Date of Birth" },
-                { key: "showAdmissionDate", label: "Admission Date" },
-                { key: "showGuardianName", label: "Guardian / Father Name" },
-                { key: "showEmergencyContact", label: "Emergency Phone" },
-                { key: "showStudentAddress", label: "Student Home Address" },
-                { key: "showSchoolAddress", label: "School Address & Contact" },
+                { key: "showClassSection", label: "Class & Section Badge" },
+                { key: "showFatherName", label: "Father Name" },
+                { key: "showContactNo", label: "Contact Number" },
+                { key: "showBarcode", label: "Vector Barcode" },
+                { key: "showStudentId", label: "Student ID (Below Barcode)" },
               ].map(({ key, label }) => (
                 <div key={key} className="flex items-center justify-between py-1">
                   <span className="text-slate-700 font-medium text-[11px]">{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={(customization as any)[key]}
+                    onChange={(e) => onChange({ [key]: e.target.checked } as any)}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 cursor-pointer"
+                  />
+                </div>
+              ))}
+
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 pt-2 pb-1 border-b border-slate-200">
+                Back Side Fields
+              </div>
+
+              {[
+                { key: "showSchoolAddress", label: "School Address & Contact" },
+                { key: "showPermanentAddress", label: "Permanent Address (Highlighted Container)" },
+              ].map(({ key, label }) => (
+                <div key={key} className="flex items-center justify-between py-1">
+                  <span className="text-slate-700 font-medium text-[11px]">{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={(customization as any)[key]}
+                    onChange={(e) => onChange({ [key]: e.target.checked } as any)}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 cursor-pointer"
+                  />
+                </div>
+              ))}
+
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 pt-2 pb-1 border-b border-slate-200">
+                Optional Secondary Fields
+              </div>
+
+              {[
+                { key: "showRollNo", label: "Roll Number" },
+                { key: "showAdmissionNo", label: "Admission Number" },
+                { key: "showBloodGroup", label: "Blood Group" },
+                { key: "showDob", label: "Date of Birth" },
+                { key: "showAdmissionDate", label: "Admission Date" },
+              ].map(({ key, label }) => (
+                <div key={key} className="flex items-center justify-between py-1">
+                  <span className="text-slate-600 text-[11px]">{label}</span>
                   <input
                     type="checkbox"
                     checked={(customization as any)[key]}
@@ -344,50 +431,33 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
           )}
         </div>
 
-        {/* 5. VERIFICATION & CODES */}
+        {/* 5. BARCODE & IDENTIFIER */}
         <div>
           <button
             type="button"
-            onClick={() => toggleSection("verification")}
+            onClick={() => toggleSection("barcode")}
             className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition cursor-pointer"
           >
             <div className="flex items-center gap-2 font-bold text-slate-800">
-              <QrCode className="w-4 h-4 text-purple-600" />
-              <span>QR & Barcode Verification</span>
+              <Barcode className="w-4 h-4 text-purple-600" />
+              <span>Barcode & Identification</span>
             </div>
-            {openSection === "verification" ? (
+            {openSection === "barcode" ? (
               <ChevronDown className="w-4 h-4 text-slate-400" />
             ) : (
               <ChevronRight className="w-4 h-4 text-slate-400" />
             )}
           </button>
 
-          {openSection === "verification" && (
+          {openSection === "barcode" && (
             <div className="p-4 pt-1 space-y-2 bg-slate-50/40">
               <div className="flex items-center justify-between py-1">
                 <div>
                   <span className="text-slate-800 font-bold block text-[11px]">
-                    Dynamic QR Code Verification
+                    Front Vector Barcode
                   </span>
                   <span className="text-[10px] text-slate-500 block">
-                    High error-correction QR pointing to secure public verification URL.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={customization.showQrCode}
-                  onChange={(e) => onChange({ showQrCode: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300 cursor-pointer shrink-0"
-                />
-              </div>
-
-              <div className="flex items-center justify-between py-1 border-t border-slate-200/80 pt-2">
-                <div>
-                  <span className="text-slate-800 font-bold block text-[11px]">
-                    Vector Barcode (Admission No)
-                  </span>
-                  <span className="text-[10px] text-slate-500 block">
-                    Displays crisp vector barcode on the back of card for gate scanners.
+                    Displays high-precision Code 39 barcode on the front of the card.
                   </span>
                 </div>
                 <input
@@ -397,42 +467,47 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                   className="w-4 h-4 text-blue-600 rounded border-slate-300 cursor-pointer shrink-0"
                 />
               </div>
+
+              <div className="flex items-center justify-between py-1 border-t border-slate-200/80 pt-2">
+                <div>
+                  <span className="text-slate-800 font-bold block text-[11px]">
+                    Student ID Number Below Barcode
+                  </span>
+                  <span className="text-[10px] text-slate-500 block">
+                    Shows formatted admission code (e.g. MZK-2026-0101).
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={customization.showStudentId}
+                  onChange={(e) => onChange({ showStudentId: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 cursor-pointer shrink-0"
+                />
+              </div>
             </div>
           )}
         </div>
 
-        {/* 6. SIGNATURES & LEGAL DISCLAIMER */}
+        {/* 6. LEGAL DISCLAIMER & FOOTER */}
         <div>
           <button
             type="button"
-            onClick={() => toggleSection("signatures")}
+            onClick={() => toggleSection("disclaimer")}
             className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition cursor-pointer"
           >
             <div className="flex items-center gap-2 font-bold text-slate-800">
               <FileText className="w-4 h-4 text-slate-600" />
-              <span>Signatures & Disclaimer</span>
+              <span>Disclaimer & Footer</span>
             </div>
-            {openSection === "signatures" ? (
+            {openSection === "disclaimer" ? (
               <ChevronDown className="w-4 h-4 text-slate-400" />
             ) : (
               <ChevronRight className="w-4 h-4 text-slate-400" />
             )}
           </button>
 
-          {openSection === "signatures" && (
+          {openSection === "disclaimer" && (
             <div className="p-4 pt-1 space-y-3 bg-slate-50/40">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Signatory Title
-                </label>
-                <input
-                  type="text"
-                  value={customization.principalTitle}
-                  onChange={(e) => onChange({ principalTitle: e.target.value })}
-                  className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600 bg-white"
-                />
-              </div>
-
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
                   Card Disclaimer Text
@@ -440,6 +515,7 @@ export const IdCardCustomizationPanel: React.FC<IdCardCustomizationPanelProps> =
                 <textarea
                   rows={2}
                   value={customization.disclaimerText}
+                  placeholder="PROPERTY OF THE SCHOOL. NOT TRANSFERABLE."
                   onChange={(e) => onChange({ disclaimerText: e.target.value })}
                   className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600 bg-white"
                 />

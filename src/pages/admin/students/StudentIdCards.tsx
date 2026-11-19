@@ -138,9 +138,10 @@ export default function StudentIdCards() {
           setSelectedStudentIds(new Set(targetStudentIds));
           setActiveStudentId(targetStudentIds[0]);
         } else if (enriched.length > 0) {
-          // Select all by default or first student
+          // Select all by default and set featured student
           setSelectedStudentIds(new Set(enriched.map((c) => c.student_id)));
-          setActiveStudentId(enriched[0].student_id);
+          const featured = enriched.find((c) => c.full_name?.toLowerCase().includes("khaqan")) || enriched[0];
+          setActiveStudentId(featured.student_id);
         }
 
         // Load stored customization for this school

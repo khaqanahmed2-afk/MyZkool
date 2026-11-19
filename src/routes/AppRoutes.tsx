@@ -94,6 +94,14 @@ const BulkAssignPage = lazy(() =>
 const YearRenewalPage = lazy(() =>
   import("../pages/admin/transport/YearRenewalPage").then((m) => ({ default: m.YearRenewalPage }))
 );
+// Attendance Management
+const AttendanceDashboard = lazy(() => import("../pages/admin/attendance/AttendanceDashboard"));
+const TakeAttendance = lazy(() => import("../pages/admin/attendance/TakeAttendance"));
+const QRAttendance = lazy(() => import("../pages/admin/attendance/QRAttendance"));
+const AttendanceHistory = lazy(() => import("../pages/admin/attendance/AttendanceHistory"));
+const AttendanceReports = lazy(() => import("../pages/admin/attendance/AttendanceReports"));
+const AttendanceSettingsPage = lazy(() => import("../pages/admin/attendance/AttendanceSettingsPage"));
+
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 // Master Admin Control Plane
@@ -212,7 +220,14 @@ export default function AppRoutes() {
             <Route path="students/id-cards" element={<StudentIdCards />} />
             <Route path="students/:id" element={<StudentProfileView />} />
             <Route path="students/:id/edit" element={<StudentAdmissionWizard />} />
-            <Route path="attendance" element={<ModulePlaceholder />} />
+            {/* Attendance Management */}
+            <Route path="attendance" element={<AttendanceDashboard />} />
+            <Route path="attendance/dashboard" element={<AttendanceDashboard />} />
+            <Route path="attendance/take" element={<TakeAttendance />} />
+            <Route path="attendance/qr" element={<QRAttendance />} />
+            <Route path="attendance/history" element={<AttendanceHistory />} />
+            <Route path="attendance/reports" element={<AttendanceReports />} />
+            <Route path="attendance/settings" element={<AttendanceSettingsPage />} />
             <Route path="fees" element={<FeeDashboard />} />
             <Route path="fees/dashboard" element={<FeeDashboard />} />
             <Route path="fees/setup" element={<FeeSetupChecklist />} />
