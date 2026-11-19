@@ -391,57 +391,70 @@ ALTER TABLE public.attendance_corrections_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance_settings ENABLE ROW LEVEL SECURITY;
 
 -- Policy: attendance_sessions
+DROP POLICY IF EXISTS "attendance_sessions_select_policy" ON public.attendance_sessions;
 CREATE POLICY "attendance_sessions_select_policy"
 ON public.attendance_sessions FOR SELECT
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "attendance_sessions_insert_policy" ON public.attendance_sessions;
 CREATE POLICY "attendance_sessions_insert_policy"
 ON public.attendance_sessions FOR INSERT
 WITH CHECK (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "attendance_sessions_update_policy" ON public.attendance_sessions;
 CREATE POLICY "attendance_sessions_update_policy"
 ON public.attendance_sessions FOR UPDATE
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "attendance_sessions_delete_policy" ON public.attendance_sessions;
 CREATE POLICY "attendance_sessions_delete_policy"
 ON public.attendance_sessions FOR DELETE
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
 -- Policy: student_attendance_records
+DROP POLICY IF EXISTS "student_attendance_records_select_policy" ON public.student_attendance_records;
 CREATE POLICY "student_attendance_records_select_policy"
 ON public.student_attendance_records FOR SELECT
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "student_attendance_records_insert_policy" ON public.student_attendance_records;
 CREATE POLICY "student_attendance_records_insert_policy"
 ON public.student_attendance_records FOR INSERT
 WITH CHECK (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "student_attendance_records_update_policy" ON public.student_attendance_records;
 CREATE POLICY "student_attendance_records_update_policy"
 ON public.student_attendance_records FOR UPDATE
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "student_attendance_records_delete_policy" ON public.student_attendance_records;
 CREATE POLICY "student_attendance_records_delete_policy"
 ON public.student_attendance_records FOR DELETE
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
 -- Policy: attendance_corrections_log
+DROP POLICY IF EXISTS "attendance_corrections_log_select_policy" ON public.attendance_corrections_log;
 CREATE POLICY "attendance_corrections_log_select_policy"
 ON public.attendance_corrections_log FOR SELECT
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "attendance_corrections_log_insert_policy" ON public.attendance_corrections_log;
 CREATE POLICY "attendance_corrections_log_insert_policy"
 ON public.attendance_corrections_log FOR INSERT
 WITH CHECK (school_id IN (SELECT public.school_member_school_ids()));
 
 -- Policy: attendance_settings
+DROP POLICY IF EXISTS "attendance_settings_select_policy" ON public.attendance_settings;
 CREATE POLICY "attendance_settings_select_policy"
 ON public.attendance_settings FOR SELECT
 USING (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "attendance_settings_insert_policy" ON public.attendance_settings;
 CREATE POLICY "attendance_settings_insert_policy"
 ON public.attendance_settings FOR INSERT
 WITH CHECK (school_id IN (SELECT public.school_member_school_ids()));
 
+DROP POLICY IF EXISTS "attendance_settings_update_policy" ON public.attendance_settings;
 CREATE POLICY "attendance_settings_update_policy"
 ON public.attendance_settings FOR UPDATE
 USING (school_id IN (SELECT public.school_member_school_ids()));
