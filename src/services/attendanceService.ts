@@ -1158,13 +1158,18 @@ export async function getStudentAttendanceReport(params: {
     const percentage =
       totalDays > 0 ? Math.round(((present + late) / totalDays) * 1000) / 10 : 0;
 
+    const rawClasses = enroll?.classes as any;
+    const rawSections = enroll?.sections as any;
+    const className = Array.isArray(rawClasses) ? rawClasses[0]?.name : rawClasses?.name || "Class";
+    const sectionName = Array.isArray(rawSections) ? rawSections[0]?.name : rawSections?.name || null;
+
     return {
       student_id: student.id,
       student_name: `${student.first_name} ${student.last_name || ""}`.trim(),
       admission_no: student.admission_no,
       roll_no: enroll?.roll_no || null,
-      class_name: enroll?.classes?.name || "Class",
-      section_name: enroll?.sections?.name || null,
+      class_name: className,
+      section_name: sectionName,
       total_days: totalDays,
       present_days: present,
       absent_days: absent,

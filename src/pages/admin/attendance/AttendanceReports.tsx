@@ -58,7 +58,7 @@ export function AttendanceReports() {
 
   // Metadata
   const [classes, setClasses] = useState<
-    Array<{ id: string; name: string; sections: Array<{ id: string; name: string }> }>
+    Array<{ id: string; name: string; sections?: Array<{ id: string; name: string }> }>
   >([]);
   const [loading, setLoading] = useState(false);
 
@@ -67,12 +67,13 @@ export function AttendanceReports() {
     if (!school?.id) return;
     const fetchClasses = async () => {
       try {
-        const cls = await getClassesWithSections(school.id, currentAcademicYear?.id);
-        setClasses(cls);
-        if (cls.length > 0 && !selectedClassId) {
-          setSelectedClassId(cls[0].id);
-          if (cls[0].sections.length > 0) {
-            setSelectedSectionId(cls[0].sections[0].id);
+        const clsRes = await getClassesWithSections(school.id, currentAcademicYear?.id);
+        const loadedClasses = Array.isArray(clsRes?.classes) ? clsRes.classes : [];
+        setClasses(loadedClasses);
+        if (loadedClasses.length > 0 && !selectedClassId) {
+          setSelectedClassId(loadedClasses[0].id);
+          if (loadedClasses[0].sections && loadedClasses[0].sections.length > 0) {
+            setSelectedSectionId(loadedClasses[0].sections[0].id);
           }
         }
       } catch (err) {
@@ -82,7 +83,7 @@ export function AttendanceReports() {
     fetchClasses();
   }, [school?.id, currentAcademicYear?.id]);
 
-  const activeClass = classes.find((c) => c.id === selectedClassId);
+  const activeClass = Array.isArray(classes) ? classes.find((c) => c.id === selectedClassId) : undefined;
   const availableSections = activeClass?.sections || [];
 
   // Load Daily Report
@@ -158,7 +159,7 @@ export function AttendanceReports() {
       "Leave",
       "Attendance Percentage",
     ];
-    const rows = dailyData.class_summaries.map((c) => [
+    const rows = (dailyData.class_summaries || []).map((c) => [
       c.class_name,
       c.section_name || "N/A",
       c.total_students,
@@ -355,7 +356,7 @@ export function AttendanceReports() {
                         Loading daily report...
                       </td>
                     </tr>
-                  ) : !dailyData || dailyData.class_summaries.length === 0 ? (
+                  ) : !dailyData || !Array.isArray(dailyData.class_summaries) || dailyData.class_summaries.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-[#5B6478]">
                         No data available for this date.
@@ -438,8 +439,8 @@ export function AttendanceReports() {
                   value={selectedClassId}
                   onChange={(e) => {
                     setSelectedClassId(e.target.value);
-                    const c = classes.find((cl) => cl.id === e.target.value);
-                    if (c && c.sections.length > 0) {
+                    const c = Array.isArray(classes) ? classes.find((cl) => cl.id === e.target.value) : undefined;
+                    if (c && c.sections && c.sections.length > 0) {
                       setSelectedSectionId(c.sections[0].id);
                     } else {
                       setSelectedSectionId("");
@@ -447,7 +448,7 @@ export function AttendanceReports() {
                   }}
                   className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0]"
                 >
-                  {classes.map((cls) => (
+                  {(classes || []).map((cls) => (
                     <option key={cls.id} value={cls.id}>
                       {cls.name}
                     </option>
@@ -463,11 +464,11 @@ export function AttendanceReports() {
                 <select
                   value={selectedSectionId}
                   onChange={(e) => setSelectedSectionId(e.target.value)}
-                  disabled={availableSections.length === 0}
+                  disabled={!availableSections || availableSections.length === 0}
                   className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0] disabled:bg-slate-50"
                 >
                   <option value="">All Sections</option>
-                  {availableSections.map((sec) => (
+                  {(availableSections || []).map((sec) => (
                     <option key={sec.id} value={sec.id}>
                       Section {sec.name}
                     </option>

@@ -47,7 +47,9 @@ export function TakeAttendance() {
 
   // Metadata State
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [classes, setClasses] = useState<Array<{ id: string; name: string; sections: Array<{ id: string; name: string }> }>>([]);
+  const [classes, setClasses] = useState<
+    Array<{ id: string; name: string; sections?: Array<{ id: string; name: string }> }>
+  >([]);
 
   // Attendance Students State
   const [loading, setLoading] = useState(false);
@@ -67,14 +69,16 @@ export function TakeAttendance() {
           getAcademicYearsForSchool(school.id),
           getClassesWithSections(school.id, selectedAcademicYearId || currentAcademicYear?.id),
         ]);
-        setAcademicYears(yearsRes);
-        setClasses(classesRes);
+        const loadedYears = Array.isArray(yearsRes?.academicYears) ? yearsRes.academicYears : [];
+        const loadedClasses = Array.isArray(classesRes?.classes) ? classesRes.classes : [];
+        setAcademicYears(loadedYears);
+        setClasses(loadedClasses);
 
         // Auto-select first class if none selected
-        if (!selectedClassId && classesRes.length > 0) {
-          setSelectedClassId(classesRes[0].id);
-          if (classesRes[0].sections.length > 0) {
-            setSelectedSectionId(classesRes[0].sections[0].id);
+        if (!selectedClassId && loadedClasses.length > 0) {
+          setSelectedClassId(loadedClasses[0].id);
+          if (loadedClasses[0].sections && loadedClasses[0].sections.length > 0) {
+            setSelectedSectionId(loadedClasses[0].sections[0].id);
           }
         }
       } catch (err) {
@@ -86,6 +90,7 @@ export function TakeAttendance() {
 
   // Update sections when class changes
   const activeClass = useMemo(() => {
+    if (!Array.isArray(classes)) return undefined;
     return classes.find((c) => c.id === selectedClassId);
   }, [classes, selectedClassId]);
 
@@ -93,8 +98,9 @@ export function TakeAttendance() {
 
   const handleClassChange = (newClassId: string) => {
     setSelectedClassId(newClassId);
+    if (!Array.isArray(classes)) return;
     const cls = classes.find((c) => c.id === newClassId);
-    if (cls && cls.sections.length > 0) {
+    if (cls && cls.sections && cls.sections.length > 0) {
       setSelectedSectionId(cls.sections[0].id);
     } else {
       setSelectedSectionId("");
@@ -238,12 +244,17 @@ export function TakeAttendance() {
   };
 
   // Filtered student list for search
-  const filteredStudents = students.filter(
-    (s) =>
-      s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.admission_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.roll_no && s.roll_no.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredStudents = useMemo(() => {
+    const list = Array.isArray(students) ? students : [];
+    const q = (searchQuery || "").trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((s) => {
+      const name = (s.full_name || "").toLowerCase();
+      const adm = (s.admission_no || "").toLowerCase();
+      const roll = (s.roll_no || "").toLowerCase();
+      return name.includes(q) || adm.includes(q) || roll.includes(q);
+    });
+  }, [students, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -284,7 +295,7 @@ export function TakeAttendance() {
               onChange={(e) => setSelectedAcademicYearId(e.target.value)}
               className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0]"
             >
-              {academicYears.map((ay) => (
+              {(academicYears || []).map((ay) => (
                 <option key={ay.id} value={ay.id}>
                   {ay.label} {ay.is_current ? "(Current)" : ""}
                 </option>
@@ -317,7 +328,7 @@ export function TakeAttendance() {
               onChange={(e) => handleClassChange(e.target.value)}
               className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0]"
             >
-              {classes.map((cls) => (
+              {(classes || []).map((cls) => (
                 <option key={cls.id} value={cls.id}>
                   {cls.name}
                 </option>
@@ -333,10 +344,10 @@ export function TakeAttendance() {
             <select
               value={selectedSectionId}
               onChange={(e) => setSelectedSectionId(e.target.value)}
-              disabled={availableSections.length === 0}
+              disabled={!availableSections || availableSections.length === 0}
               className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0] disabled:bg-slate-50 disabled:text-[#8C95A8]"
             >
-              {availableSections.length === 0 ? (
+              {!availableSections || availableSections.length === 0 ? (
                 <option value="">No Sections</option>
               ) : (
                 availableSections.map((sec) => (
@@ -508,7 +519,7 @@ export function TakeAttendance() {
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              s.first_name.charAt(0).toUpperCase()
+                              (s.first_name || s.full_name || "S").charAt(0).toUpperCase()
                             )}
                           </div>
                           <div>

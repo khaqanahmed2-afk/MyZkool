@@ -83,13 +83,14 @@ export function AttendanceDashboard() {
   }, [loadDashboardData]);
 
   // Derived metrics
-  const unrecordedClasses = classOverview.filter((c) => !c.is_recorded && c.total_students > 0);
-  const recordedClasses = classOverview.filter((c) => c.is_recorded);
+  const safeOverview = Array.isArray(classOverview) ? classOverview : [];
+  const unrecordedClasses = safeOverview.filter((c) => !c.is_recorded && c.total_students > 0);
+  const recordedClasses = safeOverview.filter((c) => c.is_recorded);
 
-  const filteredOverview = classOverview.filter(
+  const filteredOverview = safeOverview.filter(
     (c) =>
-      c.class_name.toLowerCase().includes(filterClassQuery.toLowerCase()) ||
-      (c.section_name && c.section_name.toLowerCase().includes(filterClassQuery.toLowerCase()))
+      (c.class_name || "").toLowerCase().includes((filterClassQuery || "").toLowerCase()) ||
+      ((c.section_name || "").toLowerCase().includes((filterClassQuery || "").toLowerCase()))
   );
 
   return (

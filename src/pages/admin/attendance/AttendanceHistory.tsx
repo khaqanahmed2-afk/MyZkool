@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   History,
@@ -52,7 +52,7 @@ export function AttendanceHistory() {
   // Metadata
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<
-    Array<{ id: string; name: string; sections: Array<{ id: string; name: string }> }>
+    Array<{ id: string; name: string; sections?: Array<{ id: string; name: string }> }>
   >([]);
 
   // Records & Pagination
@@ -79,12 +79,12 @@ export function AttendanceHistory() {
     if (!school?.id) return;
     const loadMeta = async () => {
       try {
-        const [years, clss] = await Promise.all([
+        const [yearsRes, clssRes] = await Promise.all([
           getAcademicYearsForSchool(school.id),
           getClassesWithSections(school.id, selectedAcademicYearId || currentAcademicYear?.id),
         ]);
-        setAcademicYears(years);
-        setClasses(clss);
+        setAcademicYears(Array.isArray(yearsRes?.academicYears) ? yearsRes.academicYears : []);
+        setClasses(Array.isArray(clssRes?.classes) ? clssRes.classes : []);
       } catch (err) {
         console.error("Failed to load metadata for history:", err);
       }
@@ -92,7 +92,7 @@ export function AttendanceHistory() {
     loadMeta();
   }, [school?.id, selectedAcademicYearId, currentAcademicYear?.id]);
 
-  const activeClass = classes.find((c) => c.id === selectedClassId);
+  const activeClass = Array.isArray(classes) ? classes.find((c) => c.id === selectedClassId) : undefined;
   const availableSections = activeClass?.sections || [];
 
   // Fetch History Records
@@ -115,8 +115,8 @@ export function AttendanceHistory() {
         pageSize,
       });
 
-      setRecords(res.records);
-      setTotalCount(res.totalCount);
+      setRecords(Array.isArray(res?.records) ? res.records : []);
+      setTotalCount(typeof res?.totalCount === "number" ? res.totalCount : 0);
     } catch (err) {
       console.error("Failed to load attendance history records:", err);
     } finally {
@@ -199,12 +199,17 @@ export function AttendanceHistory() {
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
   // Filtered by client search query if needed
-  const filteredRecords = records.filter(
-    (r) =>
-      r.student_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.admission_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.roll_no && r.roll_no.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredRecords = useMemo(() => {
+    const list = Array.isArray(records) ? records : [];
+    const q = (searchQuery || "").trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((r) => {
+      const name = (r.student_name || "").toLowerCase();
+      const adm = (r.admission_no || "").toLowerCase();
+      const roll = (r.roll_no || "").toLowerCase();
+      return name.includes(q) || adm.includes(q) || roll.includes(q);
+    });
+  }, [records, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -281,7 +286,7 @@ export function AttendanceHistory() {
               className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0]"
             >
               <option value="">All Years</option>
-              {academicYears.map((ay) => (
+              {(academicYears || []).map((ay) => (
                 <option key={ay.id} value={ay.id}>
                   {ay.label}
                 </option>
@@ -304,7 +309,7 @@ export function AttendanceHistory() {
               className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0]"
             >
               <option value="">All Classes</option>
-              {classes.map((cls) => (
+              {(classes || []).map((cls) => (
                 <option key={cls.id} value={cls.id}>
                   {cls.name}
                 </option>
@@ -323,11 +328,11 @@ export function AttendanceHistory() {
                 setSelectedSectionId(e.target.value);
                 setCurrentPage(1);
               }}
-              disabled={availableSections.length === 0}
+              disabled={!availableSections || availableSections.length === 0}
               className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#E6EAF3] text-[#141A2E] bg-white focus:outline-none focus:border-[#2158E0] disabled:bg-slate-50 disabled:text-[#8C95A8]"
             >
               <option value="">All Sections</option>
-              {availableSections.map((sec) => (
+              {(availableSections || []).map((sec) => (
                 <option key={sec.id} value={sec.id}>
                   Section {sec.name}
                 </option>

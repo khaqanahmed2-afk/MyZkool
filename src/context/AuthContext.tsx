@@ -42,7 +42,7 @@ interface AuthContextType {
   refreshSession: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 /**
  * Maps raw Supabase error messages to clear, safe, user-friendly copy
